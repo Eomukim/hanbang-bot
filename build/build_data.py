@@ -130,7 +130,7 @@ def main():
 
     stats = {
         "version": 1,
-        "source": "JJoriping/KKuTu db.sql (kkutu_ko)",
+        "source": "db.sql dump (GPL-3.0) — 출처 표기는 NOTICE.md",
         "generatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "rawRows": raw,
         "total": len(ordered),
