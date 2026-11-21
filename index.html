@@ -164,6 +164,13 @@
       <div><i>봇</i><b id="result-bot">0</b></div>
     </div>
     <dl class="result-stats" id="result-stats"></dl>
+    <button class="battle-log-btn" id="battle-log-btn" type="button" aria-expanded="false" aria-controls="battle-log">
+      <span id="battle-log-label">배틀 내역 (0수)</span>
+      <i class="battle-log-caret" aria-hidden="true">▾</i>
+    </button>
+    <div class="battle-log" id="battle-log" role="region" aria-label="배틀 내역" tabindex="0" hidden>
+      <ol class="battle-log-list" id="battle-log-list"></ol>
+    </div>
     <div class="result-actions">
       <button class="btn primary" id="btn-again" type="button">다시 대전</button>
       <button class="btn ghost" id="btn-tosetup" type="button">난이도 변경</button>

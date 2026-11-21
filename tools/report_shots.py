@@ -9,10 +9,11 @@
 - 내 단어장 삭제(버튼·모달·사전 API 없음)와 효과음 설정 행 전체 폭
 - 힌트 삭제(버튼·문구·API 없음)
 - 하드코어 모드: 스위치·5초 고정·봇 선공·헤더/결과 배지·별도 전적, 끄면 일반 모드
-- 결과 화면(승리·패배·포기)의 난이도 배지
+- 결과 화면(승리·패배·포기)의 난이도 배지, 버튼으로 여는 배틀 내역(카드 안 스크롤)
 - downloads/itda/ 에 setup.png, lv5-setup.png, lv5-game.png, oneshot.png,
   result-win.png, result-lv5.png, mobile-game.png, mobile-lv5.png, mobile-result.png,
-  hardcore-setup.png, hardcore-game.png, hardcore-result.png 저장
+  hardcore-setup.png, hardcore-game.png, hardcore-result.png,
+  battle-log-open.png, mobile-battle-log-open.png 저장
 
 usage:
     python3 tools/report_shots.py --url https://itda-game.onrender.com
@@ -147,6 +148,72 @@ def result_view(page):
             reason: document.getElementById('result-reason').textContent,
             lv: box ? box.dataset.lv : null,
             label: box ? document.getElementById('result-level-label').textContent : '',
+        };
+    }""")
+
+
+def log_word(page):
+    """배틀 내역 스크린샷용 수: 태그가 붙는 단어와 긴 단어를 섞는다."""
+    return page.evaluate("""() => {
+        const d = window.__ITDA.dict, st = window.__ITDA.state();
+        const used = new Set(st.chain.map((c) => c.word));
+        const cands = d.candidatesFor(st.needChar, used);
+        const taggedLong = cands.filter((x) => (d.flagOf(x) & 1) && x.length >= 6 && x.length <= 12);
+        const long = cands.filter((x) => x.length >= 7 && x.length <= 12);
+        return taggedLong[0] || long[0] || cands[0] || null;
+    }""")
+
+
+def play_log_game(page, turns=6):
+    """결과 화면 배틀 내역을 볼 판: 몇 수 주고받고 끝낸다."""
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:20})")
+    page.wait_for_timeout(400)
+    for _ in range(turns):
+        st = wait_my_turn(page, 8000)
+        if not st or st['phase'] != 'me':
+            break
+        word = log_word(page)
+        if not word:
+            break
+        before = page.evaluate('window.__ITDA.state().chain.length')
+        page.fill('#word-input', word)
+        page.click('#btn-submit')
+        try:
+            page.wait_for_function(
+                f"() => window.__ITDA.state().chain.length > {before} + 1 || window.__ITDA.state().phase === 'over'",
+                timeout=8000)
+        except Exception:
+            break
+    if page.evaluate('window.__ITDA.state().phase') != 'over':
+        page.evaluate('window.__ITDA.engine.quit()')
+    page.wait_for_timeout(1100)
+
+
+def blog_view(page):
+    return page.evaluate("""() => {
+        const btn = document.getElementById('battle-log-btn');
+        const panel = document.getElementById('battle-log');
+        const sheet = document.querySelector('#ov-result .result-sheet');
+        const cs = getComputedStyle(panel);
+        const again = document.getElementById('btn-again');
+        const tosetup = document.getElementById('btn-tosetup');
+        const sh = sheet.getBoundingClientRect();
+        return {
+            label: btn.innerText.replace(/\\s+/g, ' ').trim(),
+            expanded: btn.getAttribute('aria-expanded'),
+            hidden: panel.hidden,
+            overflowY: cs.overflowY,
+            maxHeight: Math.round(parseFloat(cs.maxHeight) || 0),
+            rows: document.querySelectorAll('#battle-log-list .blog-move').length,
+            scrollable: panel.scrollHeight > panel.clientHeight + 8,
+            sheetTop: Math.round(sh.top), sheetBottom: Math.round(sh.bottom),
+            buttonsInView: [again, tosetup].every((el) => {
+                const b = el.getBoundingClientRect();
+                return b.height > 0 && b.top >= 0 && b.bottom <= innerHeight;
+            }),
+            vh: innerHeight,
         };
     }""")
 
@@ -432,6 +499,27 @@ def main():
         summary['desktop_lv5_quit'] = {'title': lv5['title'], 'level': lv5['label'], 'reason': lv5['reason']}
         page.evaluate('window.__ITDA.app.hideResult()')
 
+        # ── 데스크톱: 결과 화면 배틀 내역 ─────────────────────
+        play_log_game(page, turns=7)
+        blog_closed = blog_view(page)
+        check(blog_closed['label'].startswith('배틀 내역 (') and blog_closed['hidden']
+              and blog_closed['expanded'] == 'false',
+              '배틀 내역 버튼 · 기본 접힘', json.dumps(blog_closed, ensure_ascii=False))
+        check(sum(overflow(page).values()) <= 0, '배틀 내역 접힌 결과 가로 오버플로 0', str(overflow(page)))
+        page.click('#battle-log-btn')
+        page.wait_for_timeout(380)
+        blog = blog_view(page)
+        check(not blog['hidden'] and blog['expanded'] == 'true' and blog['overflowY'] == 'auto'
+              and blog['maxHeight'] >= 120 and blog['rows'] >= 8 and blog['scrollable'],
+              '배틀 내역 펼침 · 세로 스크롤', json.dumps(blog, ensure_ascii=False))
+        check(blog['buttonsInView'] and blog['sheetTop'] >= 0 and blog['sheetBottom'] <= blog['vh'],
+              '배틀 내역 펼친 결과 카드가 뷰포트 안', json.dumps(blog, ensure_ascii=False))
+        hits = brand_hits(page)
+        check(not hits, '배틀 내역 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'battle-log-open.png'))
+        summary['battle_log'] = blog
+        page.evaluate('window.__ITDA.app.hideResult()')
+
         # ── 데스크톱: 힌트 삭제 · 하드코어 모드 ──────────────
         page.evaluate('window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()')
         page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
@@ -597,6 +685,23 @@ def main():
         check(sum(overflow(page).values()) <= 0, '모바일 결과 화면 가로 오버플로 0', str(overflow(page)))
         page.screenshot(path=os.path.join(OUT, 'mobile-result.png'))
         summary['mobile_result'] = mres
+
+        # ── 모바일: 결과 화면 배틀 내역 ─────────────────────
+        play_log_game(page, turns=5)
+        check(sum(overflow(page).values()) <= 0, '모바일 배틀 내역 접힌 결과 가로 오버플로 0', str(overflow(page)))
+        page.click('#battle-log-btn')
+        page.wait_for_timeout(380)
+        mblog = blog_view(page)
+        check(not mblog['hidden'] and mblog['expanded'] == 'true' and mblog['overflowY'] == 'auto'
+              and mblog['rows'] >= 6 and mblog['scrollable'],
+              '모바일 배틀 내역 펼침 · 세로 스크롤', json.dumps(mblog, ensure_ascii=False))
+        check(mblog['buttonsInView'] and mblog['sheetTop'] >= 0 and mblog['sheetBottom'] <= mblog['vh'],
+              '모바일 배틀 내역 펼친 카드가 뷰포트 안', json.dumps(mblog, ensure_ascii=False))
+        check(sum(overflow(page).values()) <= 0, '모바일 배틀 내역 펼친 화면 가로 오버플로 0', str(overflow(page)))
+        hits = brand_hits(page)
+        check(not hits, '모바일 배틀 내역 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'mobile-battle-log-open.png'))
+        summary['mobile_battle_log'] = mblog
 
         # ── 모바일: 하드코어 설정·대전·결과 ──────────────────
         page.evaluate('window.__ITDA.app.hideResult(); window.__ITDA.app.show(\'setup\')')

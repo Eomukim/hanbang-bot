@@ -8,6 +8,7 @@
  - 하드코어 모드(스위치 · 5초 고정 · 봇 선공 고정 · 헤더/결과 배지 · 별도 전적 · 끄면 일반 모드)
  - 내 단어장 삭제(버튼·모달·사전 API 없음, 남은 localStorage 값 무시)
  - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
+ - 결과 화면 배틀 내역: 버튼 열기/닫기 · 카드 안 세로 스크롤 · 턴·나/봇·단어·점수·태그 · 0수 종료(포기·시간 초과) · 아주 긴 단어 줄바꿈 · 모바일 오버플로
  - 5단계 난이도 카드(데스크톱/모바일 배치)와 4단계 기준 localStorage 호환
  - Lv.5 지옥: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 검증 · 압박/미션·장문 · 응답 시간
  - 미션 규칙(14종 후보 · 미달성 시 유지 · 중첩 보너스 · 성공 시 다음 글자)
@@ -1138,6 +1139,325 @@ def scenario_result_level(page, tag):
     page.wait_for_timeout(150)
 
 
+# ── 배틀 내역 (결과 화면) ─────────────────────────────────────
+
+def battle_log_view(page):
+    """배틀 내역 버튼·영역의 상태와 자리(겹침·뷰포트 이탈 확인용)."""
+    return page.evaluate("""() => {
+        const btn = document.getElementById('battle-log-btn');
+        const panel = document.getElementById('battle-log');
+        const sheet = document.querySelector('#ov-result .result-sheet');
+        const box = (el) => { const r = el.getBoundingClientRect(); return {
+            top: Math.round(r.top), bottom: Math.round(r.bottom),
+            left: Math.round(r.left), right: Math.round(r.right),
+            height: Math.round(r.height), width: Math.round(r.width) }; };
+        const cs = getComputedStyle(panel);
+        const again = document.getElementById('btn-again');
+        const tosetup = document.getElementById('btn-tosetup');
+        const r = box(btn), sh = box(sheet);
+        return {
+            result: !document.getElementById('ov-result').hidden,
+            label: document.getElementById('battle-log-label').textContent.trim(),
+            expanded: btn.getAttribute('aria-expanded'),
+            hidden: panel.hidden,
+            visible: r.height > 0 && r.width > 200,
+            overflowY: cs.overflowY,
+            maxHeight: Math.round(parseFloat(cs.maxHeight) || 0),
+            btn: r, panel: box(panel), sheet: sh,
+            again: box(again), tosetup: box(tosetup),
+            panelScroll: { scroll: Math.round(panel.scrollTop), height: panel.scrollHeight,
+                           client: panel.clientHeight },
+            insideSheet: r.top >= sh.top && r.bottom <= sh.bottom && r.left >= sh.left && r.right <= sh.right,
+            buttonsInView: [again, tosetup].every((el) => {
+                const b = el.getBoundingClientRect();
+                return b.height > 0 && b.top >= 0 && b.bottom <= innerHeight && b.left >= 0 && b.right <= innerWidth;
+            }),
+            vh: innerHeight, vw: innerWidth,
+        };
+    }""")
+
+
+def battle_log_entries(page):
+    """그 판의 수(chain)와 화면에 그려진 배틀 내역 줄을 나란히 읽는다."""
+    return page.evaluate("""() => {
+        const kindTag = { oneshot: '한방', outer: '외통수', route: '필승 라인', press: '압박' };
+        const st = window.__ITDA.state();
+        const chain = (st ? st.chain : []).map((c) => {
+            const hits = c.missionHits || 0;
+            const tags = [];
+            if (hits > 0) tags.push(hits === 1 ? '미션 +50%' : `미션 ×${hits}`);
+            if (kindTag[c.kind]) tags.push(kindTag[c.kind]);
+            tags.push(...window.__ITDA.dict.tagsOf(c.word));
+            return { who: c.who, word: c.word, score: c.score, tags };
+        });
+        const rows = [...document.querySelectorAll('#battle-log-list .blog-move')].map((li) => {
+            const w = li.querySelector('.blog-word');
+            return {
+                turn: li.querySelector('.blog-turn').textContent.trim(),
+                who: li.querySelector('.blog-who').textContent.trim(),
+                cls: li.className,
+                word: w.textContent,
+                gain: li.querySelector('.blog-gain').textContent.trim(),
+                tags: [...li.querySelectorAll('.blog-tags .tag')].map((t) => t.textContent.trim()),
+                clip: w.scrollWidth - w.clientWidth,
+                wordHeight: Math.round(w.getBoundingClientRect().height),
+                lineHeight: Math.round(parseFloat(getComputedStyle(w).lineHeight) || 0),
+            };
+        });
+        return { chain, rows, empty: ((document.querySelector('.battle-log-empty') || {}).textContent || '').trim() };
+    }""")
+
+
+def battle_log_rows_match(data):
+    """화면의 줄이 그 판의 수와 순서·주체·단어·점수·태그까지 같은지."""
+    bad = []
+    if len(data['rows']) != len(data['chain']):
+        bad.append({'rows': len(data['rows']), 'chain': len(data['chain'])})
+    for i, (want, row) in enumerate(zip(data['chain'], data['rows']), start=1):
+        expect_who = '나' if want['who'] == 'me' else '봇'
+        if (row['turn'] != str(i) or row['who'] != expect_who or row['word'] != want['word']
+                or row['gain'] != f"+{want['score']}" or row['tags'] != want['tags']
+                or f"blog-move {want['who']}" not in row['cls']):
+            bad.append({'turn': i, 'row': row, 'want': want})
+    return bad
+
+
+def intersects(a, b):
+    return a['left'] < b['right'] and b['left'] < a['right'] and a['top'] < b['bottom'] and b['top'] < a['bottom']
+
+
+def play_turns(page, turns=7):
+    """배틀 내역에 쌓을 판: 태그 붙은 단어와 긴 단어를 섞어 몇 수를 주고받는다."""
+    made = 0
+    for _ in range(turns):
+        st = wait_my_turn(page, 8000)
+        if not st or st['phase'] != 'me':
+            break
+        word = page.evaluate("""() => {
+            const d = window.__ITDA.dict, st = window.__ITDA.state();
+            const used = new Set(st.chain.map((c) => c.word));
+            const cands = d.candidatesFor(st.needChar, used);
+            const taggedLong = cands.filter((x) => (d.flagOf(x) & 1) && x.length >= 7);
+            const tagged = cands.filter((x) => (d.flagOf(x) & 1) && x.length >= 4);
+            const long = cands.filter((x) => x.length >= 9 && x.length <= 14);
+            return (taggedLong[0] || long[0] || tagged[0] || cands[cands.length - 1] || null);
+        }""")
+        if not word:
+            break
+        before = page.evaluate('window.__ITDA.state().chain.length')
+        page.fill('#word-input', word)
+        page.click('#btn-submit')
+        try:
+            page.wait_for_function(
+                f"() => window.__ITDA.state().chain.length > {before} + 1 || window.__ITDA.state().phase === 'over'",
+                timeout=8000)
+            made += 1
+        except Exception:
+            break
+    return made
+
+
+def scenario_battle_log(page, tag):
+    """결과 화면 배틀 내역: 버튼으로 열고 닫고, 그 안에서 스크롤되고, 그 판의 수·점수·태그가 그대로 보인다."""
+    print(f'  · 배틀 내역 [{tag}]')
+
+    # 1) 여러 수를 주고받은 판(포기로 종료)
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.evaluate("window.__ITDA.startGame({level:1, first:'me', timeLimit:20})")
+    page.wait_for_timeout(400)
+    played = play_turns(page, 7)
+    if page.evaluate("window.__ITDA.state().phase") != 'over':
+        page.evaluate('window.__ITDA.engine.quit()')
+    page.wait_for_timeout(1100)
+
+    data = battle_log_entries(page)
+    n = len(data['chain'])
+    view = battle_log_view(page)
+    check(view['result'] and view['visible'], f'[{tag}] 결과 화면에 배틀 내역 버튼',
+          json.dumps({'label': view['label'], 'n': n}, ensure_ascii=False))
+    check(played >= 5 and n >= 10, f'[{tag}] 배틀 내역용 판 진행', f'{played}수 입력 / {n}수 기록')
+    check(view['label'] == f'배틀 내역 ({n}수)', f'[{tag}] 버튼에 그 판의 수 표기', view['label'])
+    check(view['expanded'] == 'false' and view['hidden'], f'[{tag}] 배틀 내역 기본 접힘',
+          f"aria-expanded={view['expanded']} / hidden={view['hidden']}")
+    check(view['insideSheet'] and view['buttonsInView'] and view['sheet']['bottom'] <= view['vh'],
+          f'[{tag}] 접힌 결과 카드: 버튼이 잘리지 않음',
+          f"card {view['sheet']['top']}~{view['sheet']['bottom']} / vh {view['vh']}")
+    shot(page, f'{tag}-16-battle-log-closed')
+
+    # 2) 열기: 결과 카드 안 세로 스크롤 영역
+    page.click('#battle-log-btn')
+    page.wait_for_timeout(340)
+    openv = battle_log_view(page)
+    check(not openv['hidden'] and openv['expanded'] == 'true', f'[{tag}] 누르면 펼쳐짐',
+          f"aria-expanded={openv['expanded']} / hidden={openv['hidden']}")
+    check(openv['overflowY'] == 'auto' and openv['maxHeight'] >= 120,
+          f'[{tag}] 배틀 내역 스크롤 영역(max-height + overflow-y)',
+          f"overflow-y={openv['overflowY']} / max-height={openv['maxHeight']}px")
+    check(120 <= openv['panel']['height'] <= openv['maxHeight'] + 2,
+          f'[{tag}] 펼친 영역 높이 제한',
+          f"{openv['panel']['height']}px (max {openv['maxHeight']}px)")
+    check(openv['panelScroll']['height'] > openv['panelScroll']['client'] + 8,
+          f'[{tag}] 내용이 영역보다 길어 스크롤 가능',
+          f"{openv['panelScroll']['height']} > {openv['panelScroll']['client']}")
+    page.evaluate("document.getElementById('battle-log').scrollTop = 999999")
+    page.wait_for_timeout(140)
+    scrolled = page.evaluate("document.getElementById('battle-log').scrollTop")
+    check(scrolled > 0, f'[{tag}] 배틀 내역 안에서 실제로 스크롤됨', f'scrollTop={scrolled}')
+    page.evaluate("document.getElementById('battle-log').scrollTop = 0")
+    page.wait_for_timeout(120)
+
+    openv = battle_log_view(page)
+    check(not intersects(openv['panel'], openv['again']) and not intersects(openv['panel'], openv['tosetup'])
+          and openv['again']['top'] == openv['tosetup']['top'],
+          f'[{tag}] 배틀 내역과 다시 대전·난이도 변경 버튼이 겹치지 않음',
+          f"panel {openv['panel']['top']}~{openv['panel']['bottom']} / buttons {openv['again']['top']}~{openv['again']['bottom']}")
+    check(openv['sheet']['top'] >= 0 and openv['sheet']['bottom'] <= openv['vh'] and openv['buttonsInView'],
+          f'[{tag}] 펼친 결과 카드가 뷰포트 안, 버튼 잘리지 않음',
+          f"card {openv['sheet']['top']}~{openv['sheet']['bottom']} / vh {openv['vh']}")
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 배틀 내역 펼친 화면 가로 오버플로 0', str(overflow(page)))
+
+    # 3) 줄 내용: 턴 번호 · 나/봇 · 단어 전체 · 획득 점수 · 그 수의 태그
+    open_data = battle_log_entries(page)
+    bad = battle_log_rows_match(open_data)
+    check(not bad, f'[{tag}] 배틀 내역 {len(open_data["rows"])}수: 순서·나/봇·단어·점수·태그 일치',
+          json.dumps(bad[:2], ensure_ascii=False)[:500] if bad else f"{len(open_data['rows'])}수")
+    longest = max(open_data['rows'], key=lambda r: len(r['word']))
+    check(longest['clip'] <= 0 and longest['wordHeight'] >= longest['lineHeight'],
+          f'[{tag}] 긴 단어도 잘리지 않고 줄바꿈',
+          f"{longest['word']} ({len(longest['word'])}글자) / 넘침 {longest['clip']}px · 높이 {longest['wordHeight']}px(줄 {longest['lineHeight']}px)")
+    tagged_rows = [r for r in open_data['rows'] if r['tags']]
+    check(len(tagged_rows) >= 2, f'[{tag}] 수마다 태그 표시',
+          json.dumps([{'word': r['word'], 'tags': r['tags']} for r in tagged_rows[:3]], ensure_ascii=False))
+    shot(page, f'{tag}-17-battle-log-open')
+
+    # 4) 다시 누르면 접힘
+    page.click('#battle-log-btn')
+    page.wait_for_timeout(280)
+    closed = battle_log_view(page)
+    check(closed['hidden'] and closed['expanded'] == 'false', f'[{tag}] 다시 누르면 접힘',
+          f"aria-expanded={closed['expanded']} / hidden={closed['hidden']}")
+
+    # 4) 아주 긴 단어(한 줄을 넘기는 22~24글자)도 잘리지 않고 줄바꿈되는지: 그 글자로 시작하는 판
+    seed = page.evaluate("""() => {
+        const d = window.__ITDA.dict;
+        let best = null;
+        for (const [ch] of d.ranges) {
+            for (const w of d.candidatesFor(ch, new Set())) {
+                if (w.length <= 24 && (!best || w.length > best.word.length)) best = { ch, word: w };
+                if (best && best.word.length === 24) break;
+            }
+        }
+        return best;
+    }""")
+    if check(seed is not None and len(seed['word']) >= 20, f'[{tag}] 아주 긴 단어 탐색', str(seed)):
+        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.evaluate(f"window.__ITDA.startGame({{level:1, first:'me', startChar:'{seed['ch']}', timeLimit:20}})")
+        page.wait_for_timeout(400)
+        play_word(page, seed['word'], wait=1800)
+        if page.evaluate("window.__ITDA.state().phase") != 'over':
+            page.evaluate('window.__ITDA.engine.quit()')
+        page.wait_for_timeout(1100)
+        page.click('#battle-log-btn')
+        page.wait_for_timeout(300)
+        long_row = page.evaluate("""(word) => {
+            const row = [...document.querySelectorAll('#battle-log-list .blog-move')]
+                .find((li) => li.querySelector('.blog-word').textContent === word);
+            if (!row) return null;
+            const w = row.querySelector('.blog-word');
+            return {
+                word: w.textContent, length: w.textContent.length,
+                clip: w.scrollWidth - w.clientWidth,
+                height: Math.round(w.getBoundingClientRect().height),
+                line: Math.round(parseFloat(getComputedStyle(w).lineHeight) || 0),
+                bubble: Math.round(row.querySelector('.blog-body').getBoundingClientRect().width),
+                panelClip: document.getElementById('battle-log').scrollWidth
+                    - document.getElementById('battle-log').clientWidth,
+            };
+        }""", seed['word'])
+        check(long_row is not None and long_row['clip'] <= 0 and long_row['panelClip'] <= 0
+              and long_row['height'] >= long_row['line'] * 2,
+              f'[{tag}] 24글자 단어도 잘리지 않고 줄바꿈',
+              json.dumps(long_row, ensure_ascii=False))
+        check(sum(overflow(page).values()) <= 0, f'[{tag}] 긴 단어 배틀 내역 가로 오버플로 0', str(overflow(page)))
+        shot(page, f'{tag}-20-battle-log-longword')
+        page.click('#battle-log-btn')
+        page.wait_for_timeout(200)
+
+    # 5) 다시 대전으로 새 판을 시작하면 다음 결과에서는 다시 접힌 채로
+    page.click('#btn-again')
+    page.wait_for_selector('#scr-game:not([hidden])', timeout=6000)
+    page.wait_for_timeout(400)
+    page.evaluate('window.__ITDA.engine.quit()')
+    page.wait_for_timeout(1000)
+    zero = battle_log_view(page)
+    check(zero['label'] == '배틀 내역 (0수)' and zero['hidden'] and zero['expanded'] == 'false',
+          f'[{tag}] 0수 판: (0수) 표기 · 기본 접힘', f"{zero['label']} / hidden={zero['hidden']}")
+    page.click('#battle-log-btn')
+    page.wait_for_timeout(260)
+    zd = battle_log_entries(page)
+    zopen = battle_log_view(page)
+    check(not zopen['hidden'] and '주고받은 단어가 없어요' in zd['empty'],
+          f'[{tag}] 0수(첫 수 전 포기) 안내', zd['empty'][:60])
+    check(zopen['buttonsInView'] and zopen['sheet']['bottom'] <= zopen['vh'],
+          f'[{tag}] 0수 안내에서도 버튼 잘리지 않음')
+    shot(page, f'{tag}-18-battle-log-empty')
+    page.click('#battle-log-btn')
+    page.wait_for_timeout(200)
+
+    # 6) 첫 수 전 시간 초과(0수)
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:1})")
+    page.wait_for_function("() => !document.getElementById('ov-result').hidden", timeout=8000)
+    page.wait_for_timeout(200)
+    to = battle_log_view(page)
+    tod = battle_log_entries(page)
+    reason = page.evaluate("document.getElementById('result-reason').textContent")
+    check(to['label'] == '배틀 내역 (0수)' and not tod['chain'] and '시간' in reason,
+          f'[{tag}] 시간 초과 0수에서도 버튼', f"{to['label']} / {reason}")
+    page.click('#battle-log-btn')
+    page.wait_for_timeout(240)
+    check('주고받은 단어가 없어요' in battle_log_entries(page)['empty'] and to['buttonsInView'],
+          f'[{tag}] 시간 초과 0수 안내', str(to['buttonsInView']))
+    page.click('#battle-log-btn')
+    page.wait_for_timeout(180)
+
+    # 7) 승리 결과에서도: 한방 단어 한 수로 끝난 판
+    pick = page.evaluate("""() => {
+        const d = window.__ITDA.dict;
+        for (const [ch] of d.ranges) {
+            const w = d.candidatesFor(ch, new Set()).find((x) => d.countFrom(x[x.length - 1]) === 0);
+            if (w) return { start: ch, word: w };
+        }
+        return null;
+    }""")
+    if check(pick is not None, f'[{tag}] 승리용 한방 단어 탐색', str(pick)):
+        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.evaluate(f"window.__ITDA.startGame({{level:1, first:'me', startChar:'{pick['start']}'}})")
+        page.wait_for_timeout(450)
+        play_word(page, pick['word'], wait=1800)
+        win = battle_log_view(page)
+        wind = battle_log_entries(page)
+        check(win['result'] and win['label'] == '배틀 내역 (1수)' and win['hidden'],
+              f'[{tag}] 승리 결과에 배틀 내역 버튼', f"{win['label']} / hidden={win['hidden']}")
+        page.click('#battle-log-btn')
+        page.wait_for_timeout(280)
+        page.wait_for_timeout(1400)   # 축하 연출이 걷힌 뒤
+        wopen = battle_log_view(page)
+        wrows = battle_log_entries(page)
+        bad = battle_log_rows_match(wind)
+        check(not wopen['hidden'] and len(wrows['rows']) == 1 and wrows['rows'][0]['word'] == pick['word']
+              and not bad,
+              f'[{tag}] 승리 1수 배틀 내역',
+              json.dumps(bad[:1] or [{'rows': wrows['rows'], 'chain': wrows['chain']}], ensure_ascii=False)[:400])
+        check(wopen['buttonsInView'] and wopen['sheet']['bottom'] <= wopen['vh'],
+              f'[{tag}] 승리 결과에서도 버튼 잘리지 않음',
+              f"card {wopen['sheet']['top']}~{wopen['sheet']['bottom']} / vh {wopen['vh']}")
+        shot(page, f'{tag}-19-battle-log-win')
+        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(150)
+
+
 def scenario_mission(page, tag, report_dir=None):
     """미션: 14종 후보 · 미달성 시 유지 · 중첩 보너스 · 성공 시 다음 글자."""
     print(f'  · 미션 규칙 [{tag}]')
@@ -1314,6 +1634,7 @@ def run_local(base_url, browser):
         scenario_no_custom(page, 'local-' + vp_name)
         scenario_no_hint(page, 'local-' + vp_name)
         scenario_result_level(page, 'local-' + vp_name)
+        scenario_battle_log(page, 'local-' + vp_name)
         scenario_mission(page, 'local-' + vp_name, REPORT_DIR)
         scenario_levels(page, 'local-' + vp_name)
         scenario_hell(page, 'local-' + vp_name)
@@ -1378,6 +1699,7 @@ def run_live(url, browser):
         scenario_no_custom(page, 'live-' + vp_name)
         scenario_no_hint(page, 'live-' + vp_name)
         scenario_result_level(page, 'live-' + vp_name)
+        scenario_battle_log(page, 'live-' + vp_name)
         scenario_mission(page, 'live-' + vp_name, REPORT_DIR)
         scenario_levels(page, 'live-' + vp_name)
         scenario_hell(page, 'live-' + vp_name)

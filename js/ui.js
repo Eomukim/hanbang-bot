@@ -53,6 +53,7 @@ export class App {
       'ov-result', 'result-badge', 'result-title', 'result-hardcore', 'result-level', 'result-level-face',
       'result-level-label', 'result-reason', 'result-me', 'result-bot',
       'result-stats', 'btn-again', 'btn-tosetup',
+      'battle-log-btn', 'battle-log-label', 'battle-log', 'battle-log-list',
     ];
     for (const id of ids) this.el[id] = $(id);
 
@@ -238,6 +239,7 @@ export class App {
     });
 
     this.el['btn-quit'].addEventListener('click', () => this.armQuit());
+    this.el['battle-log-btn'].addEventListener('click', () => this.toggleBattleLog());
     this.el['btn-hardcore'].addEventListener('click', () => {
       this.settings.hardcore = !this.settings.hardcore;
       this.persist();
@@ -654,8 +656,71 @@ export class App {
       <div><dt>턴</dt><dd>${payload.turns}</dd></div>
       <div><dt>최고 콤보</dt><dd>${payload.bestCombo}</dd></div>
       <div><dt>내 단어</dt><dd>${payload.words}</dd></div>`;
+    this.renderBattleLog(payload.chain || []);
     this.el['ov-result'].hidden = false;
     if (payload.win) this.confetti();
+  }
+
+  /* ── 배틀 내역 ─────────────────────────────────────────── */
+
+  /**
+   * 그 판에서 주고받은 수를 순서대로 늘어놓는다(턴 번호 · 나/봇 · 단어 · 획득 점수 · 그 수의 태그).
+   * 결과 화면은 승리 · 패배 · 시간 초과 · 포기 모두 여기를 거치므로 어느 쪽이든 볼 수 있고,
+   * 결과가 뜰 때는 항상 접힌 채로 시작한다.
+   */
+  renderBattleLog(chain = []) {
+    const list = this.el['battle-log-list'];
+    const count = chain.length;
+    this.el['battle-log-label'].textContent = `배틀 내역 (${count}수)`;
+    this.el['battle-log-btn'].classList.toggle('empty', count === 0);
+    this.setBattleLogOpen(false);
+    if (!count) {
+      list.innerHTML = '<li class="battle-log-empty">주고받은 단어가 없어요.</li>';
+      return;
+    }
+    list.innerHTML = chain.map((entry, i) => {
+      const who = entry.who === 'bot' ? 'bot' : 'me';
+      const tags = [
+        ...this.moveKindTags(entry),
+        ...this.dict.tagsOf(entry.word).map((t) => `<span class="tag">${esc(t)}</span>`),
+      ].join('');
+      return `
+        <li class="blog-move ${who}" data-turn="${i + 1}" data-who="${who}" data-score="${entry.score}" data-kind="${esc(entry.kind || '')}">
+          <span class="blog-turn" aria-label="${i + 1}수">${i + 1}</span>
+          <div class="blog-body">
+            <div class="blog-head">
+              <b class="blog-who">${who === 'me' ? '나' : '봇'}</b>
+              <span class="blog-gain">+${entry.score}</span>
+            </div>
+            <p class="blog-word">${esc(entry.word)}</p>
+            ${tags ? `<div class="blog-tags">${tags}</div>` : ''}
+          </div>
+        </li>`;
+    }).join('');
+  }
+
+  /** 게임 중 카드에 붙던 수 태그를 그대로 옮긴다(한방 · 미션 · 외통수 · 필승 라인 · 압박). */
+  moveKindTags(entry) {
+    const out = [];
+    const hits = entry.missionHits || 0;
+    if (hits > 0) {
+      out.push(`<span class="tag mission">${hits === 1 ? '미션 +50%' : `미션 ×${hits}`}</span>`);
+    }
+    const kindTag = { oneshot: '한방', outer: '외통수', route: '필승 라인', press: '압박' }[entry.kind];
+    if (kindTag) out.push(`<span class="tag danger">${kindTag}</span>`);
+    return out;
+  }
+
+  setBattleLogOpen(open) {
+    this.el['battle-log-btn'].setAttribute('aria-expanded', String(open));
+    this.el['battle-log'].hidden = !open;
+    if (open) this.el['battle-log'].scrollTop = 0;
+  }
+
+  toggleBattleLog() {
+    const open = this.el['battle-log-btn'].getAttribute('aria-expanded') === 'true';
+    this.setBattleLogOpen(!open);
+    this.sfx.play('tap');
   }
 
   /** 결과 화면에 이번 대국의 난이도를 배지로 남긴다(승리·패배·시간 초과·포기 모두). */
