@@ -640,3 +640,8 @@ body[data-level="4"] .stage-word.bot h2 { text-shadow: 0 0 34px rgba(255,94,125,
 .arena .chain { margin-top: auto; }
 .arena.has-bubble .bot-bubble { margin-top: auto; }
 .arena.has-bubble .chain { margin-top: 0; }
+
+/* 세로가 넉넉할 때는 큰 단어를 아레나 가운데에 */
+@media (min-height: 640px) {
+  .stage { flex: 1 1 auto; justify-content: center; }
+}
