@@ -8,6 +8,7 @@
  *   /workspace/.local/node/bin/node tools/bench.mjs --games 200
  *   /workspace/.local/node/bin/node tools/bench.mjs --games 200 --openings hell --out downloads/bench-after.json
  *   옵션: --levels 4,3,random --openings all|nokill|hell --seed N
+ *        --hell old5  (이전 구현과 비교: `git show <rev>:js/bot.js > js/__old_bot.js` 로 두고 실행)
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -101,10 +102,13 @@ console.log(`사전 ${dict.size.toLocaleString('en-US')}단어 로드 ${Math.rou
 
 const makeBot = (kind, rng) => {
   if (kind === 'random') return new RandomBot(dict, rng);
-  if (kind === 'old5') return new OldBot({ level: 5, dict, rng });
-  if (kind === 'hell') {
-    return HELL === 'old5' ? new OldBot({ level: 5, dict, rng }) : new Bot({ level: 5, dict, rng });
+  if (kind === 'old5' || (kind === 'hell' && HELL === 'old5')) {
+    if (!OldBot) {
+      throw new Error('이전 구현 비교에는 js/__old_bot.js 가 필요합니다: git show <rev>:js/bot.js > js/__old_bot.js');
+    }
+    return new OldBot({ level: 5, dict, rng });
   }
+  if (kind === 'hell') return new Bot({ level: 5, dict, rng });
   return new Bot({ level: Number(kind), dict, rng });
 };
 
