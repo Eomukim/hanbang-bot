@@ -1,7 +1,10 @@
-/** localStorage에 남는 설정 · 내 단어장 · 전적. */
+/** localStorage에 남는 설정 · 전적.
+ *
+ * 내 단어장 기능은 없앴다. 예전 버전이 이 기기에 남긴 hanbang.custom.v1 키는
+ * 읽지도 지우지도 않고 그냥 둔다(값이 무엇이든 앱 동작에 영향이 없다).
+ */
 
 const KEY_SETTINGS = 'hanbang.settings.v1';
-const KEY_CUSTOM = 'hanbang.custom.v1';
 const KEY_RECORD = 'hanbang.record.v1';
 
 const DEFAULT_SETTINGS = {
@@ -48,24 +51,6 @@ export function saveSettings(settings) {
     first: settings.first,
     sound: settings.sound,
   });
-}
-
-/** 내 단어장: { 단어: { mean, at } } */
-export function loadCustom() {
-  const raw = readJSON(KEY_CUSTOM, {});
-  const out = {};
-  for (const [word, meta] of Object.entries(raw)) {
-    if (typeof word !== 'string' || !word) continue;
-    out[word] = {
-      mean: typeof meta?.mean === 'string' ? meta.mean : '',
-      at: typeof meta?.at === 'number' ? meta.at : 0,
-    };
-  }
-  return out;
-}
-
-export function saveCustom(words) {
-  writeJSON(KEY_CUSTOM, words);
 }
 
 /** 전적: { [level]: { wins, losses, bestCombo, bestScore } } */

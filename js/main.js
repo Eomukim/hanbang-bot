@@ -4,18 +4,16 @@ import { Dictionary } from './data.js';
 import { App } from './ui.js';
 import { Sfx } from './audio.js';
 import { Bot, LEVELS, levelInfo } from './bot.js';
-import { loadSettings, loadCustom, loadRecord } from './store.js';
+import { loadSettings, loadRecord } from './store.js';
 
 async function boot() {
   const settings = loadSettings();
-  const custom = loadCustom();
   const record = loadRecord();
   const sfx = new Sfx(settings.sound);
 
   const dict = new Dictionary();
-  dict.setCustom(custom);
 
-  const app = new App({ dict, settings, custom, record, sfx });
+  const app = new App({ dict, settings, record, sfx });
   app.mount();
   app.show('loading');
 

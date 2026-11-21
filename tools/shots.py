@@ -110,16 +110,6 @@ with sync_playwright() as p:
             page.set_viewport_size({'width': 390, 'height': 844})
             page.wait_for_timeout(300)
 
-        # 내 단어장
-        page.evaluate("window.__HB.app.engine.destroy(); window.__HB.app.hideResult(); window.__HB.app.show('setup')")
-        page.click('#btn-custom')
-        page.fill('#custom-word', '냥냥이')
-        page.fill('#custom-mean', '고양이를 귀엽게 부르는 말')
-        page.click('#custom-form button[type=submit]')
-        page.wait_for_timeout(300)
-        shot(page, f'{vp_name}-4-custom')
-        page.click('#btn-custom-close')
-
         # 4단계 한방: 내가 낸 단어 뒤에 봇이 한방 단어를 꽂는 순간
         pick = page.evaluate("""() => {
             const d = window.__HB.dict;

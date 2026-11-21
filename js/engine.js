@@ -168,7 +168,7 @@ export class Engine {
     const starts = this.dictStartVariants();
     if (!starts.some((s) => word.startsWith(s))) return { ok: false, error: ERR.WRONG_START };
     if (this.used.has(word)) return { ok: false, error: ERR.USED };
-    if (!this.dict.has(word) && !this.dict.custom.has(word)) return { ok: false, error: ERR.NOT_FOUND };
+    if (!this.dict.has(word)) return { ok: false, error: ERR.NOT_FOUND };
     return { ok: true, word };
   }
 

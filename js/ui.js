@@ -2,8 +2,7 @@
 
 import { Engine } from './engine.js';
 import { LEVELS, levelInfo, botLine } from './bot.js';
-import { normalizeWord, HANGUL_ONLY } from './rules.js';
-import { saveSettings, saveCustom, recordResult } from './store.js';
+import { saveSettings, recordResult } from './store.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -23,10 +22,9 @@ const REASON_TEXT = {
 };
 
 export class App {
-  constructor({ dict, settings, custom, record, sfx }) {
+  constructor({ dict, settings, record, sfx }) {
     this.dict = dict;
     this.settings = settings;
-    this.custom = custom;
     this.record = record;
     this.sfx = sfx;
     this.engine = null;
@@ -45,23 +43,21 @@ export class App {
   mount() {
     const ids = [
       'scr-loading', 'scr-setup', 'scr-game', 'load-fill', 'load-meta', 'load-error',
-      'levels', 'lv-desc', 'time-opts', 'first-opts', 'btn-custom', 'custom-count',
-      'btn-sound', 'btn-start', 'record', 'dict-count',
+      'levels', 'lv-desc', 'time-opts', 'first-opts',
+      'btn-sound', 'sound-icon', 'sound-value', 'btn-start', 'record', 'dict-count',
       'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit',
       'arena', 'stage', 'stage-hint', 'bot-bubble', 'chain',
       'need-char', 'need-alt', 'cand-count', 'chip-mission', 'chip-combo',
       'countdown', 'time-left', 'timer-fill', 'turn-panel', 'composer', 'word-input', 'btn-hint', 'btn-submit',
-      'ov-result', 'result-badge', 'result-title', 'result-reason', 'result-me', 'result-bot',
+      'ov-result', 'result-badge', 'result-title', 'result-level', 'result-level-face',
+      'result-level-label', 'result-reason', 'result-me', 'result-bot',
       'result-stats', 'btn-again', 'btn-tosetup',
-      'ov-custom', 'btn-custom-close', 'custom-form', 'custom-word', 'custom-mean',
-      'custom-msg', 'custom-list',
     ];
     for (const id of ids) this.el[id] = $(id);
 
     this.renderLevels();
     this.renderSegments();
     this.renderSoundButton();
-    this.renderCustomCount();
     this.renderRecord();
     this.el['dict-count'].textContent = this.dict.size.toLocaleString('ko-KR');
 
@@ -165,12 +161,11 @@ export class App {
 
   renderSoundButton() {
     const btn = this.el['btn-sound'];
-    btn.textContent = this.settings.sound ? '소리 켬' : '소리 끔';
-    btn.setAttribute('aria-pressed', String(this.settings.sound));
-  }
-
-  renderCustomCount() {
-    this.el['custom-count'].textContent = String(Object.keys(this.custom).length);
+    const on = this.settings.sound;
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('aria-label', `효과음 ${on ? '켬' : '끔'}`);
+    this.el['sound-icon'].textContent = on ? '🔊' : '🔇';
+    this.el['sound-value'].textContent = on ? '켬' : '끔';
   }
 
   renderRecord() {
@@ -229,23 +224,9 @@ export class App {
       if (this.el['word-input'].classList.contains('bad')) this.el['word-input'].classList.remove('bad');
     });
 
-    // 내 단어장
-    this.el['btn-custom'].addEventListener('click', () => this.openCustom());
-    this.el['btn-custom-close'].addEventListener('click', () => this.closeCustom());
-    this.el['ov-custom'].addEventListener('click', (e) => {
-      if (e.target === this.el['ov-custom']) this.closeCustom();
-    });
-    this.el['custom-form'].addEventListener('submit', (e) => {
-      e.preventDefault();
-      this.addCustomWord();
-    });
-
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        if (!this.el['ov-custom'].hidden) this.closeCustom();
-        else if (!this.el['ov-result'].hidden) this.hideResult();
-      }
-      if (e.key === 'Enter' && this.screen === 'setup' && this.el['ov-custom'].hidden) {
+      if (e.key === 'Escape' && !this.el['ov-result'].hidden) this.hideResult();
+      if (e.key === 'Enter' && this.screen === 'setup') {
         if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
         e.preventDefault();
         this.startGame();
@@ -472,7 +453,6 @@ export class App {
 
   renderStage(entry, mission, kind) {
     const tags = this.dict.tagsOf(entry.word);
-    const mean = this.dict.meanOf(entry.word);
     const who = entry.who === 'me' ? '나' : '봇';
     const hits = mission && mission.hits > 0 ? mission.hits : 0;
     const missionTag = hits
@@ -497,7 +477,6 @@ export class App {
         <div class="stage-sub">
           <span class="gain">+${entry.score}</span>
           ${kindHtml}${tagHtml}
-          ${mean ? `<span class="mean">${esc(mean)}</span>` : ''}
         </div>
       </div>`;
     this.el.arena.scrollTop = 0;
@@ -645,6 +624,7 @@ export class App {
     sheet.classList.toggle('lose', !payload.win);
     this.el['result-badge'].textContent = payload.win ? '🏆' : '💀';
     this.el['result-title'].textContent = payload.win ? '승리' : '패배';
+    this.renderResultLevel(payload.state?.level);
     this.el['result-reason'].textContent = reasonLine || '';
     this.el['result-me'].textContent = payload.scoreMe.toLocaleString('ko-KR');
     this.el['result-bot'].textContent = payload.scoreBot.toLocaleString('ko-KR');
@@ -654,6 +634,17 @@ export class App {
       <div><dt>내 단어</dt><dd>${payload.words}</dd></div>`;
     this.el['ov-result'].hidden = false;
     if (payload.win) this.confetti();
+  }
+
+  /** 결과 화면에 이번 대국의 난이도를 배지로 남긴다(승리·패배·시간 초과·포기 모두). */
+  renderResultLevel(level) {
+    const info = levelInfo(level ?? this.engine?.level ?? this.settings.level);
+    const name = `Lv.${info.id} ${info.name}`;
+    const box = this.el['result-level'];
+    box.dataset.lv = String(info.id);
+    box.setAttribute('aria-label', `대국 난이도 ${name}`);
+    this.el['result-level-face'].textContent = info.face;
+    this.el['result-level-label'].textContent = name;
   }
 
   hideResult() {
@@ -672,82 +663,5 @@ export class App {
       document.body.appendChild(piece);
       setTimeout(() => piece.remove(), 2600);
     }
-  }
-
-  /* ── 내 단어장 ─────────────────────────────────────────── */
-
-  openCustom() {
-    this.el['ov-custom'].hidden = false;
-    this.el['custom-msg'].textContent = '';
-    this.renderCustom();
-    setTimeout(() => this.el['custom-word'].focus({ preventScroll: true }), 120);
-  }
-
-  closeCustom() {
-    this.el['ov-custom'].hidden = true;
-  }
-
-  renderCustom() {
-    const entries = Object.entries(this.custom).sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
-    const list = this.el['custom-list'];
-    if (!entries.length) {
-      list.innerHTML = '<li class="custom-empty">아직 추가한 단어가 없어요.</li>';
-      return;
-    }
-    list.innerHTML = entries.map(([word, meta]) => `
-      <li data-word="${esc(word)}">
-        <b>${esc(word)}</b>${meta.mean ? `<span>${esc(meta.mean)}</span>` : ''}
-        <button type="button" aria-label="${esc(word)} 삭제" data-remove="${esc(word)}">✕</button>
-      </li>`).join('');
-    list.querySelectorAll('[data-remove]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const word = btn.dataset.remove;
-        delete this.custom[word];
-        this.dict.removeCustom(word);
-        saveCustom(this.custom);
-        this.renderCustom();
-        this.renderCustomCount();
-      });
-    });
-  }
-
-  addCustomWord() {
-    const wordInput = this.el['custom-word'];
-    const meanInput = this.el['custom-mean'];
-    const msg = this.el['custom-msg'];
-    const word = normalizeWord(wordInput.value);
-
-    msg.classList.remove('ok');
-    if (!word) {
-      msg.textContent = '단어를 입력해 주세요.';
-      return;
-    }
-    if (word.length < 2) {
-      msg.textContent = '두 글자 이상만 추가할 수 있어요.';
-      return;
-    }
-    if (!HANGUL_ONLY.test(word)) {
-      msg.textContent = '한글 단어만 추가할 수 있어요.';
-      return;
-    }
-    if (this.dict.has(word)) {
-      msg.textContent = '이미 사전에 있는 단어예요.';
-      return;
-    }
-    if (this.custom[word]) {
-      msg.textContent = '이미 내 단어장에 있어요.';
-      return;
-    }
-
-    this.custom[word] = { mean: meanInput.value.trim().slice(0, 40), at: Date.now() };
-    this.dict.addCustom(word, this.custom[word].mean);
-    saveCustom(this.custom);
-    this.renderCustomCount();
-    this.renderCustom();
-    msg.classList.add('ok');
-    msg.textContent = `‘${word}’ 추가 완료 — 나와 봇 모두 쓸 수 있어요.`;
-    wordInput.value = '';
-    meanInput.value = '';
-    wordInput.focus({ preventScroll: true });
   }
 }

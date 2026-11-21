@@ -27,10 +27,6 @@ export class Dictionary {
     this.flags = new Uint8Array(0);
     /** @type {Map<string, [number, number]>} 시작 음절 → [시작, 끝) */
     this.ranges = new Map();
-    /** @type {Map<string, {mean: string, at: number}>} 내 단어장 */
-    this.custom = new Map();
-    /** @type {Map<string, string[]>} 시작 음절 → 내 단어장 단어 */
-    this.customByStart = new Map();
     this.stats = null;
     /** 빌드 타임 음절 대전 그래프: 승리·패배 노드의 깊이와 한방 단어 */
     this.graph = { win: new Map(), lose: new Map(), shots: new Map(), statusCounts: null };
@@ -183,19 +179,12 @@ export class Dictionary {
     return i === -1 ? 0 : this.flags[i] || 0;
   }
 
-  meanOf(word) {
-    const meta = this.custom.get(word);
-    if (meta?.mean) return meta.mean;
-    return '';
-  }
-
   tagsOf(word) {
     const tags = [];
     const flag = this.flagOf(word);
     for (const [bit, name] of FLAG_TAGS) {
       if (flag & bit) tags.push(name);
     }
-    if (this.custom.has(word)) tags.push('내 단어장');
     return tags;
   }
 
@@ -204,14 +193,10 @@ export class Dictionary {
     return this.ranges.get(ch) || null;
   }
 
-  /** 사전 단어 중 ch로 시작하는 수 (내 단어장 제외). */
+  /** 사전 단어 중 ch로 시작하는 수. */
   dictStartCount(ch) {
     const r = this.ranges.get(ch);
     return r ? r[1] - r[0] : 0;
-  }
-
-  customStartCount(ch) {
-    return this.customByStart.get(ch)?.length || 0;
   }
 
   /**
@@ -221,7 +206,7 @@ export class Dictionary {
   countFrom(ch) {
     let n = 0;
     for (const start of allowedStarts(ch)) {
-      n += this.dictStartCount(start) + this.customStartCount(start);
+      n += this.dictStartCount(start);
     }
     return n;
   }
@@ -246,10 +231,6 @@ export class Dictionary {
           if (!used.has(this.words[i])) return true;
         }
       }
-      const custom = this.customByStart.get(start);
-      if (custom) {
-        for (const w of custom) if (!used.has(w)) return true;
-      }
     }
     return false;
   }
@@ -265,12 +246,6 @@ export class Dictionary {
           if (!used.has(w)) out.push(w);
         }
       }
-      const custom = this.customByStart.get(start);
-      if (custom) {
-        for (const w of custom) {
-          if (!used.has(w) && out.length < limit) out.push(w);
-        }
-      }
     }
     return out;
   }
@@ -282,37 +257,5 @@ export class Dictionary {
       if (b - a >= minCount) out.push(ch);
     }
     return out;
-  }
-
-  /* ── 내 단어장 ─────────────────────────────────────────── */
-
-  setCustom(map) {
-    this.custom = new Map();
-    this.customByStart = new Map();
-    for (const [word, meta] of Object.entries(map || {})) {
-      this.addCustom(word, meta?.mean, { silent: true });
-    }
-  }
-
-  addCustom(word, mean = '') {
-    if (!word) return false;
-    this.custom.set(word, { mean: mean || '', at: Date.now() });
-    const ch = word.charAt(0);
-    if (!this.customByStart.has(ch)) this.customByStart.set(ch, []);
-    const list = this.customByStart.get(ch);
-    if (!list.includes(word)) list.push(word);
-    return true;
-  }
-
-  removeCustom(word) {
-    if (!this.custom.delete(word)) return false;
-    const ch = word.charAt(0);
-    const list = this.customByStart.get(ch);
-    if (list) {
-      const i = list.indexOf(word);
-      if (i !== -1) list.splice(i, 1);
-      if (!list.length) this.customByStart.delete(ch);
-    }
-    return true;
   }
 }

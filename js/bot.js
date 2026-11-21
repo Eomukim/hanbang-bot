@@ -192,11 +192,11 @@ class Duel {
     return this.visits > this.budget || performance.now() > this.deadline;
   }
 
-  /** 이 글자로 아직 낼 수 있는 단어 수(내 단어장 포함, 이미 나온 단어 제외). */
+  /** 이 글자로 아직 낼 수 있는 단어 수(이미 나온 단어 제외). */
   liveCount(ch) {
     let n = 0;
     for (const s of allowedStarts(ch)) {
-      n += this.dict.dictStartCount(s) + this.dict.customStartCount(s) - (this.starts.get(s) || 0);
+      n += this.dict.dictStartCount(s) - (this.starts.get(s) || 0);
     }
     return n > 0 ? n : 0;
   }
@@ -221,7 +221,7 @@ class Duel {
         if (!this.used.has(w) && this.dict.countFrom(lastOf(w)) === 0) return w;
       }
     }
-    // 한방 목록에 없는 경우(내 단어장, 후속 단어가 모두 소진된 자리)는 후보가 적을 때만 직접 확인
+    // 한방 목록에 없는 경우(후속 단어가 모두 소진된 자리)는 후보가 적을 때만 직접 확인
     if (this.liveCount(ch) <= 40) {
       for (const w of this.dict.candidatesFor(ch, this.used)) {
         this.visits += 1;

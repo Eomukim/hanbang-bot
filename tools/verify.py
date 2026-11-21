@@ -3,7 +3,9 @@
 
 로컬(파일 서버) 또는 라이브 URL을 headless Chromium으로 열어
  - 콘솔/페이지 에러, 가로 오버플로
- - 두음법칙 · 중복 차단 · 내 단어장 · 4단계 극악 한방 승리 · 봇 난이도 규칙
+ - 두음법칙 · 중복 차단 · 4단계 극악 한방 승리 · 봇 난이도 규칙
+ - 내 단어장 삭제(버튼·모달·사전 API 없음, 남은 localStorage 값 무시)
+ - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
  - 5단계 난이도 카드(데스크톱/모바일 배치)와 4단계 기준 localStorage 호환
  - Lv.5 지옥: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 검증 · 압박/미션·장문 · 응답 시간
  - 미션 규칙(14종 후보 · 미달성 시 유지 · 중첩 보너스 · 성공 시 다음 글자)
@@ -481,6 +483,9 @@ def scenario_bot_levels(page, tag):
     check(st['phase'] == 'over', f'[{tag}] 4단계 극악 봇 즉시 종료', st['phase'])
     check(is_oneshot, f'[{tag}] 4단계 극악 봇 한방 단어 사용', last_bot)
     check(page.is_visible('#ov-result'), f'[{tag}] 결과 화면 표시')
+    lv4 = result_view(page)
+    check(lv4['label'] == 'Lv.4 극악' and lv4['lv'] == '4',
+          f'[{tag}] 봇 한방 패배 결과에 난이도', json.dumps(lv4, ensure_ascii=False)[:160])
     shot(page, f'{tag}-05-level4-oneshot')
     page.wait_for_timeout(600)
 
@@ -563,13 +568,14 @@ def scenario_legacy(page, tag):
     page.wait_for_timeout(250)
     view = page.evaluate("""() => ({
         checked: document.querySelector('.level[aria-checked="true"]')?.dataset.lv,
-        sound: document.getElementById('btn-sound').textContent,
+        sound: document.getElementById('sound-value').textContent,
+        soundPressed: document.getElementById('btn-sound').getAttribute('aria-pressed'),
         first: document.querySelector('#first-opts button[aria-checked="true"]')?.dataset.first,
         record: document.getElementById('record').innerText,
     })""")
     check(view['checked'] == '4', f'[{tag}] 옛 설정 Lv.4 복원', str(view['checked']))
-    check(view['sound'] == '소리 끔' and view['first'] == 'bot', f'[{tag}] 옛 설정 소리·선공 복원',
-          f"{view['sound']} / {view['first']}")
+    check(view['sound'] == '끔' and view['soundPressed'] == 'false' and view['first'] == 'bot',
+          f'[{tag}] 옛 설정 소리·선공 복원', f"{view['sound']} / {view['first']}")
     check('Lv.4 극악' in view['record'] and 'Lv.1 쉬움' in view['record'] and '3승 4패' in view['record'],
           f'[{tag}] 옛 전적 Lv.4 극악으로 표시', view['record'].replace('\n', ' | ')[:120])
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 옛 설정 화면 가로 오버플로 0', str(overflow(page)))
@@ -725,74 +731,137 @@ def scenario_hell(page, tag):
     page.wait_for_timeout(200)
 
 
-def scenario_custom(page, tag):
-    page.evaluate("window.__HB.app.engine.destroy()")
-    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
-    page.click('#btn-custom')
-    page.fill('#custom-word', '냥냥이')
-    page.fill('#custom-mean', '고양이 애칭')
-    page.click('#custom-form button[type=submit]')
-    page.wait_for_timeout(200)
-    check(page.evaluate("window.__HB.dict.custom.has('냥냥이')"), f'[{tag}] 내 단어장 추가')
-    shot(page, f'{tag}-06-custom')
-    page.click('#btn-custom-close')
-    page.evaluate("window.__HB.startGame({level:1, first:'me', startChar:'냥'})")
-    page.wait_for_timeout(450)
-    play_word(page, '냥냥이', wait=400)
-    st = state(page)
-    check(bool(st['chain']) and st['chain'][0]['word'] == '냥냥이', f'[{tag}] 커스텀 단어 판정 반영')
-    # 저장 확인
-    stored = page.evaluate("JSON.parse(localStorage.getItem('hanbang.custom.v1') || '{}')")
-    check('냥냥이' in stored, f'[{tag}] 내 단어장 localStorage 저장')
-    page.evaluate("""() => {
-        const raw = JSON.parse(localStorage.getItem('hanbang.custom.v1') || '{}');
-        delete raw['냥냥이'];
-        localStorage.setItem('hanbang.custom.v1', JSON.stringify(raw));
-        window.__HB.dict.removeCustom('냥냥이');
-        window.__HB.app.custom = raw;
-        window.__HB.app.renderCustomCount();
+def result_view(page):
+    return page.evaluate("""() => {
+        const box = document.getElementById('result-level');
+        const label = document.getElementById('result-level-label');
+        return {
+            visible: !document.getElementById('ov-result').hidden,
+            title: document.getElementById('result-title').textContent,
+            reason: document.getElementById('result-reason').textContent,
+            lv: box ? box.dataset.lv : null,
+            label: label ? label.textContent : '',
+            face: document.getElementById('result-level-face').textContent,
+            height: box ? Math.round(box.getBoundingClientRect().height) : 0,
+        };
     }""")
 
-    # 내가 한방 단어로 이기는 경로: 후속 단어가 하나도 없는 글자로 끝나는 커스텀 단어
-    # (사전이 커지면 특정 글자(예: 늄→윰)에 후속 단어가 생기므로 매번 빈 글자를 찾는다)
-    dead = page.evaluate("""() => {
+
+def scenario_no_custom(page, tag):
+    """내 단어장 삭제: 버튼·모달·사전 API가 없고, 남은 localStorage 값은 무시된다."""
+    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(150)
+    gone = page.evaluate("""() => ({
+        btn: !!document.getElementById('btn-custom'),
+        modal: !!document.getElementById('ov-custom'),
+        inputs: document.querySelectorAll('#custom-word,#custom-mean,#custom-list,#custom-form').length,
+        text: document.body.innerText.includes('내 단어장'),
+        dictApi: ['custom', 'customByStart', 'addCustom', 'removeCustom', 'setCustom', 'customStartCount', 'meanOf']
+            .filter((k) => window.__HB.dict[k] !== undefined),
+        appApi: ['openCustom', 'addCustomWord', 'renderCustom', 'renderCustomCount']
+            .filter((k) => typeof window.__HB.app[k] === 'function'),
+        state: typeof window.__HB.app.custom,
+    })""")
+    check(not gone['btn'] and not gone['modal'] and not gone['inputs'],
+          f'[{tag}] 내 단어장 버튼·모달·입력 없음', json.dumps(gone, ensure_ascii=False)[:160])
+    check(not gone['text'], f'[{tag}] 화면에 내 단어장 문구 0건')
+    check(not gone['dictApi'] and not gone['appApi'] and gone['state'] == 'undefined',
+          f'[{tag}] 내 단어장 사전·앱 API 없음',
+          f"dict={gone['dictApi']} app={gone['appApi']} state={gone['state']}")
+
+    # 버튼이 빠진 설정 행이 빈칸 없이 한 줄을 채우는지 (데스크톱·모바일)
+    layout = page.evaluate("""() => {
+        const row = document.getElementById('btn-sound').getBoundingClientRect();
+        const box = document.querySelector('.setup-actions').getBoundingClientRect();
+        const btn = document.getElementById('btn-sound');
+        return { rowW: Math.round(row.width), boxW: Math.round(box.width),
+                 fill: row.width > 0 ? Math.round(row.width / box.width * 100) : 0,
+                 sound: document.getElementById('sound-value').textContent,
+                 pressed: btn.getAttribute('aria-pressed'),
+                 cols: getComputedStyle(document.querySelector('.setup-actions')).gridTemplateColumns };
+    }""")
+    check(layout['fill'] >= 99, f'[{tag}] 효과음 설정 행이 폭 전체 사용',
+          json.dumps(layout, ensure_ascii=False))
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 화면 가로 오버플로 0', str(overflow(page)))
+
+    # 옛 버전이 남긴 localStorage 값: 지우지 않고 그대로 두되, 읽지도 인정하지도 않는다
+    page.evaluate("""() => localStorage.setItem('hanbang.custom.v1', JSON.stringify({
+        '냥냥이': { mean: '고양이 애칭', at: 1 },
+        '력량': { mean: '예전 단어', at: 2 },
+    }))""")
+    page.reload(wait_until='domcontentloaded')
+    wait_ready(page)
+    page.wait_for_timeout(200)
+    left = page.evaluate("""() => ({
+        key: !!localStorage.getItem('hanbang.custom.v1'),
+        setup: !document.getElementById('scr-setup').hidden,
+        text: document.body.innerText.includes('내 단어장'),
+        size: window.__HB.dict.size,
+    })""")
+    check(left['key'] and left['setup'] and left['size'] > 300000,
+          f'[{tag}] 옛 내 단어장 값이 남아 있어도 정상 부팅', json.dumps(left, ensure_ascii=False))
+    check(not left['text'], f'[{tag}] 옛 값이 있어도 화면에 내 단어장 문구 0건')
+    res = page.evaluate("""() => {
+        window.__HB.startGame({ level: 1, first: 'me', startChar: '냥' });
+        const v = window.__HB.engine.validate('냥냥이');
+        window.__HB.app.engine.destroy();
+        window.__HB.app.hideResult();
+        window.__HB.app.show('setup');
+        return v;
+    }""")
+    check(res['ok'] is False and res['error']['code'] == 'notfound',
+          f'[{tag}] 옛 내 단어장 단어는 사전에 없음으로 판정',
+          json.dumps(res, ensure_ascii=False)[:140])
+    page.evaluate("localStorage.removeItem('hanbang.custom.v1')")
+    page.wait_for_timeout(100)
+
+
+def scenario_result_level(page, tag):
+    """결과 화면: 승리·패배·시간 초과·포기 모두 어떤 난이도였는지 보인다."""
+    # 1) Lv.1 에서 진짜 한방 단어로 승리
+    pick = page.evaluate("""() => {
         const d = window.__HB.dict;
-        for (let code = 0xAC00; code <= 0xD7A3; code += 1) {
-            const ch = String.fromCharCode(code);
-            if (d.countFrom(ch) === 0 && !d.has('냥' + ch)) return ch;
+        for (const [ch] of d.ranges) {
+            const w = d.candidatesFor(ch, new Set()).find((x) => d.countFrom(x[x.length - 1]) === 0);
+            if (w) return { start: ch, word: w };
         }
         return null;
     }""")
-    check(dead is not None, f'[{tag}] 한방용 빈 글자 탐색', str(dead))
-    if not dead:
-        return
-    win_word = '냥' + dead
-    page.evaluate("""(word) => {
-        window.__HB.app.custom[word] = { mean: '검사용', at: Date.now() };
-        window.__HB.dict.addCustom(word, '검사용');
-        window.__HB.app.hideResult();
-        window.__HB.startGame({ level: 1, first: 'me', startChar: '냥' });
-    }""", win_word)
-    page.wait_for_timeout(450)
-    play_word(page, win_word, wait=1800)
-    st = state(page)
-    title = page.evaluate("document.getElementById('result-title').textContent")
-    check(st['phase'] == 'over' and title == '승리', f'[{tag}] 한방 단어로 승리', f"{st['phase']} / {title} ({win_word})")
-    shot(page, f'{tag}-08-player-win')
-    page.evaluate("""(word) => {
-        delete window.__HB.app.custom[word];
-        window.__HB.dict.removeCustom(word);
-        window.__HB.app.hideResult();
-    }""", win_word)
+    if check(pick is not None, f'[{tag}] 승리용 한방 단어 탐색', str(pick)):
+        page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+        page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+        page.evaluate(f"window.__HB.startGame({{level:1, first:'me', startChar:'{pick['start']}'}})")
+        page.wait_for_timeout(450)
+        play_word(page, pick['word'], wait=1800)
+        win = result_view(page)
+        check(win['title'] == '승리' and win['label'] == 'Lv.1 쉬움' and win['lv'] == '1',
+              f'[{tag}] 승리 결과에 난이도', json.dumps(win, ensure_ascii=False)[:160])
+        check(win['height'] >= 20, f'[{tag}] 난이도 배지 렌더', str(win['height']))
+        shot(page, f'{tag}-13-result-win')
 
-    # 시간 초과 패배
-    page.evaluate("window.__HB.startGame({level:1, first:'me', timeLimit:1})")
-    page.wait_for_timeout(2200)
-    st = state(page)
-    reason = page.evaluate("document.getElementById('result-reason').textContent")
-    check(st['phase'] == 'over' and '시간' in reason, f'[{tag}] 제한 시간 초과 패배', reason)
-    shot(page, f'{tag}-09-timeout')
-    page.evaluate("window.__HB.app.hideResult()")
+    # 2) Lv.3 시간 초과 패배
+    page.evaluate("window.__HB.startGame({level:3, first:'me', timeLimit:1})")
+    page.wait_for_timeout(2300)
+    lose = result_view(page)
+    check(lose['title'] == '패배' and lose['label'] == 'Lv.3 어려움' and lose['lv'] == '3',
+          f'[{tag}] 시간 초과 결과에 난이도', json.dumps(lose, ensure_ascii=False)[:160])
+    check('시간' in lose['reason'], f'[{tag}] 시간 초과 사유', lose['reason'])
+    shot(page, f'{tag}-14-result-timeout')
+
+    # 3) Lv.5 포기 → 결과 화면 난이도 (Lv.3 표시가 남지 않는지)
+    page.evaluate("window.__HB.startGame({level:5, first:'me', timeLimit:20})")
+    page.wait_for_timeout(400)
+    page.evaluate("window.__HB.engine.quit()")
+    page.wait_for_timeout(1000)
+    quit_view = result_view(page)
+    check(quit_view['title'] == '패배' and quit_view['label'] == 'Lv.5 지옥' and quit_view['lv'] == '5',
+          f'[{tag}] 포기 결과에 난이도', json.dumps(quit_view, ensure_ascii=False)[:160])
+    check('포기' in quit_view['reason'], f'[{tag}] 포기 사유', quit_view['reason'])
+    shot(page, f'{tag}-15-result-quit')
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 결과 화면 가로 오버플로 0', str(overflow(page)))
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(150)
 
 
 def scenario_mission(page, tag, report_dir=None):
@@ -972,7 +1041,8 @@ def run_local(base_url, browser):
         scenario_twoeum(page, 'local-' + vp_name)
         scenario_new_words(page, 'local-' + vp_name)
         scenario_bot_levels(page, 'local-' + vp_name)
-        scenario_custom(page, 'local-' + vp_name)
+        scenario_no_custom(page, 'local-' + vp_name)
+        scenario_result_level(page, 'local-' + vp_name)
         scenario_mission(page, 'local-' + vp_name, REPORT_DIR)
         scenario_levels(page, 'local-' + vp_name)
         scenario_hell(page, 'local-' + vp_name)
@@ -1033,6 +1103,8 @@ def run_live(url, browser):
         scenario_twoeum(page, 'live-' + vp_name)
         scenario_new_words(page, 'live-' + vp_name)
         scenario_bot_levels(page, 'live-' + vp_name)
+        scenario_no_custom(page, 'live-' + vp_name)
+        scenario_result_level(page, 'live-' + vp_name)
         scenario_mission(page, 'live-' + vp_name, REPORT_DIR)
         scenario_levels(page, 'live-' + vp_name)
         scenario_hell(page, 'live-' + vp_name)

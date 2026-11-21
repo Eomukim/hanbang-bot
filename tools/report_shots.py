@@ -6,8 +6,10 @@
 - 난이도 5단계(Lv.4 극악 · Lv.5 지옥) 카드와 Lv.5 대전 화면
 - Lv.5 지옥 봇이 실제로: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 · 소수 후보 압박 · 미션/장문
 - 4단계 극악 한방 봇 동작 확인
+- 내 단어장 삭제(버튼·모달·사전 API 없음)와 효과음 설정 행 전체 폭
+- 결과 화면(승리·패배·포기)의 난이도 배지
 - downloads/hanbang-bot/ 에 setup.png, lv5-setup.png, lv5-game.png, oneshot.png,
-  mobile-game.png, mobile-lv5.png 저장
+  result-win.png, result-lv5.png, mobile-game.png, mobile-lv5.png, mobile-result.png 저장
 
 usage:
     python3 tools/report_shots.py --url https://hanbang-bot.onrender.com
@@ -133,6 +135,19 @@ def live_kill(page, node, used):
     }""", [node, used])
 
 
+def result_view(page):
+    return page.evaluate("""() => {
+        const box = document.getElementById('result-level');
+        return {
+            visible: !document.getElementById('ov-result').hidden,
+            title: document.getElementById('result-title').textContent,
+            reason: document.getElementById('result-reason').textContent,
+            lv: box ? box.dataset.lv : null,
+            label: box ? document.getElementById('result-level-label').textContent : '',
+        };
+    }""")
+
+
 def play_hell_game(page, turns=4, shot_path=None):
     """Lv.5 지옥과 실제로 한 판: 사람처럼 두고 봇의 응수·태그·시간·한방 각을 기록."""
     page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
@@ -236,6 +251,20 @@ def main():
         hits = brand_hits(page)
         check(not hits, '설정 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
         page.screenshot(path=os.path.join(OUT, 'setup.png'))
+
+        gone = page.evaluate("""() => ({
+            btn: !!document.getElementById('btn-custom'),
+            modal: !!document.getElementById('ov-custom'),
+            text: document.body.innerText.includes('내 단어장'),
+            api: ['custom', 'customByStart', 'addCustom', 'removeCustom', 'setCustom', 'customStartCount', 'meanOf']
+                .filter((k) => window.__HB.dict[k] !== undefined),
+            row: Math.round(document.getElementById('btn-sound').getBoundingClientRect().width),
+            box: Math.round(document.querySelector('.setup-actions').getBoundingClientRect().width),
+        })""")
+        check(not gone['btn'] and not gone['modal'] and not gone['text'] and not gone['api'],
+              '내 단어장 삭제(버튼·모달·API·문구 없음)', json.dumps(gone, ensure_ascii=False))
+        check(gone['row'] >= gone['box'] - 1 and gone['row'] > 200,
+              '효과음 설정 행 전체 폭', f"{gone['row']}/{gone['box']}px")
 
         cards = page.evaluate("""() => [...document.querySelectorAll('.level')].map((el) => ({
             lv: el.dataset.lv, name: el.querySelector('b').textContent, label: el.querySelector('small').textContent }))""")
@@ -341,10 +370,53 @@ def main():
                   f'{last_bot} / {st["phase"]}')
             check(page.is_visible('#ov-result'), '결과 화면 표시')
             check(sum(overflow(page).values()) <= 0, '결과 화면 가로 오버플로 0', str(overflow(page)))
+            lv4 = result_view(page)
+            check(lv4['label'] == 'Lv.4 극악',
+                  '패배 결과 화면 난이도(Lv.4 극악)', json.dumps(lv4, ensure_ascii=False))
             hits = brand_hits(page)
             check(not hits, '게임·결과 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
             page.screenshot(path=os.path.join(OUT, 'oneshot.png'))
             summary['desktop_oneshot'] = {'dealt': pick['word'], 'bot': last_bot, 'phase': st['phase']}
+
+        # ── 데스크톱: 승리 결과 화면 난이도 ─────────────────
+        win_pick = page.evaluate("""() => {
+            const d = window.__HB.dict;
+            for (const [ch] of d.ranges) {
+                const w = d.candidatesFor(ch, new Set()).find((x) => d.countFrom(x[x.length - 1]) === 0);
+                if (w) return { start: ch, word: w };
+            }
+            return null;
+        }""")
+        if check(win_pick is not None, '승리용 한방 단어 탐색', str(win_pick)):
+            page.evaluate('window.__HB.app.engine && window.__HB.app.engine.destroy()')
+            page.evaluate('window.__HB.app.hideResult()')
+            page.evaluate(f"window.__HB.startGame({{level:1, first:'me', startChar:'{win_pick['start']}'}})")
+            page.wait_for_timeout(450)
+            page.fill('#word-input', win_pick['word'])
+            page.click('#btn-submit')
+            page.wait_for_timeout(1800)
+            page.wait_for_timeout(1400)   # 축하 연출이 걷힌 뒤의 결과 화면
+            win = result_view(page)
+            check(win['title'] == '승리' and win['label'] == 'Lv.1 쉬움',
+                  '승리 결과 화면 난이도(Lv.1 쉬움)', json.dumps(win, ensure_ascii=False))
+            check(sum(overflow(page).values()) <= 0, '승리 결과 화면 가로 오버플로 0', str(overflow(page)))
+            hits = brand_hits(page)
+            check(not hits, '승리 결과 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+            page.screenshot(path=os.path.join(OUT, 'result-win.png'))
+            summary['desktop_win'] = {'word': win_pick['word'], 'title': win['title'], 'level': win['label']}
+
+        # ── 데스크톱: Lv.5 포기 결과 화면 난이도 ────────────
+        page.evaluate('window.__HB.app.hideResult()')
+        page.evaluate("window.__HB.startGame({level:5, first:'me', timeLimit:20})")
+        page.wait_for_timeout(400)
+        page.evaluate('window.__HB.engine.quit()')
+        page.wait_for_timeout(1000)
+        lv5 = result_view(page)
+        check(lv5['title'] == '패배' and lv5['label'] == 'Lv.5 지옥',
+              '포기 결과 화면 난이도(Lv.5 지옥)', json.dumps(lv5, ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'result-lv5.png'))
+        summary['desktop_lv5_quit'] = {'title': lv5['title'], 'level': lv5['label'], 'reason': lv5['reason']}
+        page.evaluate('window.__HB.app.hideResult()')
         summary['desktop_console_errors'] = console
         summary['desktop_page_errors'] = errors
         check(not console, '콘솔 에러 0', json.dumps(console, ensure_ascii=False)[:300])
@@ -357,6 +429,16 @@ def main():
         page.goto(url, wait_until='domcontentloaded')
         wait_ready(page)
         check(sum(overflow(page).values()) <= 0, '모바일 설정 가로 오버플로 0', str(overflow(page)))
+        mobile_gone = page.evaluate("""() => ({
+            btn: !!document.getElementById('btn-custom'),
+            text: document.body.innerText.includes('내 단어장'),
+            row: Math.round(document.getElementById('btn-sound').getBoundingClientRect().width),
+            box: Math.round(document.querySelector('.setup-actions').getBoundingClientRect().width),
+        })""")
+        check(not mobile_gone['btn'] and not mobile_gone['text'], '모바일 내 단어장 삭제',
+              json.dumps(mobile_gone, ensure_ascii=False))
+        check(mobile_gone['row'] >= mobile_gone['box'] - 1, '모바일 효과음 설정 행 전체 폭',
+              f"{mobile_gone['row']}/{mobile_gone['box']}px")
         page.click('.level[data-lv="5"]')
         page.wait_for_timeout(200)
         check(sum(overflow(page).values()) <= 0, '모바일 Lv.5 카드 가로 오버플로 0', str(overflow(page)))
@@ -382,6 +464,20 @@ def main():
         check(not hits, '모바일 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
         page.screenshot(path=os.path.join(OUT, 'mobile-game.png'))
         summary['mobile_game'] = {'bot_moves': [(c['word'], c['kind']) for c in bot_moves], 'brand_hits': hits}
+
+        # ── 모바일: 결과 화면 난이도 ────────────────────────
+        page.evaluate('window.__HB.engine.quit()')
+        page.wait_for_timeout(1000)
+        mres = page.evaluate("""() => ({
+            title: document.getElementById('result-title').textContent,
+            label: document.getElementById('result-level-label').textContent,
+            lv: document.getElementById('result-level').dataset.lv,
+        })""")
+        check(mres['label'] == 'Lv.5 지옥' and mres['lv'] == '5', '모바일 결과 화면 난이도',
+              json.dumps(mres, ensure_ascii=False))
+        check(sum(overflow(page).values()) <= 0, '모바일 결과 화면 가로 오버플로 0', str(overflow(page)))
+        page.screenshot(path=os.path.join(OUT, 'mobile-result.png'))
+        summary['mobile_result'] = mres
         summary['mobile_console_errors'] = console
         summary['mobile_page_errors'] = errors
         check(not console, '모바일 콘솔 에러 0', json.dumps(console, ensure_ascii=False)[:300])
