@@ -1000,6 +1000,14 @@ def scenario_hardcore(page, tag, report_dir=None):
     check(rec.get('3', {}).get('plays', 0) == before_lv,
           f'[{tag}] 일반 Lv.3 전적은 그대로', f"{before_lv} → {rec.get('3', {}).get('plays', 0)}")
 
+    # 설정 화면 전적에 하드코어 행이 구분되어 보이는지
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(200)
+    rec_text = page.evaluate("document.getElementById('record').innerText")
+    check('하드코어' in rec_text and 'Lv.3 어려움' in rec_text,
+          f'[{tag}] 설정 화면 전적에 하드코어 구분 표시',
+          rec_text.replace(chr(10), ' | ')[:140])
+
     # 승리 결과에도 배지: 봇 선공(하드코어) 뒤 내가 한방 단어로 끝낸다
     win = None
     page.evaluate("window.__HB.app.hideResult()")
