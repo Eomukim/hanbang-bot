@@ -5,3 +5,5 @@ __pycache__/
 db.sql
 
 *.log
+build/kkuko-raw.jsonl
+build/kkuko-words.txt

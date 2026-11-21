@@ -245,6 +245,27 @@ def scenario_twoeum(page, tag):
         check(False, f'[{tag}] 두음법칙 후보 탐색')
 
 
+def scenario_new_words(page, tag):
+    """오픈DB에서 새로 병합된 단어가 실제 입력으로 인정되는지."""
+    samples = page.evaluate(
+        "() => ((window.__HB.dict.stats && window.__HB.dict.stats.openDbSamples) || []).filter((w) => w.length >= 3)"
+    )
+    check(bool(samples), f'[{tag}] 오픈DB 신규 단어 표본', str(samples[:1]))
+    if not samples:
+        return
+    picks = [samples[0], samples[len(samples) // 2], samples[-1]]
+    for sample in picks:
+        page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+        page.evaluate("(ch) => window.__HB.startGame({level:2, first:'me', startChar: ch})", sample[0])
+        page.wait_for_timeout(450)
+        play_word(page, sample, wait=600)
+        st = state(page)
+        check(bool(st['chain']) and st['chain'][0]['word'] == sample,
+              f'[{tag}] 오픈DB 신규 단어 입력 인정', sample)
+        page.evaluate("window.__HB.app.hideResult()")
+    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+
+
 def scenario_bot_levels(page, tag):
     """1단계는 한방 금지, 4단계는 즉시 한방."""
     # 1단계: 여러 턴을 두고 봇이 한방 단어를 쓰지 않는지
@@ -332,24 +353,37 @@ def scenario_custom(page, tag):
         window.__HB.app.renderCustomCount();
     }""")
 
-    # 내가 한방 단어로 이기는 경로: 후속 단어가 없는 글자(늄)로 끝나는 커스텀 단어
-    page.evaluate("""() => {
-        window.__HB.app.custom['냥늄'] = { mean: '검사용', at: Date.now() };
-        window.__HB.dict.addCustom('냥늄', '검사용');
+    # 내가 한방 단어로 이기는 경로: 후속 단어가 하나도 없는 글자로 끝나는 커스텀 단어
+    # (사전이 커지면 특정 글자(예: 늄→윰)에 후속 단어가 생기므로 매번 빈 글자를 찾는다)
+    dead = page.evaluate("""() => {
+        const d = window.__HB.dict;
+        for (let code = 0xAC00; code <= 0xD7A3; code += 1) {
+            const ch = String.fromCharCode(code);
+            if (d.countFrom(ch) === 0 && !d.has('냥' + ch)) return ch;
+        }
+        return null;
+    }""")
+    check(dead is not None, f'[{tag}] 한방용 빈 글자 탐색', str(dead))
+    if not dead:
+        return
+    win_word = '냥' + dead
+    page.evaluate("""(word) => {
+        window.__HB.app.custom[word] = { mean: '검사용', at: Date.now() };
+        window.__HB.dict.addCustom(word, '검사용');
         window.__HB.app.hideResult();
         window.__HB.startGame({ level: 1, first: 'me', startChar: '냥' });
-    }""")
+    }""", win_word)
     page.wait_for_timeout(450)
-    play_word(page, '냥늄', wait=1800)
+    play_word(page, win_word, wait=1800)
     st = state(page)
     title = page.evaluate("document.getElementById('result-title').textContent")
-    check(st['phase'] == 'over' and title == '승리', f'[{tag}] 한방 단어로 승리', f"{st['phase']} / {title}")
+    check(st['phase'] == 'over' and title == '승리', f'[{tag}] 한방 단어로 승리', f"{st['phase']} / {title} ({win_word})")
     shot(page, f'{tag}-08-player-win')
-    page.evaluate("""() => {
-        delete window.__HB.app.custom['냥늄'];
-        window.__HB.dict.removeCustom('냥늄');
+    page.evaluate("""(word) => {
+        delete window.__HB.app.custom[word];
+        window.__HB.dict.removeCustom(word);
         window.__HB.app.hideResult();
-    }""")
+    }""", win_word)
 
     # 시간 초과 패배
     page.evaluate("window.__HB.startGame({level:1, first:'me', timeLimit:1})")
@@ -536,6 +570,7 @@ def run_local(base_url, browser):
         shot(page, f'local-{vp_name}-03-game')
 
         scenario_twoeum(page, 'local-' + vp_name)
+        scenario_new_words(page, 'local-' + vp_name)
         scenario_bot_levels(page, 'local-' + vp_name)
         scenario_custom(page, 'local-' + vp_name)
         scenario_mission(page, 'local-' + vp_name, REPORT_DIR)
@@ -593,6 +628,7 @@ def run_live(url, browser):
         shot(page, f'live-{vp_name}-02-game')
 
         scenario_twoeum(page, 'live-' + vp_name)
+        scenario_new_words(page, 'live-' + vp_name)
         scenario_bot_levels(page, 'live-' + vp_name)
         scenario_mission(page, 'live-' + vp_name, REPORT_DIR)
 

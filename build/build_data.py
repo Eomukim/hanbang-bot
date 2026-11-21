@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Build the Hanbang Bot word data from the source db.sql dump (KKuTu, GPL-3.0).
+"""Build the Hanbang Bot word data from word sources.
 
 Usage:
-    python3 build/build_data.py path/to/db.sql
+    python3 build/build_data.py path/to/db.sql [path/to/kkuko-words.txt]
+
+The first source is the KKuTu `db.sql` dump (GPL-3.0); the optional second source
+is the Kkuko Utils open DB word list collected with `build/collect_kkuko.py`
+(CC BY-NC-SA 4.0, attribution in NOTICE.md). Both are merged, de-duplicated and
+re-indexed together.
 
 Outputs (into ./data):
     words.txt   one word per line: "word" or "word<TAB>flag" when flag != 0.
@@ -50,7 +55,7 @@ I_VOWELS = {2, 3, 6, 7, 12, 17, 20}
 def parse_copy_block(text):
     marker = "COPY kkutu_ko (_id, type, mean, hit, flag, theme) FROM stdin;\n"
     start = text.index(marker) + len(marker)
-    end = text.index("\n\\.\n", start)
+    end = text.index("\n" + chr(92) + ".\n", start)
     for line in text[start:end].split("\n"):
         fields = line.split("\t")
         if len(fields) < 6:
@@ -72,14 +77,33 @@ def twoeum(ch):
     return None
 
 
+def read_open_db(path):
+    """오픈DB 단어 목록. 한 줄에 단어 하나, 뒤에 탭+flag가 붙어도 읽는다."""
+    rows = 0
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n").rstrip("\r")
+            if not line:
+                continue
+            rows += 1
+            word, _, flag = line.partition("\t")
+            try:
+                flag = int(flag or 0)
+            except ValueError:
+                flag = 0
+            yield word.strip(), flag
+    print("open db rows  :", rows)
+
+
 def main():
     if len(sys.argv) < 2:
-        sys.exit("usage: build_data.py <db.sql>")
+        sys.exit("usage: build_data.py <db.sql> [kkuko-words.txt]")
     src = sys.argv[1]
+    open_db = sys.argv[2] if len(sys.argv) > 2 else None
     out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
     os.makedirs(out_dir, exist_ok=True)
 
-    text = open(src, encoding="utf-8").read()
+    text = open(src, encoding="utf-8").read().replace("\r\n", "\n")
     words = {}
     raw = 0
     for word, flag, theme in parse_copy_block(text):
@@ -98,6 +122,29 @@ def main():
             words[word] |= flag
         else:
             words[word] = flag
+
+    base_count = len(words)
+    open_rows = 0
+    added = 0
+    added_words = []
+    if open_db:
+        for word, flag in read_open_db(open_db):
+            open_rows += 1
+            if len(word) < MIN_LEN or not HANGUL.match(word):
+                continue
+            if word in BLOCKED_WORDS:
+                continue
+            if word in words:
+                words[word] |= flag
+            else:
+                words[word] = flag
+                added += 1
+                added_words.append(word)
+
+    # 오픈DB에서 새로 들어온 단어 중 검증용 표본 (3~10글자, 고르게 뽑기)
+    pool = [w for w in added_words if 3 <= len(w) <= 10]
+    step = max(1, len(pool) // 30)
+    added_samples = pool[::step][:30]
 
     ordered = sorted(words)
     starts = {}
@@ -129,10 +176,14 @@ def main():
                 flag_counts[name] = flag_counts.get(name, 0) + 1
 
     stats = {
-        "version": 1,
-        "source": "db.sql dump (GPL-3.0) — 출처 표기는 NOTICE.md",
+        "version": 2,
+        "source": "공개 사전 덤프 + 오픈DB — 출처 표기는 NOTICE.md",
         "generatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "rawRows": raw,
+        "baseWords": base_count,
+        "openDbRows": open_rows,
+        "addedFromOpenDb": added,
+        "openDbSamples": added_samples,
         "total": len(ordered),
         "maxLen": max(len(w) for w in ordered),
         "starts": len(starts),
@@ -148,6 +199,8 @@ def main():
 
     size = os.path.getsize(words_path)
     print("rows          :", raw)
+    print("base words    :", base_count)
+    print("open db added :", added)
     print("valid words   :", len(ordered))
     print("start syll.   :", len(starts))
     print("one-shot words:", len(one_shot), one_shot[:8])

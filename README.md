@@ -1,6 +1,6 @@
 # 끝말잇기 한방봇 (Hanbang Bot)
 
-한방 단어를 꽂는 4단계 봇과 붙는 1:1 끝말잇기. 366,094 단어 사전, 표준 두음법칙, 4단계 난이도.
+한방 단어를 꽂는 4단계 봇과 붙는 1:1 끝말잇기. 796,750 단어 사전, 표준 두음법칙, 4단계 난이도.
 
 - 라이브: **https://hanbang-bot.onrender.com**
 - 저장소: https://github.com/Eomukim/hanbang-bot
@@ -9,10 +9,10 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 단어 사전 | 공개 사전 덤프에서 2글자 이상 순수 한글 366,094개 추출 |
+| 단어 사전 | 공개 사전 덤프와 끄코 유틸리티 오픈DB를 병합한 2글자 이상 순수 한글 796,750개 |
 | 두음법칙 | ㄹ+ㅑㅒㅕㅖㅛㅠㅣ → ㅇ, 그 밖의 ㄹ → ㄴ, ㄴ+ㅑㅒㅕㅖㅛㅠㅣ → ㅇ (표준 전체) |
-| 한방 단어 | 끝 글자(와 두음 변환 글자)로 시작하는 후속 단어가 0개인 단어 762개 |
-| 유도 단어 | 후속 단어가 1~5개뿐인 글자로 끝나는 단어 1,588개 |
+| 한방 단어 | 끝 글자(와 두음 변환 글자)로 시작하는 후속 단어가 0개인 단어 1,701개 |
+| 유도 단어 | 후속 단어가 1~5개뿐인 글자로 끝나는 단어 2,956개 |
 | 내 단어장 | 사전에 없는 단어를 직접 등록·삭제, `localStorage`에 저장, 봇 판정에도 즉시 반영 |
 | 봇 | 4단계. 4단계는 한방 단어가 있으면 100% 즉시 사용 |
 
@@ -48,19 +48,25 @@ js/bot.js           4단계 봇 전략과 대사
 js/audio.js         Web Audio 효과음(음원 파일 없음)
 js/store.js         localStorage 설정 · 내 단어장 · 전적
 js/ui.js            화면 조립, 입력, 결과
-build/build_data.py db.sql → data/words.txt + data/stats.json
+build/build_data.py 단어 원본 → data/words.txt + data/stats.json
+build/collect_kkuko.py 오픈DB(공개 API) 단어 수집
 tools/verify.py     headless Chromium 검증(로컬/라이브)
 ```
 
 사전은 시작 음절마다 연속 구간을 이루도록 정렬해 두어, 브라우저에서는 이진 탐색과 구간 조회만으로
-판정·후속 단어 수·봇 후보를 계산한다. 별도 색인 파일 없이 366,094 단어가 즉시 조회된다.
+판정·후속 단어 수·봇 후보를 계산한다. 별도 색인 파일 없이 796,750 단어가 즉시 조회된다.
 
 ## 데이터 다시 만들기
 
 ```bash
 curl -L -o db.sql https://raw.githubusercontent.com/JJoriping/KKuTu/master/db.sql
-python3 build/build_data.py db.sql
+python3 build/build_data.py db.sql                      # db.sql 만으로 기존 사전 재생성
+python3 build/collect_kkuko.py                          # 오픈DB 단어를 build/kkuko-words.txt 로 수집
+python3 build/build_data.py db.sql build/kkuko-words.txt # 두 원본 병합 + 한방/유도 재계산
 ```
+
+`build/collect_kkuko.py` 는 끄코 유틸리티의 공개 오픈API를 시작 음절별로 호출한다.
+받은 원본(`build/kkuko-words.txt`, `build/kkuko-raw.jsonl`)은 저장소에 커밋하지 않는다.
 
 ## 검증
 
@@ -75,5 +81,6 @@ python3 tools/verify.py --url https://hanbang-bot.onrender.com
 
 ## 출처와 라이선스
 
-단어 데이터는 [JJoriping/KKuTu](https://github.com/JJoriping/KKuTu)의 `db.sql`(GPL-3.0)에서
-파생했다. 자세한 표기는 [NOTICE.md](NOTICE.md) 참고.
+단어 데이터는 [JJoriping/KKuTu](https://github.com/JJoriping/KKuTu)의 `db.sql`(GPL-3.0)과
+[끄코 유틸리티](https://kkuko-utils.vercel.app/word) 오픈DB(CC BY-NC-SA 4.0)를 병합해 만들었다.
+자세한 표기와 라이선스 조건은 [NOTICE.md](NOTICE.md) 참고.
