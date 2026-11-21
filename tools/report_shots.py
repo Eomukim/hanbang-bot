@@ -218,8 +218,9 @@ def blog_view(page):
     }""")
 
 
-def play_hell_game(page, turns=4, shot_path=None):
-    """Lv.5 지옥과 실제로 한 판: 사람처럼 두고 봇의 응수·태그·시간·한방 각을 기록."""
+def play_hell_game(page, turns=4, shot_path=None, cautious=True):
+    """Lv.5 지옥과 실제로 한 판: 사람처럼 두고 봇의 응수·태그·시간·한방 각을 기록.
+    cautious=False 면 사람이 매번 조심하지는 않는 것처럼 아무 2~4글자나 둔다."""
     page.evaluate("window.__KKEUTMALBOT.app.engine && window.__KKEUTMALBOT.app.engine.destroy()")
     page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
     page.evaluate("window.__KKEUTMALBOT.startGame({level:5, first:'me', timeLimit:20})")
@@ -229,7 +230,7 @@ def play_hell_game(page, turns=4, shot_path=None):
         st = wait_my_turn(page, 8000)
         if not st or st['phase'] != 'me':
             break
-        w = human_word(page, cautious=True)
+        w = human_word(page, cautious=cautious)
         if not w:
             break
         before = page.evaluate("window.__KKEUTMALBOT.state().chain.length")
@@ -363,10 +364,10 @@ def main():
         # ── 데스크톱: Lv.5 지옥과 실제 대전 ─────────────────
         shot_path = os.path.join(OUT, 'lv5-game.png')
         game = play_hell_game(page, turns=5, shot_path=shot_path)
-        for _ in range(3):   # 증거가 모자라면 판을 더 둔다 (2수 이상 + 한방/필승 수 1회)
+        for attempt in range(4):   # 증거가 모자라면 판을 더 둔다 (사람이 가끔 실수하는 판 포함)
             if len(game['bot']) >= 2 and (game['kills'] + game['proven']) >= 1:
                 break
-            more = play_hell_game(page, turns=5, shot_path=None)
+            more = play_hell_game(page, turns=5, shot_path=None, cautious=attempt % 2 == 1)
             for key in ('gaps', 'tags', 'bot'):
                 game[key].extend(more[key])
             game['handed'] += more['handed']
