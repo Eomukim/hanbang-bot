@@ -4,9 +4,10 @@ import { Dictionary } from './data.js';
 import { App } from './ui.js';
 import { Sfx } from './audio.js';
 import { Bot, LEVELS, levelInfo } from './bot.js';
-import { loadSettings, loadRecord } from './store.js';
+import { loadSettings, loadRecord, migrateLegacy } from './store.js';
 
 async function boot() {
+  migrateLegacy();
   const settings = loadSettings();
   const record = loadRecord();
   const sfx = new Sfx(settings.sound);
@@ -32,7 +33,7 @@ async function boot() {
   app.show('setup');
 
   // 검증·자동화용 손잡이
-  window.__HB = {
+  window.__ITDA = {
     app,
     dict,
     Bot,

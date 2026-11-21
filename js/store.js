@@ -1,15 +1,24 @@
 /** localStorage에 남는 설정 · 전적.
  *
- * 내 단어장 기능은 없앴다. 예전 버전이 이 기기에 남긴 hanbang.custom.v1 키는
+ * 설정은 `itda.settings.v1`, 전적은 `itda.record.v1` 에 쌓는다.
+ * 예전 이름으로 배포하던 시절의 키는 아래 LEGACY에 한 번만 옮겨 와서,
+ * 그때 쌓인 설정·전적을 잃지 않는다(옮긴 뒤에도 예전 키는 건드리지 않는다).
+ *
+ * 내 단어장 기능은 없앴다. 아주 예전 버전이 이 기기에 남긴 커스텀 키는
  * 읽지도 지우지도 않고 그냥 둔다(값이 무엇이든 앱 동작에 영향이 없다).
  *
- * 전적은 예전과 같은 키(hanbang.record.v1)에 난이도 번호(1~5)로 쌓고,
- * 하드코어 대국은 같은 객체 안의 `3:hc` 처럼 구분된 키에 따로 쌓는다.
- * 그래서 예전 4단계 시절 기록도, 이번 5단계 기록도 그대로 읽힌다.
+ * 전적은 난이도 번호(1~5)로 쌓고, 하드코어 대국은 같은 객체 안의 `3:hc` 처럼
+ * 구분된 키에 따로 쌓는다. 그래서 예전 4단계 시절 기록도 그대로 읽힌다.
  */
 
-const KEY_SETTINGS = 'hanbang.settings.v1';
-const KEY_RECORD = 'hanbang.record.v1';
+const KEY_SETTINGS = 'itda.settings.v1';
+const KEY_RECORD = 'itda.record.v1';
+
+/** 리브랜딩 전 이름으로 저장된 키 → 지금 키. 값이 있으면 한 번 복사한다. */
+const LEGACY = [
+  ['hanbang.settings.v1', KEY_SETTINGS],
+  ['hanbang.record.v1', KEY_RECORD],
+];
 
 const DEFAULT_SETTINGS = {
   level: 2,
@@ -35,6 +44,20 @@ function writeJSON(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
     /* 저장 공간이 막혀 있어도 게임은 계속된다 */
+  }
+}
+
+/** 예전 키에만 남아 있는 값이 있으면 지금 키로 복사한다(이미 있으면 그대로). */
+export function migrateLegacy() {
+  try {
+    for (const [oldKey, newKey] of LEGACY) {
+      const oldRaw = localStorage.getItem(oldKey);
+      if (!oldRaw) continue;
+      if (localStorage.getItem(newKey) != null) continue;
+      localStorage.setItem(newKey, oldRaw);
+    }
+  } catch {
+    /* 저장 공간이 막혀 있으면 새 키로 시작한다 */
   }
 }
 

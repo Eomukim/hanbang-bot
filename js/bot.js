@@ -17,7 +17,7 @@ export const LEVELS = [
     face: '🙂',
     label: 'Lv.1 순한 봇',
     desc: '한방 단어는 절대 안 씀 · 쉬운 2~3글자',
-    botName: '한방봇 주니어',
+    botName: '잇다 주니어',
   },
   {
     id: 2,
@@ -25,7 +25,7 @@ export const LEVELS = [
     face: '😐',
     label: 'Lv.2 보통',
     desc: '가끔 긴 단어 · 초반엔 한방 금지',
-    botName: '한방봇',
+    botName: '잇다 루키',
   },
   {
     id: 3,
@@ -33,7 +33,7 @@ export const LEVELS = [
     face: '😏',
     label: 'Lv.3 어려움',
     desc: '외통수로 몰아넣고 결정타',
-    botName: '한방봇 X',
+    botName: '잇다 마스터',
   },
   {
     id: 4,
@@ -41,7 +41,7 @@ export const LEVELS = [
     face: '😈',
     label: 'Lv.4 극악',
     desc: '한방 단어가 있으면 100% 즉사',
-    botName: '한방봇 극악',
+    botName: '잇다 극악',
   },
   {
     id: 5,
@@ -49,7 +49,7 @@ export const LEVELS = [
     face: '💀',
     label: 'Lv.5 지옥',
     desc: '필승 경로·수읽기로 도망칠 곳을 지움',
-    botName: '한방봇 지옥',
+    botName: '잇다 지옥',
   },
 ];
 

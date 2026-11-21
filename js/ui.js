@@ -189,7 +189,7 @@ export class App {
   }
 
   renderRecord() {
-    // 예전 4단계 기준으로 저장된 전적(localStorage hanbang.record.v1)도 그대로 읽는다.
+    // 예전 4단계 기준으로 저장된 전적(localStorage `itda.record.v1`)도 그대로 읽는다.
     // 하드코어 전적은 같은 키 안의 `3:hc` 처럼 구분된 행으로 따로 쌓인다.
     const known = new Set(LEVELS.map((l) => l.id));
     const rows = Object.entries(this.record)

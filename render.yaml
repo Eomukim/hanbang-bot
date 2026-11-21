@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: hanbang-bot
+    name: itda-game
     runtime: static
     staticPublishPath: ./
     headers:

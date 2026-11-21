@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Hanbang Bot word data from word sources.
+"""Build the ITDA word data from word sources.
 
 Usage:
     python3 build/build_data.py path/to/db.sql [path/to/kkuko-words.txt]

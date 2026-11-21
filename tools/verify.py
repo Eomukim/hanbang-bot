@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""끝말잇기 한방봇 검증 스크립트.
+"""잇다(ITDA) 검증 스크립트.
 
 로컬(파일 서버) 또는 라이브 URL을 headless Chromium으로 열어
  - 콘솔/페이지 에러, 가로 오버플로
@@ -15,13 +15,13 @@
 을 확인한다.
 
 env:
-    HB_SHOT_DIR     스크린샷 폴더(기본: 저장소 downloads/)
-    HB_REPORT_DIR   미션 보고용 스크린샷(mission-keep/stack/success.png)을 따로 저장할 폴더
+    ITDA_SHOT_DIR     스크린샷 폴더(기본: 저장소 downloads/)
+    ITDA_REPORT_DIR   미션 보고용 스크린샷(mission-keep/stack/success.png)을 따로 저장할 폴더
 
 usage:
     python3 tools/verify.py --local
-    python3 tools/verify.py --url https://hanbang-bot.onrender.com
-    python3 tools/verify.py --local --url https://hanbang-bot.onrender.com
+    python3 tools/verify.py --url https://itda-game.onrender.com
+    python3 tools/verify.py --local --url https://itda-game.onrender.com
 """
 import argparse
 import functools
@@ -36,10 +36,10 @@ import time
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHOT_DIR = os.environ.get('HB_SHOT_DIR') or os.path.join(ROOT, 'downloads')
-REPORT_DIR = os.environ.get('HB_REPORT_DIR')
+SHOT_DIR = os.environ.get('ITDA_SHOT_DIR') or os.path.join(ROOT, 'downloads')
+REPORT_DIR = os.environ.get('ITDA_REPORT_DIR')
 MISSION_CHARS = ['가', '나', '다', '라', '마', '바', '사', '아', '자', '차', '카', '타', '파', '하']
-CHROME = os.environ.get('HB_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
+CHROME = os.environ.get('ITDA_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
 
 VIEWPORTS = {
     'desktop': {'width': 1280, 'height': 800},
@@ -52,7 +52,7 @@ VIEWPORTS = {
 #  · 후속 단어가 적은 글자로 몰아넣는지, 장문·미션 점수를 챙기는지, 판단·응답 시간은 어떤지
 HELL_PROPS = """
 () => {
-  const dict = window.__HB.dict, Bot = window.__HB.Bot;
+  const dict = window.__ITDA.dict, Bot = window.__ITDA.Bot;
   const starts = dict.goodStartChars(120).sort();
   const bot = new Bot({level: 5, dict});
 
@@ -146,7 +146,7 @@ HELL_PROPS = """
 # Lv.5 봇이 고른 수 자체를 뜯어 보는 표본 시험(한방 선택 · 미션 · 압박)
 HELL_PICKS = """
 () => {
-  const dict = window.__HB.dict, Bot = window.__HB.Bot;
+  const dict = window.__ITDA.dict, Bot = window.__ITDA.Bot;
   const starts = dict.goodStartChars(60).sort();
   const last = (w) => w[w.length - 1];
   const value = (w, mission) => {
@@ -271,12 +271,12 @@ def overflow(page):
 
 
 def wait_ready(page, timeout=90000):
-    page.wait_for_function('window.__HB && window.__HB.ready === true', timeout=timeout)
+    page.wait_for_function('window.__ITDA && window.__ITDA.ready === true', timeout=timeout)
     page.wait_for_selector('#scr-setup:not([hidden])', timeout=timeout)
 
 
 def state(page):
-    return page.evaluate('window.__HB.state()')
+    return page.evaluate('window.__ITDA.state()')
 
 
 def new_page(browser, vp_name):
@@ -316,7 +316,7 @@ def duplicate_test(page, tag):
         check(False, f'[{tag}] 중복 시험 턴 확보')
         return
     used = page.evaluate("""() => {
-        const st = window.__HB.state();
+        const st = window.__ITDA.state();
         const starts = [st.needChar, st.needAlt].filter(Boolean);
         return st.chain.map((c) => c.word).find((w) => starts.some((s) => w.startsWith(s))) || null;
     }""")
@@ -329,8 +329,8 @@ def duplicate_test(page, tag):
         shot(page, f'{tag}-03-duplicate')
         return
     res = page.evaluate("""() => {
-        const st = window.__HB.state();
-        const e = window.__HB.engine;
+        const st = window.__ITDA.state();
+        const e = window.__ITDA.engine;
         const last = st.chain[st.chain.length - 1].word;
         // 이어야 할 글자와 무관하게, 이미 나온 단어는 중복으로 걸리는지 (엔진 공용 경로)
         const dup = e.validate(last);
@@ -346,7 +346,7 @@ def ui_duplicate(page, tag):
     if not st or st['phase'] != 'me':
         return
     used = page.evaluate("""() => {
-        const st = window.__HB.state();
+        const st = window.__ITDA.state();
         const starts = [st.needChar, st.needAlt].filter(Boolean);
         return st.chain.map((c) => c.word).find((w) => starts.some((s) => w.startsWith(s))) || null;
     }""")
@@ -364,7 +364,7 @@ def ui_duplicate(page, tag):
 def scenario_twoeum(page, tag):
     """두음법칙·중복 차단: 첫 글자와 끝 글자가 같은 단어로 시작해 중복까지 확인."""
     info = page.evaluate("""() => {
-        const d = window.__HB.dict;
+        const d = window.__ITDA.dict;
         for (const [ch] of d.ranges) {
             const cands = d.candidatesFor(ch, new Set());
             const loop = cands.find((w) => w[0] === ch && w[w.length - 1] === ch && w.length >= 2);
@@ -375,11 +375,11 @@ def scenario_twoeum(page, tag):
     if not info:
         check(False, f'[{tag}] 순환 단어 탐색')
         return
-    page.evaluate(f"window.__HB.startGame({{level:2, first:'me', startChar:'{info['ch']}'}})")
+    page.evaluate(f"window.__ITDA.startGame({{level:2, first:'me', startChar:'{info['ch']}'}})")
     page.wait_for_timeout(500)
     play_word(page, info['loop'], wait=120)
     # 같은 단어를 바로 다시 판정: 필요 글자가 같으므로 '이미 나온 단어'로 걸려야 한다
-    res = page.evaluate("(w) => window.__HB.engine.validate(w)", info['loop'])
+    res = page.evaluate("(w) => window.__ITDA.engine.validate(w)", info['loop'])
     check(res.get('ok') is False and res['error']['code'] == 'used',
           f'[{tag}] 중복 단어 차단', json.dumps(res, ensure_ascii=False)[:120])
     page.wait_for_timeout(1700)
@@ -390,11 +390,11 @@ def scenario_twoeum(page, tag):
     ui_duplicate(page, tag)
 
     # 두음법칙: 시작 글자를 '력'으로 고정하고 '역'으로 시작하는 단어 입력
-    page.evaluate("window.__HB.app.engine.destroy()")
-    page.evaluate("window.__HB.startGame({level:2, first:'me', startChar:'력'})")
+    page.evaluate("window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', startChar:'력'})")
     page.wait_for_timeout(450)
     duo = page.evaluate("""() => {
-        const d = window.__HB.dict, st = window.__HB.state();
+        const d = window.__ITDA.dict, st = window.__ITDA.state();
         const alt = st.needAlt;
         if (!alt) return null;
         const cands = d.candidatesFor(st.needChar, new Set());
@@ -412,29 +412,29 @@ def scenario_twoeum(page, tag):
 def scenario_new_words(page, tag):
     """오픈DB에서 새로 병합된 단어가 실제 입력으로 인정되는지."""
     samples = page.evaluate(
-        "() => ((window.__HB.dict.stats && window.__HB.dict.stats.openDbSamples) || []).filter((w) => w.length >= 3)"
+        "() => ((window.__ITDA.dict.stats && window.__ITDA.dict.stats.openDbSamples) || []).filter((w) => w.length >= 3)"
     )
     check(bool(samples), f'[{tag}] 오픈DB 신규 단어 표본', str(samples[:1]))
     if not samples:
         return
     picks = [samples[0], samples[len(samples) // 2], samples[-1]]
     for sample in picks:
-        page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
-        page.evaluate("(ch) => window.__HB.startGame({level:2, first:'me', startChar: ch})", sample[0])
+        page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+        page.evaluate("(ch) => window.__ITDA.startGame({level:2, first:'me', startChar: ch})", sample[0])
         page.wait_for_timeout(450)
         play_word(page, sample, wait=600)
         st = state(page)
         check(bool(st['chain']) and st['chain'][0]['word'] == sample,
               f'[{tag}] 오픈DB 신규 단어 입력 인정', sample)
-        page.evaluate("window.__HB.app.hideResult()")
-    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+        page.evaluate("window.__ITDA.app.hideResult()")
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
 
 
 def scenario_bot_levels(page, tag):
     """1단계는 한방 금지, 4단계 극악은 즉시 한방."""
     # 1단계: 여러 턴을 두고 봇이 한방 단어를 쓰지 않는지
-    page.evaluate("window.__HB.app.engine.destroy()")
-    page.evaluate("window.__HB.startGame({level:1, first:'bot'})")
+    page.evaluate("window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.startGame({level:1, first:'bot'})")
     page.wait_for_timeout(2600)
     used = []
     for _ in range(5):
@@ -442,7 +442,7 @@ def scenario_bot_levels(page, tag):
         if not st or st['phase'] != 'me':
             break
         w = page.evaluate("""() => {
-            const d = window.__HB.dict, st = window.__HB.state();
+            const d = window.__ITDA.dict, st = window.__ITDA.state();
             const cands = d.candidatesFor(st.needChar, new Set(st.chain.map((c) => c.word)));
             return cands.find((x) => d.countFrom(x[x.length - 1]) >= 40 && x.length <= 3) || cands[0] || null;
         }""")
@@ -452,7 +452,7 @@ def scenario_bot_levels(page, tag):
     st = state(page)
     bot_words = [c['word'] for c in st['chain'] if c['who'] == 'bot']
     one_shots = page.evaluate(
-        "(ws) => ws.map((w) => window.__HB.dict.isOneShot(w))", bot_words
+        "(ws) => ws.map((w) => window.__ITDA.dict.isOneShot(w))", bot_words
     ) if bot_words else []
     check(len(bot_words) >= 2, f'[{tag}] 1단계 봇 응답 정상', f'{len(bot_words)}턴')
     check(not any(one_shots), f'[{tag}] 1단계 봇 한방 금지', str(bot_words[-2:]))
@@ -460,7 +460,7 @@ def scenario_bot_levels(page, tag):
 
     # 4단계 극악: 한방 시나리오
     pick = page.evaluate("""() => {
-        const d = window.__HB.dict;
+        const d = window.__ITDA.dict;
         for (const [ch] of d.ranges) {
             const mine = d.candidatesFor(ch, new Set());
             for (const w of mine.slice(0, 150)) {
@@ -474,14 +474,14 @@ def scenario_bot_levels(page, tag):
     check(pick is not None, f'[{tag}] 한방 시나리오 탐색', str(pick))
     if not pick:
         return
-    page.evaluate("window.__HB.app.engine.destroy()")
-    page.evaluate(f"window.__HB.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
+    page.evaluate("window.__ITDA.app.engine.destroy()")
+    page.evaluate(f"window.__ITDA.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
     page.wait_for_timeout(450)
     play_word(page, pick['word'], wait=3500)
     st = state(page)
     bot_words = [c['word'] for c in st['chain'] if c['who'] == 'bot']
     last_bot = bot_words[-1] if bot_words else ''
-    is_oneshot = page.evaluate("([w]) => !!w && window.__HB.dict.isOneShot(w)", [last_bot])
+    is_oneshot = page.evaluate("([w]) => !!w && window.__ITDA.dict.isOneShot(w)", [last_bot])
     check(st['phase'] == 'over', f'[{tag}] 4단계 극악 봇 즉시 종료', st['phase'])
     check(is_oneshot, f'[{tag}] 4단계 극악 봇 한방 단어 사용', last_bot)
     check(page.is_visible('#ov-result'), f'[{tag}] 결과 화면 표시')
@@ -494,8 +494,8 @@ def scenario_bot_levels(page, tag):
 
 def scenario_levels(page, tag):
     """5단계 난이도 카드: 개수·이름·선택·5단계 대전 헤더."""
-    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
-    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(150)
     cards = page.evaluate("""() => [...document.querySelectorAll('.level')].map((el) => ({
         lv: el.dataset.lv,
@@ -533,7 +533,7 @@ def scenario_levels(page, tag):
     checked5 = page.evaluate("document.querySelectorAll('.level')[4].getAttribute('aria-checked')")
     check(checked5 == 'true' and desc5 != desc4, f'[{tag}] Lv.5 지옥 선택', desc5)
     check('필승' in desc5 or '수읽기' in desc5, f'[{tag}] Lv.5 설명', desc5)
-    saved = page.evaluate("JSON.parse(localStorage.getItem('hanbang.settings.v1') || '{}').level")
+    saved = page.evaluate("JSON.parse(localStorage.getItem('itda.settings.v1') || '{}').level")
     check(saved == 5, f'[{tag}] 5단계 선택 저장', str(saved))
     shot(page, f'{tag}-10-levels5')
 
@@ -546,19 +546,21 @@ def scenario_levels(page, tag):
         lv: document.getElementById('bot-lv').textContent,
         face: document.getElementById('bot-face').textContent,
         body: document.body.dataset.level,
-        phase: window.__HB.state() ? window.__HB.state().phase : null,
+        phase: window.__ITDA.state() ? window.__ITDA.state().phase : null,
     })""")
-    check(head['name'] == '한방봇 지옥' and head['lv'] == 'Lv.5 지옥' and head['body'] == '5',
+    check(head['name'] == '잇다 지옥' and head['lv'] == 'Lv.5 지옥' and head['body'] == '5',
           f'[{tag}] 5단계 대전 헤더', json.dumps(head, ensure_ascii=False))
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 5단계 대전 가로 오버플로 0', str(overflow(page)))
     shot(page, f'{tag}-11-level5-game')
-    page.evaluate("window.__HB.app.engine.destroy(); window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(150)
 
 
 def scenario_legacy(page, tag):
-    """4단계 시절 localStorage(설정·전적)가 그대로 읽히는지."""
+    """리브랜딩 전 이름의 localStorage(설정·전적)가 그대로 이어지는지."""
     page.evaluate("""() => {
+        localStorage.removeItem('itda.settings.v1');
+        localStorage.removeItem('itda.record.v1');
         localStorage.setItem('hanbang.settings.v1', JSON.stringify({ level: 4, timeLimit: 15, first: 'bot', sound: false }));
         localStorage.setItem('hanbang.record.v1', JSON.stringify({
             1: { plays: 3, wins: 1, losses: 2, bestCombo: 2, bestScore: 40 },
@@ -574,21 +576,27 @@ def scenario_legacy(page, tag):
         soundPressed: document.getElementById('btn-sound').getAttribute('aria-pressed'),
         first: document.querySelector('#first-opts button[aria-checked="true"]')?.dataset.first,
         record: document.getElementById('record').innerText,
+        migratedSettings: !!localStorage.getItem('itda.settings.v1'),
+        legacyKept: !!localStorage.getItem('hanbang.settings.v1'),
     })""")
     check(view['checked'] == '4', f'[{tag}] 옛 설정 Lv.4 복원', str(view['checked']))
     check(view['sound'] == '끔' and view['soundPressed'] == 'false' and view['first'] == 'bot',
           f'[{tag}] 옛 설정 소리·선공 복원', f"{view['sound']} / {view['first']}")
     check('Lv.4 극악' in view['record'] and 'Lv.1 쉬움' in view['record'] and '3승 4패' in view['record'],
           f'[{tag}] 옛 전적 Lv.4 극악으로 표시', view['record'].replace('\n', ' | ')[:120])
+    check(view['migratedSettings'] and view['legacyKept'],
+          f'[{tag}] 옛 키 → 새 키 이전(옛 키 보존)', json.dumps(view, ensure_ascii=False)[:120])
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 옛 설정 화면 가로 오버플로 0', str(overflow(page)))
 
-    # 새 5단계 전적도 같은 키에 쌓이는지
-    page.evaluate("window.__HB.startGame({level:5, first:'me', timeLimit:1})")
+    # 새 5단계 전적도 새 키에 쌓이고, 옮겨 온 기록이 남는지
+    page.evaluate("window.__ITDA.startGame({level:5, first:'me', timeLimit:1})")
     page.wait_for_timeout(1800)
-    rec = page.evaluate("JSON.parse(localStorage.getItem('hanbang.record.v1') || '{}')")
+    rec = page.evaluate("JSON.parse(localStorage.getItem('itda.record.v1') || '{}')")
     check('5' in rec and rec['5'].get('plays', 0) >= 1 and '4' in rec,
           f'[{tag}] Lv.5 전적 저장·기존 기록 유지', json.dumps(rec, ensure_ascii=False)[:160])
     page.evaluate("""() => {
+        localStorage.removeItem('itda.settings.v1');
+        localStorage.removeItem('itda.record.v1');
         localStorage.removeItem('hanbang.settings.v1');
         localStorage.removeItem('hanbang.record.v1');
     }""")
@@ -629,16 +637,16 @@ def scenario_hell(page, tag):
     # 실제 대전: 내가 보통 사람처럼 두고, 봇의 응답 수·태그·시간을 본다
     gaps, tags, bot_moves = [], [], []
     for _attempt in range(3):
-        page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
-        page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
-        page.evaluate("window.__HB.startGame({level:5, first:'me', timeLimit:20})")
+        page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.evaluate("window.__ITDA.startGame({level:5, first:'me', timeLimit:20})")
         page.wait_for_timeout(350)
         for _ in range(5):
             st = wait_my_turn(page, 8000)
             if not st or st['phase'] != 'me':
                 break
             w = page.evaluate("""() => {
-                const d = window.__HB.dict, st = window.__HB.state();
+                const d = window.__ITDA.dict, st = window.__ITDA.state();
                 const used = new Set(st.chain.map((c) => c.word));
                 const cands = d.candidatesFor(st.needChar, used);
                 if (!cands.length) return null;
@@ -648,13 +656,13 @@ def scenario_hell(page, tag):
             }""")
             if not w:
                 break
-            before = page.evaluate("window.__HB.state().chain.length")
+            before = page.evaluate("window.__ITDA.state().chain.length")
             t0 = time.time()
             page.fill('#word-input', w)
             page.click('#btn-submit')
             try:
                 page.wait_for_function(
-                    f"() => window.__HB.state().chain.length > {before} + 1 || window.__HB.state().phase === 'over'",
+                    f"() => window.__ITDA.state().chain.length > {before} + 1 || window.__ITDA.state().phase === 'over'",
                     timeout=6000)
                 gaps.append((time.time() - t0) * 1000)
             except Exception:
@@ -679,11 +687,11 @@ def scenario_hell(page, tag):
     # 대전 중 화면을 남긴다 (끝난 판이면 새로 한 판 열어 봇의 첫 수를 받는다)
     st = state(page)
     if st and st['phase'] == 'over':
-        page.evaluate("window.__HB.app.hideResult()")
-        page.evaluate("window.__HB.startGame({level:5, first:'me', timeLimit:20})")
+        page.evaluate("window.__ITDA.app.hideResult()")
+        page.evaluate("window.__ITDA.startGame({level:5, first:'me', timeLimit:20})")
         page.wait_for_timeout(400)
         w2 = page.evaluate("""() => {
-            const d = window.__HB.dict, st = window.__HB.state();
+            const d = window.__ITDA.dict, st = window.__ITDA.state();
             const cands = d.candidatesFor(st.needChar, new Set());
             const easy = cands.filter((x) => x.length <= 4);
             return (easy.length ? easy : cands)[Math.min(3, (easy.length || cands.length) - 1)] || null;
@@ -693,18 +701,18 @@ def scenario_hell(page, tag):
             page.click('#btn-submit')
             page.wait_for_timeout(700)
     shot(page, f'{tag}-12-hell-game')
-    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(200)
 
     # 봇 선공 오프닝: Lv.5 가 먼저 두는 판은 아무 글자가 아니라 이기는 자리로 연다
     openings = []
     for _ in range(4):
-        page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
-        page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
-        page.evaluate("window.__HB.startGame({level:5, first:'bot', timeLimit:20})")
+        page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.evaluate("window.__ITDA.startGame({level:5, first:'bot', timeLimit:20})")
         page.wait_for_timeout(900)
         openings.append(page.evaluate("""() => {
-            const st = window.__HB.state(), d = window.__HB.dict;
+            const st = window.__ITDA.state(), d = window.__ITDA.dict;
             const first = st.chain.find((c) => c.who === 'bot') || null;
             const end = first ? first.word[first.word.length - 1] : null;
             return {
@@ -728,8 +736,8 @@ def scenario_hell(page, tag):
     check(all(o['firstWord'] and o['firstEndStatus'] == 'L' for o in openings),
           f'[{tag}] Lv.5 봇 선공 첫 수가 패배 자리로',
           str([(o['firstWord'], o['firstEndStatus'], o['firstLive']) for o in openings]))
-    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
-    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(200)
 
 
@@ -751,8 +759,8 @@ def result_view(page):
 
 def scenario_no_custom(page, tag):
     """내 단어장 삭제: 버튼·모달·사전 API가 없고, 남은 localStorage 값은 무시된다."""
-    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
-    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(150)
     gone = page.evaluate("""() => ({
         btn: !!document.getElementById('btn-custom'),
@@ -760,10 +768,10 @@ def scenario_no_custom(page, tag):
         inputs: document.querySelectorAll('#custom-word,#custom-mean,#custom-list,#custom-form').length,
         text: document.body.innerText.includes('내 단어장'),
         dictApi: ['custom', 'customByStart', 'addCustom', 'removeCustom', 'setCustom', 'customStartCount', 'meanOf']
-            .filter((k) => window.__HB.dict[k] !== undefined),
+            .filter((k) => window.__ITDA.dict[k] !== undefined),
         appApi: ['openCustom', 'addCustomWord', 'renderCustom', 'renderCustomCount']
-            .filter((k) => typeof window.__HB.app[k] === 'function'),
-        state: typeof window.__HB.app.custom,
+            .filter((k) => typeof window.__ITDA.app[k] === 'function'),
+        state: typeof window.__ITDA.app.custom,
     })""")
     check(not gone['btn'] and not gone['modal'] and not gone['inputs'],
           f'[{tag}] 내 단어장 버튼·모달·입력 없음', json.dumps(gone, ensure_ascii=False)[:160])
@@ -788,6 +796,7 @@ def scenario_no_custom(page, tag):
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 화면 가로 오버플로 0', str(overflow(page)))
 
     # 옛 버전이 남긴 localStorage 값: 지우지 않고 그대로 두되, 읽지도 인정하지도 않는다
+    # 아주 예전 기능(내 단어장)이 남긴 키 — 남아 있어도 무시되는지
     page.evaluate("""() => localStorage.setItem('hanbang.custom.v1', JSON.stringify({
         '냥냥이': { mean: '고양이 애칭', at: 1 },
         '력량': { mean: '예전 단어', at: 2 },
@@ -799,17 +808,17 @@ def scenario_no_custom(page, tag):
         key: !!localStorage.getItem('hanbang.custom.v1'),
         setup: !document.getElementById('scr-setup').hidden,
         text: document.body.innerText.includes('내 단어장'),
-        size: window.__HB.dict.size,
+        size: window.__ITDA.dict.size,
     })""")
     check(left['key'] and left['setup'] and left['size'] > 300000,
           f'[{tag}] 옛 내 단어장 값이 남아 있어도 정상 부팅', json.dumps(left, ensure_ascii=False))
     check(not left['text'], f'[{tag}] 옛 값이 있어도 화면에 내 단어장 문구 0건')
     res = page.evaluate("""() => {
-        window.__HB.startGame({ level: 1, first: 'me', startChar: '냥' });
-        const v = window.__HB.engine.validate('냥냥이');
-        window.__HB.app.engine.destroy();
-        window.__HB.app.hideResult();
-        window.__HB.app.show('setup');
+        window.__ITDA.startGame({ level: 1, first: 'me', startChar: '냥' });
+        const v = window.__ITDA.engine.validate('냥냥이');
+        window.__ITDA.app.engine.destroy();
+        window.__ITDA.app.hideResult();
+        window.__ITDA.app.show('setup');
         return v;
     }""")
     check(res['ok'] is False and res['error']['code'] == 'notfound',
@@ -822,21 +831,21 @@ def scenario_no_custom(page, tag):
 def scenario_no_hint(page, tag):
     """힌트 삭제: 버튼·문구·앱/엔진 API가 없고, 입력 바가 빈칸 없이 채워진다."""
     print(f'  · 힌트 삭제 [{tag}]')
-    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
-    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(150)
     gone = page.evaluate("""() => ({
         btn: !!document.getElementById('btn-hint'),
         cls: document.querySelectorAll('.btn.hint, .hint').length,
         setupText: document.body.innerText.includes('힌트'),
-        appApi: ['useHint', 'hint'].filter((k) => typeof window.__HB.app[k] === 'function'),
-        audioCase: typeof window.__HB.app.sfx.play,
+        appApi: ['useHint', 'hint'].filter((k) => typeof window.__ITDA.app[k] === 'function'),
+        audioCase: typeof window.__ITDA.app.sfx.play,
     })""")
     check(not gone['btn'] and gone['cls'] == 0, f'[{tag}] 힌트 버튼·클래스 없음', json.dumps(gone, ensure_ascii=False)[:160])
     check(not gone['setupText'], f'[{tag}] 설정 화면 힌트 문구 0건')
     check(not gone['appApi'], f'[{tag}] 힌트 앱 API 없음', str(gone['appApi']))
 
-    page.evaluate("window.__HB.startGame({level:2, first:'me', hardcore:false})")
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', hardcore:false})")
     page.wait_for_timeout(400)
     game = page.evaluate("""() => {
         const box = document.getElementById('composer').getBoundingClientRect();
@@ -844,7 +853,7 @@ def scenario_no_hint(page, tag):
         const go = document.getElementById('btn-submit').getBoundingClientRect();
         return {
             text: document.body.innerText.includes('힌트'),
-            engineHint: typeof window.__HB.engine.hint,
+            engineHint: typeof window.__ITDA.engine.hint,
             btn: !!document.getElementById('btn-hint'),
             children: [...document.getElementById('composer').children].map((el) => el.id || el.tagName),
             input: Math.round(input.width), go: Math.round(go.width), box: Math.round(box.width),
@@ -860,7 +869,7 @@ def scenario_no_hint(page, tag):
           f"입력 {game['input']}px({game['inputFill']}%) + 버튼 {game['go']}px = {game['box']}px")
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 입력 바 가로 오버플로 0', str(overflow(page)))
     shot(page, f'{tag}-16-no-hint')
-    page.evaluate("window.__HB.app.engine.destroy(); window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(120)
 
 
@@ -879,20 +888,20 @@ def hardcore_view(page):
         lockedDisabled: [...document.querySelectorAll('#time-locked button, #first-locked button')].map((b) => b.disabled),
         timeBtns: [...document.querySelectorAll('#time-opts button')].map((b) => b.dataset.time),
         firstBtns: [...document.querySelectorAll('#first-opts button')].map((b) => b.dataset.first),
-        saved: JSON.parse(localStorage.getItem('hanbang.settings.v1') || '{}'),
+        saved: JSON.parse(localStorage.getItem('itda.settings.v1') || '{}'),
     })""")
 
 
 def hardcore_game(page):
     return page.evaluate("""() => {
-        const st = window.__HB.state();
+        const st = window.__ITDA.state();
         const badge = document.getElementById('game-hardcore');
         return {
-            hc: window.__HB.engine.hardcore,
-            limit: window.__HB.engine.timeLimit,
-            first: window.__HB.engine.first,
+            hc: window.__ITDA.engine.hardcore,
+            limit: window.__ITDA.engine.timeLimit,
+            first: window.__ITDA.engine.first,
             phase: st.phase,
-            left: window.__HB.engine.timeLeft(),
+            left: window.__ITDA.engine.timeLeft(),
             timeText: document.getElementById('time-left').textContent,
             chain: st.chain.map((c) => c.who),
             badge: !badge.hidden,
@@ -907,8 +916,8 @@ def hardcore_game(page):
 def scenario_hardcore(page, tag, report_dir=None):
     """하드코어: 스위치 · 5초 고정 · 봇 선공 · 배지 · 별도 전적 · 끄면 일반 모드."""
     print(f'  · 하드코어 모드 [{tag}]')
-    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
-    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(200)
 
     # 기준 상태(꺼짐)로 맞춘다
@@ -939,7 +948,7 @@ def scenario_hardcore(page, tag, report_dir=None):
 
     page.click('.level[data-lv="3"]')
     page.wait_for_timeout(120)
-    board_before = page.evaluate("JSON.parse(localStorage.getItem('hanbang.record.v1') || '{}')")
+    board_before = page.evaluate("JSON.parse(localStorage.getItem('itda.record.v1') || '{}')")
     page.click('#btn-start')
     page.wait_for_selector('#scr-game:not([hidden])')
     wait_my_turn(page, 7000)
@@ -959,7 +968,7 @@ def scenario_hardcore(page, tag, report_dir=None):
     word = None
     if st and st['phase'] == 'me':
         word = page.evaluate("""() => {
-            const d = window.__HB.dict, st = window.__HB.state();
+            const d = window.__ITDA.dict, st = window.__ITDA.state();
             const used = new Set(st.chain.map((c) => c.word));
             const cands = d.candidatesFor(st.needChar, used);
             const easy = cands.filter((x) => x.length <= 4);
@@ -969,7 +978,7 @@ def scenario_hardcore(page, tag, report_dir=None):
         page.fill('#word-input', word)
         page.click('#btn-submit')
         st2 = wait_my_turn(page, 6000)
-        left2 = page.evaluate("window.__HB.engine.timeLeft()")
+        left2 = page.evaluate("window.__ITDA.engine.timeLeft()")
         check(st2 and st2['phase'] == 'me' and 3.8 < left2 <= 5.0,
               f'[{tag}] 매 턴 5초 리셋', f'{word} 입력 후 {left2:.2f}s')
         page.wait_for_timeout(250)
@@ -992,7 +1001,7 @@ def scenario_hardcore(page, tag, report_dir=None):
           f'[{tag}] 하드코어 결과에 난이도', json.dumps(res, ensure_ascii=False)[:160])
     report_shot(page, tag, report_dir, 'hardcore-result')
 
-    rec = page.evaluate("JSON.parse(localStorage.getItem('hanbang.record.v1') || '{}')")
+    rec = page.evaluate("JSON.parse(localStorage.getItem('itda.record.v1') || '{}')")
     before_hc = board_before.get('3:hc', {}).get('plays', 0)
     before_lv = board_before.get('3', {}).get('plays', 0)
     check(rec.get('3:hc', {}).get('plays', 0) == before_hc + 1,
@@ -1001,7 +1010,7 @@ def scenario_hardcore(page, tag, report_dir=None):
           f'[{tag}] 일반 Lv.3 전적은 그대로', f"{before_lv} → {rec.get('3', {}).get('plays', 0)}")
 
     # 설정 화면 전적에 하드코어 행이 구분되어 보이는지
-    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(200)
     rec_text = page.evaluate("document.getElementById('record').innerText")
     check('하드코어' in rec_text and 'Lv.3 어려움' in rec_text,
@@ -1010,14 +1019,14 @@ def scenario_hardcore(page, tag, report_dir=None):
 
     # 승리 결과에도 배지: 봇 선공(하드코어) 뒤 내가 한방 단어로 끝낸다
     win = None
-    page.evaluate("window.__HB.app.hideResult()")
-    page.evaluate("window.__HB.startGame({level:1, hardcore:true})")
+    page.evaluate("window.__ITDA.app.hideResult()")
+    page.evaluate("window.__ITDA.startGame({level:1, hardcore:true})")
     for _ in range(12):
         st = wait_my_turn(page, 7000)
         if not st or st['phase'] != 'me':
             break
         got = page.evaluate("""() => {
-            const d = window.__HB.dict, st = window.__HB.state();
+            const d = window.__ITDA.dict, st = window.__ITDA.state();
             const used = new Set(st.chain.map((c) => c.word));
             const cands = d.candidatesFor(st.needChar, used);
             if (!cands.length) return null;
@@ -1046,10 +1055,10 @@ def scenario_hardcore(page, tag, report_dir=None):
         check(False, f'[{tag}] 하드코어 승리 시나리오 탐색')
 
     # 포기 결과에도 배지
-    page.evaluate("window.__HB.app.hideResult()")
-    page.evaluate("window.__HB.startGame({level:2, hardcore:true})")
+    page.evaluate("window.__ITDA.app.hideResult()")
+    page.evaluate("window.__ITDA.startGame({level:2, hardcore:true})")
     page.wait_for_timeout(600)
-    page.evaluate("window.__HB.engine.quit()")
+    page.evaluate("window.__ITDA.engine.quit()")
     page.wait_for_timeout(1000)
     quit_res = result_view(page)
     quit_badge = page.evaluate("!document.getElementById('result-hardcore').hidden")
@@ -1057,7 +1066,7 @@ def scenario_hardcore(page, tag, report_dir=None):
           f'[{tag}] 포기 결과에 하드코어 배지', json.dumps(quit_res, ensure_ascii=False)[:140])
 
     # 끄면 일반 모드: 시간·선공을 다시 고르고, 대국도 그 값으로
-    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(200)
     page.click('#btn-hardcore')
     page.wait_for_timeout(200)
@@ -1074,9 +1083,9 @@ def scenario_hardcore(page, tag, report_dir=None):
     check(n['hc'] is False and n['limit'] == 20 and n['first'] == 'me' and not n['badge'] and n['body'] == '0',
           f'[{tag}] 일반 모드 복귀(20초·나부터·배지 없음)', json.dumps({k: n[k] for k in ('hc', 'limit', 'first', 'badge', 'body')}, ensure_ascii=False))
     check(n['timeText'] in ('20', '19'), f'[{tag}] 일반 모드 타이머 20초', n['timeText'])
-    page.evaluate("window.__HB.app.engine.destroy(); window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(150)
-    check(page.evaluate("JSON.parse(localStorage.getItem('hanbang.settings.v1')||'{}').hardcore") is False,
+    check(page.evaluate("JSON.parse(localStorage.getItem('itda.settings.v1')||'{}').hardcore") is False,
           f'[{tag}] 하드코어 꺼짐 저장')
 
 
@@ -1084,7 +1093,7 @@ def scenario_result_level(page, tag):
     """결과 화면: 승리·패배·시간 초과·포기 모두 어떤 난이도였는지 보인다."""
     # 1) Lv.1 에서 진짜 한방 단어로 승리
     pick = page.evaluate("""() => {
-        const d = window.__HB.dict;
+        const d = window.__ITDA.dict;
         for (const [ch] of d.ranges) {
             const w = d.candidatesFor(ch, new Set()).find((x) => d.countFrom(x[x.length - 1]) === 0);
             if (w) return { start: ch, word: w };
@@ -1092,9 +1101,9 @@ def scenario_result_level(page, tag):
         return null;
     }""")
     if check(pick is not None, f'[{tag}] 승리용 한방 단어 탐색', str(pick)):
-        page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
-        page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
-        page.evaluate(f"window.__HB.startGame({{level:1, first:'me', startChar:'{pick['start']}'}})")
+        page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.evaluate(f"window.__ITDA.startGame({{level:1, first:'me', startChar:'{pick['start']}'}})")
         page.wait_for_timeout(450)
         play_word(page, pick['word'], wait=1800)
         win = result_view(page)
@@ -1104,7 +1113,7 @@ def scenario_result_level(page, tag):
         shot(page, f'{tag}-13-result-win')
 
     # 2) Lv.3 시간 초과 패배
-    page.evaluate("window.__HB.startGame({level:3, first:'me', timeLimit:1})")
+    page.evaluate("window.__ITDA.startGame({level:3, first:'me', timeLimit:1})")
     page.wait_for_timeout(2300)
     lose = result_view(page)
     check(lose['title'] == '패배' and lose['label'] == 'Lv.3 어려움' and lose['lv'] == '3',
@@ -1113,9 +1122,9 @@ def scenario_result_level(page, tag):
     shot(page, f'{tag}-14-result-timeout')
 
     # 3) Lv.5 포기 → 결과 화면 난이도 (Lv.3 표시가 남지 않는지)
-    page.evaluate("window.__HB.startGame({level:5, first:'me', timeLimit:20})")
+    page.evaluate("window.__ITDA.startGame({level:5, first:'me', timeLimit:20})")
     page.wait_for_timeout(400)
-    page.evaluate("window.__HB.engine.quit()")
+    page.evaluate("window.__ITDA.engine.quit()")
     page.wait_for_timeout(1000)
     quit_view = result_view(page)
     check(quit_view['title'] == '패배' and quit_view['label'] == 'Lv.5 지옥' and quit_view['lv'] == '5',
@@ -1123,7 +1132,7 @@ def scenario_result_level(page, tag):
     check('포기' in quit_view['reason'], f'[{tag}] 포기 사유', quit_view['reason'])
     shot(page, f'{tag}-15-result-quit')
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 결과 화면 가로 오버플로 0', str(overflow(page)))
-    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(150)
 
 
@@ -1133,11 +1142,11 @@ def scenario_mission(page, tag, report_dir=None):
 
     # 1) 후보 14종 중에서만 나오고, 골고루 섞이는지
     seen = page.evaluate("""() => {
-        const app = window.__HB.app, out = [];
+        const app = window.__ITDA.app, out = [];
         for (let i = 0; i < 60; i += 1) {
             if (app.engine) app.engine.destroy();
             app.startGame({ level: 1, first: 'me', timeLimit: 20 });
-            out.push(window.__HB.state().missionChar);
+            out.push(window.__ITDA.state().missionChar);
         }
         if (app.engine) app.engine.destroy();
         app.show('setup');
@@ -1148,7 +1157,7 @@ def scenario_mission(page, tag, report_dir=None):
 
     # 시험용 단어: 한 시작 글자에서 미션 글자가 0회·1회·2회 든 단어를 모두 찾는다
     plan = page.evaluate("""(missions) => {
-        const d = window.__HB.dict;
+        const d = window.__ITDA.dict;
         const hitsOf = (w, ch) => { let n = 0; for (const c of w) if (c === ch) n += 1; return n; };
         for (const ch of missions) {
             const slots = new Map();
@@ -1173,14 +1182,14 @@ def scenario_mission(page, tag, report_dir=None):
         return
 
     def fixed_game(start, mission):
-        page.evaluate("window.__HB.app.engine.destroy()")
-        page.evaluate("([s, m]) => window.__HB.startGame({ level: 1, first: 'me', startChar: s, mission: m, timeLimit: 20 })",
+        page.evaluate("window.__ITDA.app.engine.destroy()")
+        page.evaluate("([s, m]) => window.__ITDA.startGame({ level: 1, first: 'me', startChar: s, mission: m, timeLimit: 20 })",
                       [start, mission])
         page.wait_for_timeout(250)
 
     # 2) 미션 글자가 없는 단어 → 글자 유지
     fixed_game(plan['start'], plan['ch'])
-    res = page.evaluate("(w) => window.__HB.submit(w)", plan['zero'])
+    res = page.evaluate("(w) => window.__ITDA.submit(w)", plan['zero'])
     st = state(page)
     check(res.get('ok') is True and res.get('missionHits') == 0 and res.get('nextMission') is None
           and st['missionChar'] == plan['ch'],
@@ -1191,8 +1200,8 @@ def scenario_mission(page, tag, report_dir=None):
 
     # 3) 미션 글자 2회 → 중첩 보너스 ×2, 곧바로 다음 글자
     fixed_game(plan['start'], plan['ch'])
-    base = page.evaluate("(w) => window.__HB.engine.scoreFor(w, 0, 0)", plan['two'])
-    expect2 = page.evaluate("(w) => window.__HB.engine.scoreFor(w, 0, 2)", plan['two'])
+    base = page.evaluate("(w) => window.__ITDA.engine.scoreFor(w, 0, 0)", plan['two'])
+    expect2 = page.evaluate("(w) => window.__ITDA.engine.scoreFor(w, 0, 2)", plan['two'])
     page.fill('#word-input', plan['two'])
     page.click('#btn-submit')
     page.wait_for_timeout(140)
@@ -1212,7 +1221,7 @@ def scenario_mission(page, tag, report_dir=None):
     report_shot(page, tag, report_dir, 'mission-success')
 
     # 봇 응답을 잠시 멈추고 중첩 카드·칩을 제대로 담는다
-    page.evaluate("clearTimeout(window.__HB.engine.botTimer)")
+    page.evaluate("clearTimeout(window.__ITDA.engine.botTimer)")
     page.wait_for_timeout(1250)
     tag_after = page.evaluate("document.querySelector('#stage .tag.mission')?.textContent || ''")
     chip_after = page.evaluate("document.getElementById('chip-mission').textContent || ''")
@@ -1222,16 +1231,16 @@ def scenario_mission(page, tag, report_dir=None):
 
     # 4) 미션 글자 1회 → +50%
     fixed_game(plan['start'], plan['ch'])
-    page.evaluate("(w) => window.__HB.submit(w)", plan['one'])
+    page.evaluate("(w) => window.__ITDA.submit(w)", plan['one'])
     st = state(page)
     last = st['chain'][0] if st['chain'] else {}
-    base1 = page.evaluate("(w) => window.__HB.engine.scoreFor(w, 0, 0)", plan['one'])
+    base1 = page.evaluate("(w) => window.__ITDA.engine.scoreFor(w, 0, 0)", plan['one'])
     check(last.get('missionHits') == 1 and last.get('score') == round(base1 * 1.5),
           f'[{tag}] 1개 +50%', f"{base1} → {last.get('score')} (기대 {round(base1 * 1.5)})")
 
     # 5) 중첩 배수 표(0/1/2/3회)
     table = page.evaluate("""() => {
-        const e = window.__HB.engine;
+        const e = window.__ITDA.engine;
         return [0, 1, 2, 3].map((h) => e.scoreFor('가나다라마', 0, h));
     }""")
     check(table[1] == round(table[0] * 1.5) and table[2] == table[0] * 2 and table[3] == table[0] * 3,
@@ -1240,7 +1249,7 @@ def scenario_mission(page, tag, report_dir=None):
     # 6) 봇이 성공해도 다음 글자로 (봇 응답 경로 직접 호출)
     fixed_game(plan['start'], plan['ch'])
     swap = page.evaluate("""(w) => {
-        const e = window.__HB.engine;
+        const e = window.__ITDA.engine;
         const before = e.missionChar;
         e.phase = 'bot';
         e.applyBotMove({ word: w, kind: 'normal', delay: 0 });
@@ -1249,9 +1258,9 @@ def scenario_mission(page, tag, report_dir=None):
     check(swap['after'] != swap['before'] and swap['after'] in MISSION_CHARS,
           f'[{tag}] 봇 미션 성공 → 다음 글자', f"{swap['before']} → {swap['after']}")
     check(swap['after'] in swap['chip'], f'[{tag}] 봇 성공 후 미션 칩 갱신', swap['chip'])
-    page.evaluate("window.__HB.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.engine.destroy()")
     page.wait_for_timeout(900)
-    page.evaluate("window.__HB.app.hideResult()")
+    page.evaluate("window.__ITDA.app.hideResult()")
 
 
 def run_local(base_url, browser):
@@ -1264,7 +1273,7 @@ def run_local(base_url, browser):
         t0 = time.time()
         wait_ready(page)
         load_s = time.time() - t0
-        size = page.evaluate('window.__HB.dict.size')
+        size = page.evaluate('window.__ITDA.dict.size')
         check(size > 300000, f'[{vp_name}] 사전 로드', f'{size}단어 / {load_s:.1f}s')
         check(page.is_visible('#scr-setup'), f'[{vp_name}] 설정 화면')
         check(sum(overflow(page).values()) <= 0, f'[{vp_name}] 설정 가로 오버플로 없음', str(overflow(page)))
@@ -1310,15 +1319,15 @@ def run_local(base_url, browser):
         scenario_hardcore(page, 'local-' + vp_name, REPORT_DIR)
 
         # 대전 중 스크린샷 (여러 단어가 쌓인 화면)
-        page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
-        page.evaluate("window.__HB.startGame({level:1, first:'bot'})")
+        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.evaluate("window.__ITDA.startGame({level:1, first:'bot'})")
         page.wait_for_timeout(1800)
         for _ in range(4):
             st = wait_my_turn(page, 6000)
             if not st or st['phase'] != 'me':
                 break
             w = page.evaluate("""() => {
-                const d = window.__HB.dict, st = window.__HB.state();
+                const d = window.__ITDA.dict, st = window.__ITDA.state();
                 const used = new Set(st.chain.map((c) => c.word));
                 const cands = d.candidatesFor(st.needChar, used).filter((x) => x.length >= 2);
                 return cands[Math.min(3, cands.length - 1)] || null;
@@ -1347,7 +1356,7 @@ def run_live(url, browser):
         t0 = time.time()
         wait_ready(page)
         load_s = time.time() - t0
-        size = page.evaluate('window.__HB.dict.size')
+        size = page.evaluate('window.__ITDA.dict.size')
         check(size > 300000, f'[{vp_name}] 사전 로드', f'{size}단어 / {load_s:.1f}s')
         check(page.is_visible('#scr-setup'), f'[{vp_name}] 설정 화면')
         check(sum(overflow(page).values()) <= 0, f'[{vp_name}] 설정 가로 오버플로 없음', str(overflow(page)))

@@ -24,7 +24,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 BASE = 'https://kkuko-utils.vercel.app'
-CHROME = os.environ.get('HB_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
+CHROME = os.environ.get('ITDA_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW = os.path.join(ROOT, 'build', 'kkuko-raw.jsonl')
 OUT = os.path.join(ROOT, 'build', 'kkuko-words.txt')
