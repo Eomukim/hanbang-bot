@@ -187,7 +187,9 @@ export class Engine {
     const state = this.snapshot();
     this.on.meWord?.({ word, score, combo: this.combo, mission, state });
     this.on.turn?.(state);
-    this.botTimer = setTimeout(() => this.botTurn(), 260 + this.rng() * 200);
+    // 4단계는 즉사 봇이라 텀을 거의 두지 않는다
+    const pause = this.level === 4 ? 40 + this.rng() * 60 : 180 + this.rng() * 160;
+    this.botTimer = setTimeout(() => this.botTurn(), pause);
     return { ok: true, word, score, combo: this.combo, mission };
   }
 

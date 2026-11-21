@@ -1,0 +1,53 @@
+
+=== LIVE https://kkutu-killer.onrender.com ===
+
+-- desktop --
+  PASS  [desktop] 사전 로드  [366095단어 / 0.6s]
+  PASS  [desktop] 설정 화면
+  PASS  [desktop] 설정 가로 오버플로 없음  [{'doc': 0, 'body': 0}]
+  shot  /workspace/work/kkutu-killer/downloads/live-desktop-01-setup.png
+  PASS  [desktop] 대전 시작
+  PASS  [desktop] 대전 가로 오버플로 없음  [{'doc': 0, 'body': 0}]
+  shot  /workspace/work/kkutu-killer/downloads/live-desktop-02-game.png
+  PASS  [live-desktop] 중복 단어 차단  [{"ok": false, "error": {"code": "used", "message": "이미 나온 단어예요."}}]
+  PASS  [live-desktop] 첫 단어 입력  [가가]
+  note  [live-desktop] UI 중복 시도 대상 없음(엔진 검사로 대체 확인)
+  PASS  [live-desktop] 두음법칙 입력 인정  [역가]
+  shot  /workspace/work/kkutu-killer/downloads/live-desktop-02b-twoeum.png
+  PASS  [live-desktop] 1단계 봇 응답 정상  [6턴]
+  PASS  [live-desktop] 1단계 봇 한방 금지  [['가환율', '객돈']]
+  shot  /workspace/work/kkutu-killer/downloads/live-desktop-04-level1.png
+  PASS  [live-desktop] 한방 시나리오 탐색  [{'start': '가', 'word': '가가'}]
+  PASS  [live-desktop] 4단계 봇 즉시 종료  [over]
+  PASS  [live-desktop] 4단계 봇 한방 단어 사용  [가웆]
+  PASS  [live-desktop] 결과 화면 표시
+  shot  /workspace/work/kkutu-killer/downloads/live-desktop-05-level4-oneshot.png
+  PASS  [desktop] 페이지 에러 0  [[]]
+  PASS  [desktop] 콘솔 에러 0  [[]]
+
+-- mobile --
+  PASS  [mobile] 사전 로드  [366095단어 / 0.3s]
+  PASS  [mobile] 설정 화면
+  PASS  [mobile] 설정 가로 오버플로 없음  [{'doc': 0, 'body': 0}]
+  shot  /workspace/work/kkutu-killer/downloads/live-mobile-01-setup.png
+  PASS  [mobile] 대전 시작
+  PASS  [mobile] 대전 가로 오버플로 없음  [{'doc': 0, 'body': 0}]
+  shot  /workspace/work/kkutu-killer/downloads/live-mobile-02-game.png
+  PASS  [live-mobile] 중복 단어 차단  [{"ok": false, "error": {"code": "used", "message": "이미 나온 단어예요."}}]
+  PASS  [live-mobile] 첫 단어 입력  [가가]
+  note  [live-mobile] UI 중복 시도 대상 없음(엔진 검사로 대체 확인)
+  PASS  [live-mobile] 두음법칙 입력 인정  [역가]
+  shot  /workspace/work/kkutu-killer/downloads/live-mobile-02b-twoeum.png
+  PASS  [live-mobile] 1단계 봇 응답 정상  [6턴]
+  PASS  [live-mobile] 1단계 봇 한방 금지  [['가공물', '가스실']]
+  shot  /workspace/work/kkutu-killer/downloads/live-mobile-04-level1.png
+  PASS  [live-mobile] 한방 시나리오 탐색  [{'start': '가', 'word': '가가'}]
+  PASS  [live-mobile] 4단계 봇 즉시 종료  [over]
+  PASS  [live-mobile] 4단계 봇 한방 단어 사용  [가읅]
+  PASS  [live-mobile] 결과 화면 표시
+  shot  /workspace/work/kkutu-killer/downloads/live-mobile-05-level4-oneshot.png
+  PASS  [mobile] 페이지 에러 0  [[]]
+  PASS  [mobile] 콘솔 에러 0  [[]]
+
+=== 요약 ===
+모든 검사 통과
