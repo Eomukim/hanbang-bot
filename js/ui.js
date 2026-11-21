@@ -174,8 +174,10 @@ export class App {
   }
 
   renderRecord() {
+    // 예전 4단계 기준으로 저장된 전적(localStorage hanbang.record.v1)도 그대로 읽는다.
+    const known = new Set(LEVELS.map((l) => l.id));
     const rows = Object.entries(this.record)
-      .filter(([, r]) => r.plays)
+      .filter(([lv, r]) => r.plays && known.has(Number(lv)))
       .sort((a, b) => Number(b[0]) - Number(a[0]));
     if (!rows.length) {
       this.el.record.innerHTML = '<span>아직 전적이 없어요. 첫 대전을 시작해 보세요.</span>';
@@ -485,7 +487,9 @@ export class App {
     ].join('');
     const kindHtml = kind === 'outer'
       ? '<span class="tag danger">외통수</span>'
-      : kind === 'press' ? '<span class="tag danger">압박</span>' : '';
+      : kind === 'route'
+        ? '<span class="tag danger">필승 라인</span>'
+        : kind === 'press' ? '<span class="tag danger">압박</span>' : '';
     this.el.stage.innerHTML = `
       <div class="stage-word ${entry.who}">
         <div class="stage-who ${entry.who}"><i class="dot"></i>${who} · ${entry.word.length}글자</div>

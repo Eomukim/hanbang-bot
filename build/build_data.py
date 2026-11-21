@@ -15,6 +15,10 @@ Outputs (into ./data):
                 contiguous range (the browser derives the start index from this).
     stats.json  precomputed per-syllable successor counts (nextCount), plus
                 one-shot / induced word lists and source metadata.
+                It also carries the syllable duel graph (graph): for every
+                syllable the win/lose status and depth of the perfect-play
+                retrograde analysis, and the one-shot words that start there.
+                The Lv.5 bot reads it at runtime.
 """
 import json
 import os
@@ -22,6 +26,7 @@ import re
 import sys
 import time
 import datetime
+from collections import deque
 
 HANGUL = re.compile(r"^[가-힣]+$")
 
@@ -75,6 +80,125 @@ def twoeum(ch):
     if cho == NIEUN and jung in I_VOWELS:
         return chr(HANGUL_BASE + (IEUNG * JUNGSEONG + jung) * JONGSEONG + jong)
     return None
+
+
+def allowed_starts(ch):
+    """이 음절로 단어를 시작할 때 인정되는 시작 글자(원래 글자 + 두음 변환 글자)."""
+    alt = twoeum(ch)
+    return [ch, alt] if alt and alt != ch else [ch]
+
+
+def duel_nodes(ch):
+    """ch 로 시작하는 단어를 낼 수 있는 '이어야 할 글자' 노드들.
+
+    엔진은 이어야 할 글자 X 에 대해 allowed_starts(X) 로 시작하는 단어를 인정한다.
+    그래서 단어의 첫 글자 c 는 X = c 뿐 아니라, 두음법칙 결과가 c 가 되는 X 에서도
+    낼 수 있다(예: '이'로 시작하는 단어는 '이'·'리'·'니' 에서 모두 낼 수 있다).
+    """
+    out = {ch}
+    k = ord(ch) - HANGUL_BASE
+    if k < 0 or k >= CHOSEONG * JUNGSEONG * JONGSEONG:
+        return out
+    cho, jung, jong = k // (JUNGSEONG * JONGSEONG), (k % (JUNGSEONG * JONGSEONG)) // JONGSEONG, k % JONGSEONG
+    if cho == IEUNG and jung in I_VOWELS:
+        # ㅇ + ㅑㅒㅕㅖㅛㅠㅣ 는 ㄹ·ㄴ 에서 두음 변환된 결과일 수 있다
+        out.add(chr(HANGUL_BASE + (RIEUL * JUNGSEONG + jung) * JONGSEONG + jong))
+        out.add(chr(HANGUL_BASE + (NIEUN * JUNGSEONG + jung) * JONGSEONG + jong))
+    elif cho == NIEUN and jung not in I_VOWELS:
+        # ㄴ + 그 밖의 모음 은 ㄹ 에서 두음 변환된 결과 (리을+ㅣ 는 ㅇ 으로 가므로 제외)
+        out.add(chr(HANGUL_BASE + (RIEUL * JUNGSEONG + jung) * JONGSEONG + jong))
+    return out
+
+
+def build_graph(ordered, starts):
+    """음절 대전 그래프의 완전 정보(승/패/무)를 역방향 분석으로 계산한다.
+
+    노드 = 이어야 할 글자. 간선 = 그 글자로 시작하는 단어 하나(끝 글자로 이동).
+      - 후속 단어가 없는 글자 = 지는 자리(패배 노드, depth 0)
+      - 지는 자리로 보낼 수 있는 글자 = 이기는 자리(승리 노드)
+      - 모든 수가 이기는 자리로만 이어지면 지는 자리
+      - 위 두 규칙으로 확정되지 않는 노드(순환)는 무승부
+    """
+    twoeum_cache = {}
+
+    def two(ch):
+        if ch not in twoeum_cache:
+            twoeum_cache[ch] = twoeum(ch)
+        return twoeum_cache[ch]
+
+    def group_count(ch):
+        n = starts.get(ch, 0)
+        alt = two(ch)
+        if alt:
+            n += starts.get(alt, 0)
+        return n
+
+    nodes = set(starts)
+    for w in ordered:
+        nodes.add(w[-1])
+    for ch in list(nodes):
+        nodes.update(duel_nodes(ch))
+
+    pred = {ch: [] for ch in nodes}
+    for w in ordered:
+        end = w[-1]
+        for start in duel_nodes(w[0]):
+            pred[end].append(start)
+
+    outdeg = {ch: group_count(ch) for ch in nodes}
+    status = {}   # 'W' | 'L' (없으면 무승부)
+    depth = {}
+    remaining = dict(outdeg)
+    longest_child = {ch: 0 for ch in nodes}
+    queue = deque()
+
+    for ch in nodes:
+        if outdeg[ch] == 0:
+            status[ch] = 'L'
+            depth[ch] = 0
+            queue.append(ch)
+
+    while queue:
+        node = queue.popleft()
+        if status[node] == 'L':
+            for prev in pred[node]:
+                if prev in status:
+                    continue
+                status[prev] = 'W'
+                depth[prev] = depth[node] + 1
+                queue.append(prev)
+        else:
+            for prev in pred[node]:
+                if prev in status:
+                    continue
+                remaining[prev] -= 1
+                if depth[node] + 1 > longest_child[prev]:
+                    longest_child[prev] = depth[node] + 1
+                if remaining[prev] == 0:
+                    status[prev] = 'L'
+                    depth[prev] = longest_child[prev]
+                    queue.append(prev)
+
+    wins = {ch: depth[ch] for ch in nodes if status.get(ch) == 'W'}
+    loses = {ch: depth[ch] for ch in nodes if status.get(ch) == 'L'}
+
+    # 한방 단어: 후속 단어가 없는 글자로 끝나는 단어. 그 단어가 시작되는 글자마다 모아 둔다.
+    shots = {}
+    one_shots = [w for w in ordered if group_count(w[-1]) == 0]
+    for w in sorted(one_shots, key=lambda x: (-len(x), x)):
+        for start in duel_nodes(w[0]):
+            shots.setdefault(start, []).append(w)
+
+    return {
+        'version': 1,
+        'nodes': len(nodes),
+        'statusCounts': {'win': len(wins), 'lose': len(loses), 'draw': len(nodes) - len(wins) - len(loses)},
+        'maxWinDepth': max(wins.values()) if wins else 0,
+        'maxLoseDepth': max(loses.values()) if loses else 0,
+        'win': dict(sorted(wins.items())),
+        'lose': dict(sorted(loses.items())),
+        'shots': dict(sorted(shots.items())),
+    }
 
 
 def read_open_db(path):
@@ -160,6 +284,7 @@ def main():
 
     one_shot = [w for w in ordered if group_count(w[-1]) == 0]
     induced = [w for w in ordered if 0 < group_count(w[-1]) <= 5]
+    graph = build_graph(ordered, starts)
 
     words_path = os.path.join(out_dir, "words.txt")
     with open(words_path, "w", encoding="utf-8") as f:
@@ -176,7 +301,7 @@ def main():
                 flag_counts[name] = flag_counts.get(name, 0) + 1
 
     stats = {
-        "version": 2,
+        "version": 3,
         "source": "공개 사전 덤프 + 오픈DB — 출처 표기는 NOTICE.md",
         "generatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "rawRows": raw,
@@ -193,6 +318,7 @@ def main():
         "inducedCount": len(induced),
         "inducedSamples": induced[:40],
         "flagCounts": flag_counts,
+        "graph": graph,
     }
     with open(os.path.join(out_dir, "stats.json"), "w", encoding="utf-8") as f:
         json.dump(stats, f, ensure_ascii=False, separators=(",", ":"))
@@ -205,6 +331,8 @@ def main():
     print("start syll.   :", len(starts))
     print("one-shot words:", len(one_shot), one_shot[:8])
     print("induced words :", len(induced), induced[:8])
+    print("graph nodes   :", graph['nodes'], graph['statusCounts'],
+          "maxDepth", graph['maxWinDepth'], graph['maxLoseDepth'])
     print("words.txt     : %.1f KB" % (size / 1024.0))
     print("stats.json    : %.1f KB" % (os.path.getsize(os.path.join(out_dir, "stats.json")) / 1024.0))
 

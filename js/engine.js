@@ -110,7 +110,7 @@ export class Engine {
     clearTimeout(this.turnTimer);
     this.on.botThinking?.(this.snapshot());
 
-    const move = this.bot.choose({ needChar: this.needChar, used: this.used, turn: this.round });
+    const move = this.bot.choose({ needChar: this.needChar, used: this.used, turn: this.round, mission: this.missionChar });
     if (!move) {
       this.botTimer = setTimeout(() => this.finish('me', 'bot-stuck'), 420);
       return;
@@ -208,8 +208,8 @@ export class Engine {
       word, score, combo: this.combo, mission, missionHits: hits, missionChar, missionMul, nextMission: rotated?.next ?? null, state,
     });
     this.on.turn?.(state);
-    // 4단계는 즉사 봇이라 텀을 거의 두지 않는다
-    const pause = this.level === 4 ? 40 + this.rng() * 60 : 180 + this.rng() * 160;
+    // 4단계·5단계는 즉사·수읽기 봇이라 텀을 거의 두지 않는다
+    const pause = this.level >= 4 ? 40 + this.rng() * 60 : 180 + this.rng() * 160;
     this.botTimer = setTimeout(() => this.botTurn(), pause);
     return {
       ok: true, word, score, combo: this.combo, mission, missionHits: hits, missionMul, missionChar, nextMission: rotated?.next ?? null,

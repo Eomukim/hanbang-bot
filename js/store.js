@@ -33,7 +33,8 @@ function writeJSON(key, value) {
 export function loadSettings() {
   const saved = readJSON(KEY_SETTINGS, {});
   const settings = { ...DEFAULT_SETTINGS };
-  if ([1, 2, 3, 4].includes(saved.level)) settings.level = saved.level;
+  // 4단계 시절에 저장한 설정(level 1~4)도 그대로 읽는다. 5단계가 늘었을 뿐 번호는 같다.
+  if ([1, 2, 3, 4, 5].includes(saved.level)) settings.level = saved.level;
   if ([10, 15, 20].includes(saved.timeLimit)) settings.timeLimit = saved.timeLimit;
   if (saved.first === 'me' || saved.first === 'bot') settings.first = saved.first;
   if (typeof saved.sound === 'boolean') settings.sound = saved.sound;

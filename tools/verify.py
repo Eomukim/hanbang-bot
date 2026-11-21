@@ -3,7 +3,9 @@
 
 로컬(파일 서버) 또는 라이브 URL을 headless Chromium으로 열어
  - 콘솔/페이지 에러, 가로 오버플로
- - 두음법칙 · 중복 차단 · 내 단어장 · 4단계 한방 승리 · 봇 난이도 규칙
+ - 두음법칙 · 중복 차단 · 내 단어장 · 4단계 극악 한방 승리 · 봇 난이도 규칙
+ - 5단계 난이도 카드(데스크톱/모바일 배치)와 4단계 기준 localStorage 호환
+ - Lv.5 지옥: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 검증 · 압박/미션·장문 · 응답 시간
  - 미션 규칙(14종 후보 · 미달성 시 유지 · 중첩 보너스 · 성공 시 다음 글자)
  - 모바일(390x844) 레이아웃과 스크린샷
 을 확인한다.
@@ -39,6 +41,164 @@ VIEWPORTS = {
     'desktop': {'width': 1280, 'height': 800},
     'mobile': {'width': 390, 'height': 844},
 }
+
+# Lv.5 지옥 봇의 판단을 직접 돌려 보는 스크립트.
+#  · 한방 즉사가 있으면 쓰는지, 상대에게 한방 각을 주지 않는지(피할 수 있을 때),
+#  · '필승'으로 표시한 수가 실제로 강제 승리인지(내 수 → 상대 모든 응수 → 내 한방),
+#  · 후속 단어가 적은 글자로 몰아넣는지, 장문·미션 점수를 챙기는지, 판단·응답 시간은 어떤지
+HELL_PROPS = """
+() => {
+  const dict = window.__HB.dict, Bot = window.__HB.Bot;
+  const starts = dict.goodStartChars(120).sort();
+  const bot = new Bot({level: 5, dict});
+
+  const kill = (node, used) => {
+    const shots = dict.shotWords(node);
+    if (shots) for (const w of shots) if (!used.has(w) && dict.countFrom(w[w.length - 1]) === 0) return w;
+    const cands = dict.candidatesFor(node, used);
+    if (cands.length <= 40) for (const w of cands) if (dict.countFrom(w[w.length - 1]) === 0) return w;
+    return null;
+  };
+  // 독립 구현: 이 글자에서 3수 안에 강제로 이기는가 (내 수 → 상대 모든 응수 → 내 한방)
+  const forcedWin = (node, used, depth) => {
+    if (kill(node, used)) return true;
+    if (depth <= 1) return false;
+    let tried = 0;
+    for (const w of dict.candidatesFor(node, used)) {
+      if (++tried > 120) break;
+      const end = w[w.length - 1];
+      if (dict.graphStatus(end) !== 'L' && dict.countFrom(end) > 3) continue;
+      const used2 = new Set(used); used2.add(w);
+      let ok = true;
+      for (const r of dict.candidatesFor(end, used2)) {
+        const used3 = new Set(used2); used3.add(r);
+        if (!forcedWin(r[r.length - 1], used3, depth - 2)) { ok = false; break; }
+      }
+      if (ok) return true;
+    }
+    return false;
+  };
+
+  const out = {positions: 0, moves: 0, handedKill: 0, handedKillAvoidable: 0, outer: 0, outerBroken: 0,
+               kinds: {}, msSum: 0, msMax: 0, endDead: 0, endThin: 0, longMoves: 0,
+               delayMin: 1e9, delayMax: 0, samples: []};
+  for (let g = 0; g < 80; g += 1) {
+    let ch = starts[(g * 11) % starts.length];
+    const used = new Set();
+    const steps = g % 5;
+    for (let k = 0; k < steps; k += 1) {
+      const c = dict.candidatesFor(ch, used);
+      if (!c.length) break;
+      const w = c[(g * 17 + k * 31) % c.length];
+      used.add(w); ch = w[w.length - 1];
+      if (!dict.hasCandidate(ch, used)) break;
+    }
+    if (!dict.hasCandidate(ch, used)) continue;
+    out.positions += 1;
+    const t = performance.now();
+    const mv = bot.choose({needChar: ch, used, turn: 10, mission: '가'});
+    const dt = performance.now() - t;
+    out.msSum += dt; if (dt > out.msMax) out.msMax = dt;
+    if (!mv) continue;
+    out.moves += 1;
+    out.kinds[mv.kind] = (out.kinds[mv.kind] || 0) + 1;
+    out.delayMin = Math.min(out.delayMin, mv.delay);
+    out.delayMax = Math.max(out.delayMax, mv.delay);
+    if (mv.word.length >= 5) out.longMoves += 1;
+    const end = mv.word[mv.word.length - 1];
+    const after = new Set(used); after.add(mv.word);
+    if (dict.countFrom(end) === 0) out.endDead += 1;
+    else if (dict.countFrom(end) <= 3) out.endThin += 1;
+    const pk = kill(end, after);
+    if (pk) {
+      out.handedKill += 1;
+      let avoidable = false;
+      for (const w of dict.candidatesFor(ch, used)) {
+        const e2 = w[w.length - 1];
+        if (dict.countFrom(e2) === 0) { avoidable = true; break; }
+        const u2 = new Set(used); u2.add(w);
+        if (!kill(e2, u2)) { avoidable = true; break; }
+      }
+      if (avoidable) out.handedKillAvoidable += 1;
+      if (out.samples.length < 3) out.samples.push({handed: mv.word, killWord: pk});
+    }
+    if (mv.proven) {
+      out.outer += 1;
+      let ok = true;
+      for (const r of dict.candidatesFor(end, after)) {
+        const u3 = new Set(after); u3.add(r);
+        if (!forcedWin(r[r.length - 1], u3, 3)) { ok = false; break; }
+      }
+      if (!ok) out.outerBroken += 1;
+    }
+  }
+  out.msAvg = +(out.msSum / Math.max(1, out.moves)).toFixed(2);
+  out.msMax = +out.msMax.toFixed(1);
+  if (!out.moves) { out.delayMin = 0; out.delayMax = 0; }
+  return out;
+}
+"""
+
+# Lv.5 봇이 고른 수 자체를 뜯어 보는 표본 시험(한방 선택 · 미션 · 압박)
+HELL_PICKS = """
+() => {
+  const dict = window.__HB.dict, Bot = window.__HB.Bot;
+  const starts = dict.goodStartChars(60).sort();
+  const last = (w) => w[w.length - 1];
+  const value = (w, mission) => {
+    let hits = 0;
+    for (const c of w) if (c === mission) hits += 1;
+    const mult = hits <= 0 ? 1 : hits === 1 ? 1.5 : hits;
+    return (w.length * w.length + 4 * w.length) * mult;
+  };
+  const out = {};
+
+  // 1) 한방이 여러 개일 때: 미션 글자가 겹치거나 더 긴(점수 높은) 한방을 고르는가
+  for (const ch of starts) {
+    const cands = dict.candidatesFor(ch, new Set());
+    const kills = cands.filter((w) => dict.countFrom(last(w)) === 0);
+    if (kills.length < 2) continue;
+    const best = kills.reduce((a, b) => (value(b, '가') > value(a, '가') ? b : a));
+    if (![...kills].some((w) => w.includes('가')) || value(best, '가') === value(kills[0], '가')) continue;
+    const mv = new Bot({level: 5, dict}).choose({needChar: ch, used: new Set(), turn: 1, mission: '가'});
+    out.kill = {ok: true, char: ch, expect: best, got: mv.word, kind: mv.kind,
+                equal: mv.word === best, kills: kills.length};
+    break;
+  }
+  if (!out.kill) out.kill = {ok: false};
+
+  // 2) 고른 끝 글자 안에서는 미션 중첩·장문으로 점수가 가장 높은 단어를 고르는가
+  let checked = 0, agree = 0, detail = null;
+  for (const ch of starts) {
+    const used = new Set();
+    const mv = new Bot({level: 5, dict}).choose({needChar: ch, used, turn: 6, mission: '가'});
+    if (!mv) continue;
+    const end = last(mv.word);
+    const same = dict.candidatesFor(ch, used).filter((w) => last(w) === end);
+    const best = same.reduce((a, b) => (value(b, '가') > value(a, '가') ? b : a), mv.word);
+    checked += 1;
+    if (mv.word === best) agree += 1;
+    else if (!detail) detail = {char: ch, got: mv.word, best, end, same: same.length, kind: mv.kind};
+    if (checked >= 25) break;
+  }
+  out.mission = {ok: checked > 0, checked, agree, detail};
+
+  // 3) 한방·필승이 없는 자리: 후속 단어가 1개뿐인 글자로 몰아넣는가
+  for (const ch of starts) {
+    const cands = dict.candidatesFor(ch, new Set());
+    if (cands.some((w) => dict.countFrom(last(w)) === 0)) continue;
+    const tight = cands.find((w) => dict.countFrom(last(w)) === 1);
+    if (!tight) continue;
+    const mv = new Bot({level: 5, dict}).choose({needChar: ch, used: new Set(), turn: 8, mission: '나'});
+    const endLive = dict.countFrom(last(mv.word));
+    out.pressure = {ok: true, char: ch, tight, got: mv.word, kind: mv.kind, endLive,
+                    squeezed: endLive <= 3};
+    break;
+  }
+  if (!out.pressure) out.pressure = {ok: false};
+  return out;
+}
+"""
 
 FAILS = []
 
@@ -267,7 +427,7 @@ def scenario_new_words(page, tag):
 
 
 def scenario_bot_levels(page, tag):
-    """1단계는 한방 금지, 4단계는 즉시 한방."""
+    """1단계는 한방 금지, 4단계 극악은 즉시 한방."""
     # 1단계: 여러 턴을 두고 봇이 한방 단어를 쓰지 않는지
     page.evaluate("window.__HB.app.engine.destroy()")
     page.evaluate("window.__HB.startGame({level:1, first:'bot'})")
@@ -294,7 +454,7 @@ def scenario_bot_levels(page, tag):
     check(not any(one_shots), f'[{tag}] 1단계 봇 한방 금지', str(bot_words[-2:]))
     shot(page, f'{tag}-04-level1')
 
-    # 4단계: 한방 시나리오
+    # 4단계 극악: 한방 시나리오
     pick = page.evaluate("""() => {
         const d = window.__HB.dict;
         for (const [ch] of d.ranges) {
@@ -318,11 +478,215 @@ def scenario_bot_levels(page, tag):
     bot_words = [c['word'] for c in st['chain'] if c['who'] == 'bot']
     last_bot = bot_words[-1] if bot_words else ''
     is_oneshot = page.evaluate("([w]) => !!w && window.__HB.dict.isOneShot(w)", [last_bot])
-    check(st['phase'] == 'over', f'[{tag}] 4단계 봇 즉시 종료', st['phase'])
-    check(is_oneshot, f'[{tag}] 4단계 봇 한방 단어 사용', last_bot)
+    check(st['phase'] == 'over', f'[{tag}] 4단계 극악 봇 즉시 종료', st['phase'])
+    check(is_oneshot, f'[{tag}] 4단계 극악 봇 한방 단어 사용', last_bot)
     check(page.is_visible('#ov-result'), f'[{tag}] 결과 화면 표시')
     shot(page, f'{tag}-05-level4-oneshot')
     page.wait_for_timeout(600)
+
+
+def scenario_levels(page, tag):
+    """5단계 난이도 카드: 개수·이름·선택·5단계 대전 헤더."""
+    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(150)
+    cards = page.evaluate("""() => [...document.querySelectorAll('.level')].map((el) => ({
+        lv: el.dataset.lv,
+        name: el.querySelector('b').textContent,
+        label: el.querySelector('small').textContent,
+        face: el.querySelector('i').textContent.trim(),
+    }))""")
+    check(len(cards) == 5, f'[{tag}] 난이도 카드 5개', str(len(cards)))
+    check([c['lv'] for c in cards] == ['1', '2', '3', '4', '5'], f'[{tag}] 난이도 번호 1~5', str([c['lv'] for c in cards]))
+    check([c['name'] for c in cards] == ['쉬움', '보통', '어려움', '극악', '지옥'],
+          f'[{tag}] 난이도 이름', str([c['name'] for c in cards]))
+    check(cards[3]['label'] == 'Lv.4' and cards[4]['label'] == 'Lv.5' if len(cards) == 5 else False,
+          f'[{tag}] Lv.4 극악 · Lv.5 지옥 표기', str([c['label'] for c in cards]))
+    box = page.evaluate("""() => {
+        const el = document.getElementById('levels');
+        const cards = [...document.querySelectorAll('.level')];
+        const left = el.offsetLeft;
+        return { rows: new Set(cards.map((c) => c.offsetTop)).size,
+                 width: el.clientWidth,
+                 right: Math.max(...cards.map((c) => c.offsetLeft + c.offsetWidth)) - left };
+    }""")
+    check(box['rows'] == 1 and box['right'] <= box['width'] + 1,
+          f'[{tag}] 난이도 카드 한 줄 배치', json.dumps(box))
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 난이도 5개 가로 오버플로 0', str(overflow(page)))
+
+    # 4단계(극악)와 5단계(지옥) 선택이 각각 화면에 반영되는지
+    page.click('.level[data-lv="4"]')
+    page.wait_for_timeout(120)
+    desc4 = page.evaluate("document.getElementById('lv-desc').textContent")
+    checked4 = page.evaluate("document.querySelectorAll('.level')[3].getAttribute('aria-checked')")
+    check(checked4 == 'true', f'[{tag}] Lv.4 극악 선택', desc4)
+    page.click('.level[data-lv="5"]')
+    page.wait_for_timeout(120)
+    desc5 = page.evaluate("document.getElementById('lv-desc').textContent")
+    checked5 = page.evaluate("document.querySelectorAll('.level')[4].getAttribute('aria-checked')")
+    check(checked5 == 'true' and desc5 != desc4, f'[{tag}] Lv.5 지옥 선택', desc5)
+    check('필승' in desc5 or '수읽기' in desc5, f'[{tag}] Lv.5 설명', desc5)
+    saved = page.evaluate("JSON.parse(localStorage.getItem('hanbang.settings.v1') || '{}').level")
+    check(saved == 5, f'[{tag}] 5단계 선택 저장', str(saved))
+    shot(page, f'{tag}-10-levels5')
+
+    # 5단계 대전을 실제로 시작해 헤더·테마 확인
+    page.click('#btn-start')
+    page.wait_for_selector('#scr-game:not([hidden])')
+    page.wait_for_timeout(500)
+    head = page.evaluate("""() => ({
+        name: document.getElementById('bot-name').textContent,
+        lv: document.getElementById('bot-lv').textContent,
+        face: document.getElementById('bot-face').textContent,
+        body: document.body.dataset.level,
+        phase: window.__HB.state() ? window.__HB.state().phase : null,
+    })""")
+    check(head['name'] == '한방봇 지옥' and head['lv'] == 'Lv.5 지옥' and head['body'] == '5',
+          f'[{tag}] 5단계 대전 헤더', json.dumps(head, ensure_ascii=False))
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 5단계 대전 가로 오버플로 0', str(overflow(page)))
+    shot(page, f'{tag}-11-level5-game')
+    page.evaluate("window.__HB.app.engine.destroy(); window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(150)
+
+
+def scenario_legacy(page, tag):
+    """4단계 시절 localStorage(설정·전적)가 그대로 읽히는지."""
+    page.evaluate("""() => {
+        localStorage.setItem('hanbang.settings.v1', JSON.stringify({ level: 4, timeLimit: 15, first: 'bot', sound: false }));
+        localStorage.setItem('hanbang.record.v1', JSON.stringify({
+            1: { plays: 3, wins: 1, losses: 2, bestCombo: 2, bestScore: 40 },
+            4: { plays: 7, wins: 3, losses: 4, bestCombo: 5, bestScore: 260 },
+        }));
+    }""")
+    page.reload(wait_until='domcontentloaded')
+    wait_ready(page)
+    page.wait_for_timeout(250)
+    view = page.evaluate("""() => ({
+        checked: document.querySelector('.level[aria-checked="true"]')?.dataset.lv,
+        sound: document.getElementById('btn-sound').textContent,
+        first: document.querySelector('#first-opts button[aria-checked="true"]')?.dataset.first,
+        record: document.getElementById('record').innerText,
+    })""")
+    check(view['checked'] == '4', f'[{tag}] 옛 설정 Lv.4 복원', str(view['checked']))
+    check(view['sound'] == '소리 끔' and view['first'] == 'bot', f'[{tag}] 옛 설정 소리·선공 복원',
+          f"{view['sound']} / {view['first']}")
+    check('Lv.4 극악' in view['record'] and 'Lv.1 쉬움' in view['record'] and '3승 4패' in view['record'],
+          f'[{tag}] 옛 전적 Lv.4 극악으로 표시', view['record'].replace('\n', ' | ')[:120])
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 옛 설정 화면 가로 오버플로 0', str(overflow(page)))
+
+    # 새 5단계 전적도 같은 키에 쌓이는지
+    page.evaluate("window.__HB.startGame({level:5, first:'me', timeLimit:1})")
+    page.wait_for_timeout(1800)
+    rec = page.evaluate("JSON.parse(localStorage.getItem('hanbang.record.v1') || '{}')")
+    check('5' in rec and rec['5'].get('plays', 0) >= 1 and '4' in rec,
+          f'[{tag}] Lv.5 전적 저장·기존 기록 유지', json.dumps(rec, ensure_ascii=False)[:160])
+    page.evaluate("""() => {
+        localStorage.removeItem('hanbang.settings.v1');
+        localStorage.removeItem('hanbang.record.v1');
+    }""")
+    page.reload(wait_until='domcontentloaded')
+    wait_ready(page)
+    page.wait_for_timeout(200)
+
+
+def scenario_hell(page, tag):
+    """Lv.5 지옥: 한방 즉사 · 강제 필승 · 한방 각 회피 · 압박/미션·장문 · 응답 속도."""
+    props = page.evaluate(HELL_PROPS)
+    check(props['moves'] >= 50, f'[{tag}] Lv.5 표본 판단', f"{props['moves']}수")
+    check(props['handedKillAvoidable'] == 0,
+          f'[{tag}] Lv.5 상대 한방 각 회피',
+          f"준 한방 {props['handedKill']}회 / 피할 수 있었던 {props['handedKillAvoidable']}회")
+    check(props['kinds'].get('oneshot', 0) >= 10, f'[{tag}] Lv.5 한방 즉사 사용', str(props['kinds']))
+    check(props['outer'] >= 3 and props['outerBroken'] == 0,
+          f'[{tag}] Lv.5 강제필승 검증', f"{props['outer']}수 중 깨진 것 {props['outerBroken']}")
+    check(props['endThin'] + props['endDead'] >= props['moves'] * 0.5,
+          f'[{tag}] Lv.5 압박(후속 단어 적은 글자)', f"{props['endDead']} / {props['endThin']}")
+    check(props['msMax'] < 60, f'[{tag}] Lv.5 판단 속도', f"평균 {props['msAvg']}ms / 최대 {props['msMax']}ms")
+    check(props['delayMin'] >= 140 and props['delayMax'] <= 410,
+          f'[{tag}] Lv.5 응답 텀 0.15~0.4초', f"{props['delayMin']:.0f}~{props['delayMax']:.0f}ms")
+    check(props['longMoves'] >= props['moves'] * 0.3,
+          f'[{tag}] Lv.5 장문 선택', f"{props['longMoves']}/{props['moves']}수 5글자 이상")
+
+    picks = page.evaluate(HELL_PICKS)
+    check(picks.get('kill', {}).get('ok') and picks['kill']['equal'],
+          f'[{tag}] Lv.5 한방 중 미션·최고점 우선',
+          json.dumps(picks.get('kill'), ensure_ascii=False)[:180])
+    check(picks.get('mission', {}).get('ok') and picks['mission']['agree'] == picks['mission']['checked'],
+          f'[{tag}] Lv.5 같은 끝 글자에서 미션·최고점 단어',
+          json.dumps(picks.get('mission'), ensure_ascii=False)[:200])
+    check(picks.get('pressure', {}).get('ok'),
+          f'[{tag}] Lv.5 소수 후보 글자로 압박',
+          json.dumps(picks.get('pressure'), ensure_ascii=False)[:180])
+
+    # 실제 대전: 내가 보통 사람처럼 두고, 봇의 응답 수·태그·시간을 본다
+    gaps, tags, bot_moves = [], [], []
+    for _attempt in range(3):
+        page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+        page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+        page.evaluate("window.__HB.startGame({level:5, first:'me', timeLimit:20})")
+        page.wait_for_timeout(350)
+        for _ in range(5):
+            st = wait_my_turn(page, 8000)
+            if not st or st['phase'] != 'me':
+                break
+            w = page.evaluate("""() => {
+                const d = window.__HB.dict, st = window.__HB.state();
+                const used = new Set(st.chain.map((c) => c.word));
+                const cands = d.candidatesFor(st.needChar, used);
+                if (!cands.length) return null;
+                // 사람처럼: 너무 어렵지 않은 2~4글자 단어를 고른다
+                const easy = cands.filter((x) => x.length <= 4);
+                return (easy.length ? easy : cands)[Math.min(5, (easy.length || cands.length) - 1)];
+            }""")
+            if not w:
+                break
+            before = page.evaluate("window.__HB.state().chain.length")
+            t0 = time.time()
+            page.fill('#word-input', w)
+            page.click('#btn-submit')
+            try:
+                page.wait_for_function(
+                    f"() => window.__HB.state().chain.length > {before} + 1 || window.__HB.state().phase === 'over'",
+                    timeout=6000)
+                gaps.append((time.time() - t0) * 1000)
+            except Exception:
+                break
+            tag_text = page.evaluate("document.querySelector('#stage .tag.danger')?.textContent || ''")
+            if tag_text:
+                tags.append(tag_text)
+            st = state(page)
+            if st['phase'] == 'over':
+                break
+        st = state(page)
+        bot_moves.extend([c for c in st['chain'] if c['who'] == 'bot'])
+        if len(bot_moves) >= 3 or len(gaps) >= 4:
+            break
+    check(len(bot_moves) >= 2, f'[{tag}] Lv.5 실제 대전 응수', f"{len(bot_moves)}수 / {len(gaps)}턴")
+    if gaps:
+        check(min(gaps) <= 900, f'[{tag}] Lv.5 실제 응답 시간', f"{min(gaps):.0f}~{max(gaps):.0f}ms")
+    check(any(t in ('외통수', '필승 라인', '압박') for t in tags) or len(bot_moves) >= 2,
+          f'[{tag}] Lv.5 수읽기 태그 노출', str(tags[:4]))
+    check(all(c['kind'] in ('oneshot', 'outer', 'route', 'press', 'normal', 'long') for c in bot_moves),
+          f'[{tag}] Lv.5 수 성격 기록', str([c['kind'] for c in bot_moves]))
+    # 대전 중 화면을 남긴다 (끝난 판이면 새로 한 판 열어 봇의 첫 수를 받는다)
+    st = state(page)
+    if st and st['phase'] == 'over':
+        page.evaluate("window.__HB.app.hideResult()")
+        page.evaluate("window.__HB.startGame({level:5, first:'me', timeLimit:20})")
+        page.wait_for_timeout(400)
+        w2 = page.evaluate("""() => {
+            const d = window.__HB.dict, st = window.__HB.state();
+            const cands = d.candidatesFor(st.needChar, new Set());
+            const easy = cands.filter((x) => x.length <= 4);
+            return (easy.length ? easy : cands)[Math.min(3, (easy.length || cands.length) - 1)] || null;
+        }""")
+        if w2:
+            page.fill('#word-input', w2)
+            page.click('#btn-submit')
+            page.wait_for_timeout(700)
+    shot(page, f'{tag}-12-hell-game')
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(200)
 
 
 def scenario_custom(page, tag):
@@ -574,6 +938,9 @@ def run_local(base_url, browser):
         scenario_bot_levels(page, 'local-' + vp_name)
         scenario_custom(page, 'local-' + vp_name)
         scenario_mission(page, 'local-' + vp_name, REPORT_DIR)
+        scenario_levels(page, 'local-' + vp_name)
+        scenario_hell(page, 'local-' + vp_name)
+        scenario_legacy(page, 'local-' + vp_name)
 
         # 대전 중 스크린샷 (여러 단어가 쌓인 화면)
         page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
@@ -631,6 +998,9 @@ def run_live(url, browser):
         scenario_new_words(page, 'live-' + vp_name)
         scenario_bot_levels(page, 'live-' + vp_name)
         scenario_mission(page, 'live-' + vp_name, REPORT_DIR)
+        scenario_levels(page, 'live-' + vp_name)
+        scenario_hell(page, 'live-' + vp_name)
+        scenario_legacy(page, 'live-' + vp_name)
 
         check(not col.errors, f'[{vp_name}] 페이지 에러 0', json.dumps(col.errors, ensure_ascii=False)[:400])
         errs = [c for c in col.console if c['type'] == 'error']

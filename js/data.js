@@ -32,6 +32,8 @@ export class Dictionary {
     /** @type {Map<string, string[]>} 시작 음절 → 내 단어장 단어 */
     this.customByStart = new Map();
     this.stats = null;
+    /** 빌드 타임 음절 대전 그래프: 승리·패배 노드의 깊이와 한방 단어 */
+    this.graph = { win: new Map(), lose: new Map(), shots: new Map(), statusCounts: null };
   }
 
   get size() {
@@ -47,6 +49,7 @@ export class Dictionary {
     } catch {
       /* 통계 파일이 없어도 사전은 쓸 수 있다 */
     }
+    if (dict.stats) dict.setGraph(dict.stats.graph);
 
     const res = await fetch(wordsUrl, { cache: 'no-cache' });
     if (!res.ok) throw new Error(`단어 사전을 불러오지 못했습니다 (HTTP ${res.status})`);
@@ -126,6 +129,37 @@ export class Dictionary {
   }
 
   /* ── 사전 조회 ─────────────────────────────────────────── */
+
+  /** 빌드 타임에 계산한 음절 대전 그래프를 붙인다. */
+  setGraph(graph) {
+    if (!graph || !graph.win || !graph.lose) return;
+    this.graph = {
+      win: new Map(Object.entries(graph.win)),
+      lose: new Map(Object.entries(graph.lose)),
+      shots: new Map(Object.entries(graph.shots || {})),
+      statusCounts: graph.statusCounts || null,
+    };
+  }
+
+  /**
+   * 이 글자에서 둘 차례인 쪽의 완전 정보 상태.
+   * 'W' = 두는 쪽이 이긴다, 'L' = 두는 쪽이 진다, 'D' = 무승부/미확정.
+   */
+  graphStatus(ch) {
+    if (this.graph.win.has(ch)) return 'W';
+    if (this.graph.lose.has(ch)) return 'L';
+    return 'D';
+  }
+
+  /** 승리/패배 노드의 수 순번(그래프에 없으면 0). */
+  graphDepth(ch) {
+    return this.graph.win.get(ch) ?? this.graph.lose.get(ch) ?? 0;
+  }
+
+  /** 이 글자로 시작하는 한방 단어 목록(빌드 타임 계산, 없으면 null). */
+  shotWords(ch) {
+    return this.graph.shots.get(ch) || null;
+  }
 
   indexOf(word) {
     let lo = 0;

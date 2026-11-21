@@ -3,6 +3,7 @@
 import { Dictionary } from './data.js';
 import { App } from './ui.js';
 import { Sfx } from './audio.js';
+import { Bot, LEVELS, levelInfo } from './bot.js';
 import { loadSettings, loadCustom, loadRecord } from './store.js';
 
 async function boot() {
@@ -36,6 +37,9 @@ async function boot() {
   window.__HB = {
     app,
     dict,
+    Bot,
+    LEVELS,
+    levelInfo,
     get engine() { return app.engine; },
     startGame: (opts) => app.startGame(opts || {}),
     submit: (word) => app.engine?.playMe(word),

@@ -3,8 +3,11 @@
 
 - 데스크톱(1280x800)·모바일(390x844)에서 콘솔/페이지 에러 0, 가로 오버플로 0
 - 페이지 텍스트·타이틀·메타태그에 옛 이름(끄투/kkutu) 0건
-- 4단계 한방 봇 동작 확인
-- downloads/hanbang-bot/ 에 setup.png, mobile-game.png, oneshot.png 저장
+- 난이도 5단계(Lv.4 극악 · Lv.5 지옥) 카드와 Lv.5 대전 화면
+- Lv.5 지옥 봇이 실제로: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 · 소수 후보 압박 · 미션/장문
+- 4단계 극악 한방 봇 동작 확인
+- downloads/hanbang-bot/ 에 setup.png, lv5-setup.png, lv5-game.png, oneshot.png,
+  mobile-game.png, mobile-lv5.png 저장
 
 usage:
     python3 tools/report_shots.py --url https://hanbang-bot.onrender.com
@@ -16,6 +19,11 @@ import sys
 import time
 
 from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from verify import HELL_PROPS, HELL_PICKS, serve  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CHROME = os.environ.get('HB_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
 OUT = os.environ.get('SHOT_OUT', '/workspace/downloads/hanbang-bot')
@@ -84,12 +92,135 @@ def wait_my_turn(page, timeout=8000):
     return page.evaluate('window.__HB.state()')
 
 
+def human_word(page, cautious=False):
+    """사람처럼 2~4글자 단어를 고른다. cautious 면 봇에게 바로 한방을 내주지 않는 자리로."""
+    return page.evaluate("""(cautious) => {
+        const d = window.__HB.dict, st = window.__HB.state();
+        const used = new Set(st.chain.map((c) => c.word));
+        const cands = d.candidatesFor(st.needChar, used);
+        if (!cands.length) return null;
+        let pool = cands.filter((x) => x.length <= 4);
+        if (!pool.length) pool = cands;
+        if (cautious) {
+            const killAt = (node, usedSet) => {
+                const shots = d.shotWords(node);
+                if (shots) for (const x of shots) if (!usedSet.has(x) && d.countFrom(x[x.length - 1]) === 0) return x;
+                const cs = d.candidatesFor(node, usedSet);
+                if (cs.length <= 40) for (const x of cs) if (d.countFrom(x[x.length - 1]) === 0) return x;
+                return null;
+            };
+            const safe = cands.filter((w) => {
+                const u = new Set(used); u.add(w);
+                return !killAt(w[w.length - 1], u) && w.length <= 6;
+            });
+            const neutral = safe.filter((w) => d.graphStatus(w[w.length - 1]) === 'D');
+            if (neutral.length) pool = neutral;
+            else if (safe.length) pool = safe;
+        }
+        return pool[Math.min(cautious ? 2 : 4, pool.length - 1)];
+    }""", cautious)
+
+
+def live_kill(page, node, used):
+    return page.evaluate("""([node, usedWords]) => {
+        const d = window.__HB.dict;
+        const used = new Set(usedWords);
+        const shots = d.shotWords(node);
+        if (shots) for (const w of shots) if (!used.has(w) && d.countFrom(w[w.length - 1]) === 0) return w;
+        const cands = d.candidatesFor(node, used);
+        if (cands.length <= 40) for (const w of cands) if (d.countFrom(w[w.length - 1]) === 0) return w;
+        return null;
+    }""", [node, used])
+
+
+def play_hell_game(page, turns=4, shot_path=None):
+    """Lv.5 지옥과 실제로 한 판: 사람처럼 두고 봇의 응수·태그·시간·한방 각을 기록."""
+    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.evaluate("window.__HB.startGame({level:5, first:'me', timeLimit:20})")
+    page.wait_for_timeout(350)
+    info = {'gaps': [], 'tags': [], 'bot': [], 'handed': 0, 'avoidable': 0, 'kills': 0, 'proven': 0, 'shot': False}
+    for _ in range(turns):
+        st = wait_my_turn(page, 8000)
+        if not st or st['phase'] != 'me':
+            break
+        w = human_word(page, cautious=True)
+        if not w:
+            break
+        before = page.evaluate("window.__HB.state().chain.length")
+        t0 = time.time()
+        page.fill('#word-input', w)
+        page.click('#btn-submit')
+        try:
+            page.wait_for_function(
+                f"() => window.__HB.state().chain.length > {before} + 1 || window.__HB.state().phase === 'over'",
+                timeout=6000)
+            info['gaps'].append((time.time() - t0) * 1000)
+        except Exception:
+            break
+        tag_text = page.evaluate("document.querySelector('#stage .tag.danger')?.textContent || ''")
+        if tag_text:
+            info['tags'].append(tag_text)
+        st = page.evaluate('window.__HB.state()')
+        bot = [c for c in st['chain'] if c['who'] == 'bot']
+        if bot:
+            last = bot[-1]
+            info['bot'].append(last)
+            if last['kind'] == 'oneshot':
+                info['kills'] += 1
+            if last['kind'] == 'outer':
+                info['proven'] += 1
+            # 봇이 내준 자리에 내가 바로 한방을 쓸 수 있는가 = 봇이 한방 각을 내줬는가
+            used = [c['word'] for c in st['chain']]
+            end = last['word'][-1]
+            if live_kill(page, end, used):
+                info['handed'] += 1
+                # 같은 자리에서 피할 수 있었는지: 봇이 다른 끝 글자를 고를 수 있었는지
+                alt = page.evaluate("""([usedWords]) => {
+                    const d = window.__HB.dict, st = window.__HB.state();
+                    const prev = st.chain[st.chain.length - 2];
+                    const used = new Set(usedWords);
+                    used.delete(st.chain[st.chain.length - 1].word);
+                    const cands = d.candidatesFor(prev.word[prev.word.length - 1], used);
+                    for (const w of cands) {
+                        const e = w[w.length - 1];
+                        if (d.countFrom(e) === 0) return w;
+                        const used2 = new Set(used); used2.add(w);
+                        const shots = d.shotWords(e);
+                        let danger = false;
+                        if (shots) for (const x of shots) if (!used2.has(x) && d.countFrom(x[x.length - 1]) === 0) { danger = true; break; }
+                        if (!danger) return w;
+                    }
+                    return null;
+                }""", [used])
+                if alt:
+                    info['avoidable'] += 1
+        if st['phase'] == 'me' and shot_path and not info['shot']:
+            page.wait_for_timeout(1300)   # 한방 연출이 걷힌 뒤의 대전 화면
+            page.screenshot(path=shot_path)
+            info['shot'] = True
+        if st['phase'] == 'over':
+            break
+    if shot_path and not info['shot']:
+        page.wait_for_timeout(1200)
+        page.screenshot(path=shot_path)
+        info['shot'] = True
+    return info
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--url', default='https://hanbang-bot.onrender.com')
+    ap.add_argument('--local', action='store_true')
     args = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
     summary = {}
+
+    httpd = None
+    url = args.url
+    if args.local:
+        httpd, port = serve(ROOT)
+        url = f'http://127.0.0.1:{port}/index.html'
 
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=CHROME, args=['--no-sandbox', '--disable-dev-shm-usage'])
@@ -97,17 +228,89 @@ def main():
         # ── 데스크톱: 설정 화면 ─────────────────────────────
         print('== desktop 1280x800 ==')
         ctx, page, console, errors = new_page(browser, {'width': 1280, 'height': 800})
-        page.goto(args.url, wait_until='domcontentloaded')
+        page.goto(url, wait_until='domcontentloaded')
         wait_ready(page)
         size = page.evaluate('window.__HB.dict.size')
         check(size > 300000, '사전 로드', f'{size}단어')
         check(sum(overflow(page).values()) <= 0, '설정 화면 가로 오버플로 0', str(overflow(page)))
         hits = brand_hits(page)
-        check(not hits, "설정 화면 옛 이름 0건", json.dumps(hits, ensure_ascii=False))
+        check(not hits, '설정 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
         page.screenshot(path=os.path.join(OUT, 'setup.png'))
-        summary['desktop_setup'] = {'url': page.url, 'words': size, 'brand_hits': hits}
 
-        # ── 데스크톱: 4단계 한방 ─────────────────────────────
+        cards = page.evaluate("""() => [...document.querySelectorAll('.level')].map((el) => ({
+            lv: el.dataset.lv, name: el.querySelector('b').textContent, label: el.querySelector('small').textContent }))""")
+        check(len(cards) == 5 and [c['name'] for c in cards] == ['쉬움', '보통', '어려움', '극악', '지옥'],
+              '난이도 5단계 카드', str([c['name'] for c in cards]))
+
+        # ── 데스크톱: Lv.5 선택 ─────────────────────────────
+        page.click('.level[data-lv="5"]')
+        page.wait_for_timeout(250)
+        desc = page.evaluate("document.getElementById('lv-desc').textContent")
+        check('필승' in desc or '수읽기' in desc, 'Lv.5 지옥 설명', desc)
+        check(sum(overflow(page).values()) <= 0, 'Lv.5 선택 화면 가로 오버플로 0', str(overflow(page)))
+        page.screenshot(path=os.path.join(OUT, 'lv5-setup.png'))
+
+        # ── 데스크톱: Lv.5 지옥과 실제 대전 ─────────────────
+        shot_path = os.path.join(OUT, 'lv5-game.png')
+        game = play_hell_game(page, turns=5, shot_path=shot_path)
+        for _ in range(2):   # 첫 수에 끝난 판이면 한 판 더 (증거를 2수 이상 모으기 위해)
+            if len(game['bot']) >= 2:
+                break
+            more = play_hell_game(page, turns=5, shot_path=None)
+            for key in ('gaps', 'tags', 'bot'):
+                game[key].extend(more[key])
+            game['handed'] += more['handed']
+            game['avoidable'] += more['avoidable']
+            game['kills'] += more['kills']
+            game['proven'] += more['proven']
+        st = page.evaluate('window.__HB.state()')
+        check(len(game['bot']) >= 2, 'Lv.5 실제 대전 응수', f"{len(game['bot'])}수")
+        check(game['avoidable'] == 0, 'Lv.5 상대 한방 각 회피',
+              f"내준 자리 {game['handed']}회 / 피할 수 있었던 {game['avoidable']}회")
+        check(game['kills'] >= 1 or game['proven'] >= 1, 'Lv.5 한방·필승 수 사용',
+              f"한방 {game['kills']} · 필승 {game['proven']}")
+        if game['gaps']:
+            check(min(game['gaps']) <= 900, 'Lv.5 실제 응답 시간',
+                  f"{min(game['gaps']):.0f}~{max(game['gaps']):.0f}ms")
+        check(sum(overflow(page).values()) <= 0, 'Lv.5 대전 가로 오버플로 0', str(overflow(page)))
+        hits = brand_hits(page)
+        check(not hits, 'Lv.5 대전 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+        summary['lv5_game'] = {
+            'bot_moves': [(c['word'], c['kind']) for c in game['bot']],
+            'tags': game['tags'],
+            'response_ms': [round(x) for x in game['gaps']],
+            'handed': game['handed'], 'avoidable': game['avoidable'],
+        }
+
+        # ── Lv.5 판단 특성 (직접 호출 표본) ─────────────────
+        props = page.evaluate(HELL_PROPS)
+        picks = page.evaluate(HELL_PICKS)
+        check(props['handedKillAvoidable'] == 0, 'Lv.5 표본: 한방 각 회피',
+              f"{props['moves']}수 중 피할 수 있었던 {props['handedKillAvoidable']}회")
+        check(props['outerBroken'] == 0 and props['outer'] >= 3, 'Lv.5 표본: 강제필승 검증',
+              f"{props['outer']}수 중 깨진 것 {props['outerBroken']}")
+        check(props['kinds'].get('oneshot', 0) >= 5, 'Lv.5 표본: 한방 즉사', str(props['kinds']))
+        check(props['endDead'] + props['endThin'] >= props['moves'] * 0.5, 'Lv.5 표본: 압박',
+              f"죽은 자리 {props['endDead']} · 한두 후보 {props['endThin']}")
+        check(props['longMoves'] >= props['moves'] * 0.3, 'Lv.5 표본: 장문·고득점',
+              f"{props['longMoves']}/{props['moves']}수 5글자 이상")
+        check(props['delayMin'] >= 140 and props['delayMax'] <= 410, 'Lv.5 응답 텀 0.15~0.4초',
+              f"{props['delayMin']:.0f}~{props['delayMax']:.0f}ms")
+        check(props['msMax'] < 60, 'Lv.5 판단 속도', f"평균 {props['msAvg']}ms / 최대 {props['msMax']}ms")
+        check(picks.get('kill', {}).get('equal'), 'Lv.5 미션·최고점 한방 선택',
+              json.dumps(picks.get('kill'), ensure_ascii=False)[:160])
+        check(picks.get('pressure', {}).get('squeezed'), 'Lv.5 소수 후보 글자로 압박',
+              json.dumps(picks.get('pressure'), ensure_ascii=False)[:160])
+        check(picks.get('mission', {}).get('agree') == picks.get('mission', {}).get('checked'),
+              'Lv.5 같은 끝 글자에서 최고점 단어 선택',
+              json.dumps(picks.get('mission'), ensure_ascii=False)[:160])
+        summary['lv5_props'] = {k: props[k] for k in ('moves', 'kinds', 'outer', 'outerBroken',
+                                                     'handedKill', 'handedKillAvoidable',
+                                                     'msAvg', 'msMax', 'delayMin', 'delayMax',
+                                                     'endDead', 'endThin', 'longMoves')}
+        summary['lv5_picks'] = picks
+
+        # ── 데스크톱: 4단계 극악 한방 ───────────────────────
         pick = page.evaluate("""() => {
             const d = window.__HB.dict;
             for (const [ch] of d.ranges) {
@@ -122,35 +325,42 @@ def main():
             return null;
         }""")
         check(pick is not None, '한방 시나리오 탐색', str(pick))
-        page.evaluate(f"window.__HB.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
-        page.wait_for_timeout(500)
-        page.fill('#word-input', pick['word'])
-        page.click('#btn-submit')
-        page.wait_for_timeout(3600)
-        st = page.evaluate('window.__HB.state()')
-        bot_words = [c['word'] for c in st['chain'] if c['who'] == 'bot']
-        last_bot = bot_words[-1] if bot_words else ''
-        is_oneshot = page.evaluate("([w]) => !!w && window.__HB.dict.isOneShot(w)", [last_bot])
-        check(st['phase'] == 'over' and is_oneshot, '4단계 봇 한방 즉사', f'{last_bot} / {st["phase"]}')
-        check(page.is_visible('#ov-result'), '결과 화면 표시')
-        check(sum(overflow(page).values()) <= 0, '결과 화면 가로 오버플로 0', str(overflow(page)))
-        hits = brand_hits(page)
-        check(not hits, '게임·결과 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
-        page.screenshot(path=os.path.join(OUT, 'oneshot.png'))
-        summary['desktop_oneshot'] = {'dealt': pick['word'], 'bot': last_bot, 'phase': st['phase']}
+        if pick:
+            page.evaluate("window.__HB.app.engine.destroy()")
+            page.evaluate("window.__HB.app.hideResult()")
+            page.evaluate(f"window.__HB.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
+            page.wait_for_timeout(500)
+            page.fill('#word-input', pick['word'])
+            page.click('#btn-submit')
+            page.wait_for_timeout(3600)
+            st = page.evaluate('window.__HB.state()')
+            bot_words = [c['word'] for c in st['chain'] if c['who'] == 'bot']
+            last_bot = bot_words[-1] if bot_words else ''
+            is_oneshot = page.evaluate("([w]) => !!w && window.__HB.dict.isOneShot(w)", [last_bot])
+            check(st['phase'] == 'over' and is_oneshot, '4단계 극악 봇 한방 즉사',
+                  f'{last_bot} / {st["phase"]}')
+            check(page.is_visible('#ov-result'), '결과 화면 표시')
+            check(sum(overflow(page).values()) <= 0, '결과 화면 가로 오버플로 0', str(overflow(page)))
+            hits = brand_hits(page)
+            check(not hits, '게임·결과 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+            page.screenshot(path=os.path.join(OUT, 'oneshot.png'))
+            summary['desktop_oneshot'] = {'dealt': pick['word'], 'bot': last_bot, 'phase': st['phase']}
         summary['desktop_console_errors'] = console
         summary['desktop_page_errors'] = errors
         check(not console, '콘솔 에러 0', json.dumps(console, ensure_ascii=False)[:300])
         check(not errors, '페이지 에러 0', json.dumps(errors, ensure_ascii=False)[:300])
         ctx.close()
 
-        # ── 모바일: 대전 화면 ───────────────────────────────
+        # ── 모바일: 5단계 설정·대전 ─────────────────────────
         print('== mobile 390x844 ==')
         ctx, page, console, errors = new_page(browser, {'width': 390, 'height': 844})
-        page.goto(args.url, wait_until='domcontentloaded')
+        page.goto(url, wait_until='domcontentloaded')
         wait_ready(page)
         check(sum(overflow(page).values()) <= 0, '모바일 설정 가로 오버플로 0', str(overflow(page)))
-        page.click('.level[data-lv="2"]')
+        page.click('.level[data-lv="5"]')
+        page.wait_for_timeout(200)
+        check(sum(overflow(page).values()) <= 0, '모바일 Lv.5 카드 가로 오버플로 0', str(overflow(page)))
+        page.screenshot(path=os.path.join(OUT, 'mobile-lv5.png'))
         page.click('#btn-start')
         page.wait_for_selector('#scr-game:not([hidden])')
         page.wait_for_timeout(400)
@@ -158,30 +368,29 @@ def main():
             st = wait_my_turn(page, 9000)
             if not st or st['phase'] != 'me':
                 break
-            w = page.evaluate("""() => {
-                const d = window.__HB.dict, st = window.__HB.state();
-                const used = new Set(st.chain.map((c) => c.word));
-                const cands = d.candidatesFor(st.needChar, used).filter((x) => x.length >= 2);
-                return cands[Math.min(2, cands.length - 1)] || null;
-            }""")
+            w = human_word(page)
             if not w:
                 break
             page.fill('#word-input', w)
             page.click('#btn-submit')
-            page.wait_for_timeout(2400)
-        st = wait_my_turn(page, 9000)
-        check(st and len(st['chain']) >= 3, '모바일 대전 진행', f"{len(st['chain']) if st else 0}단어")
-        check(sum(overflow(page).values()) <= 0, '모바일 대전 가로 오버플로 0', str(overflow(page)))
+            page.wait_for_timeout(1400)
+        st = page.evaluate('window.__HB.state()')
+        bot_moves = [c for c in st['chain'] if c['who'] == 'bot'] if st else []
+        check(len(bot_moves) >= 1, '모바일 Lv.5 대전 진행', f"{len(bot_moves)}수")
+        check(sum(overflow(page).values()) <= 0, '모바일 Lv.5 대전 가로 오버플로 0', str(overflow(page)))
         hits = brand_hits(page)
         check(not hits, '모바일 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
         page.screenshot(path=os.path.join(OUT, 'mobile-game.png'))
-        summary['mobile_game'] = {'chain': [c['word'] for c in st['chain']], 'brand_hits': hits}
+        summary['mobile_game'] = {'bot_moves': [(c['word'], c['kind']) for c in bot_moves], 'brand_hits': hits}
         summary['mobile_console_errors'] = console
         summary['mobile_page_errors'] = errors
         check(not console, '모바일 콘솔 에러 0', json.dumps(console, ensure_ascii=False)[:300])
         check(not errors, '모바일 페이지 에러 0', json.dumps(errors, ensure_ascii=False)[:300])
         ctx.close()
         browser.close()
+
+    if httpd:
+        httpd.shutdown()
 
     print('\n=== 요약 ===')
     print(json.dumps(summary, ensure_ascii=False, indent=1))
