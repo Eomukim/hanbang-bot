@@ -2,7 +2,7 @@
 
 import { Engine } from './engine.js';
 import { LEVELS, levelInfo, botLine } from './bot.js';
-import { saveSettings, recordResult } from './store.js';
+import { saveSettings, recordResult, parseRecordKey } from './store.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -43,13 +43,14 @@ export class App {
   mount() {
     const ids = [
       'scr-loading', 'scr-setup', 'scr-game', 'load-fill', 'load-meta', 'load-error',
-      'levels', 'lv-desc', 'time-opts', 'first-opts',
+      'levels', 'lv-desc', 'time-opts', 'first-opts', 'time-locked', 'first-locked',
+      'btn-hardcore', 'hardcore-desc',
       'btn-sound', 'sound-icon', 'sound-value', 'btn-start', 'record', 'dict-count',
-      'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit',
+      'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit', 'game-hardcore',
       'arena', 'stage', 'stage-hint', 'bot-bubble', 'chain',
       'need-char', 'need-alt', 'cand-count', 'chip-mission', 'chip-combo',
-      'countdown', 'time-left', 'timer-fill', 'turn-panel', 'composer', 'word-input', 'btn-hint', 'btn-submit',
-      'ov-result', 'result-badge', 'result-title', 'result-level', 'result-level-face',
+      'countdown', 'time-left', 'timer-fill', 'turn-panel', 'composer', 'word-input', 'btn-submit',
+      'ov-result', 'result-badge', 'result-title', 'result-hardcore', 'result-level', 'result-level-face',
       'result-level-label', 'result-reason', 'result-me', 'result-bot',
       'result-stats', 'btn-again', 'btn-tosetup',
     ];
@@ -57,6 +58,7 @@ export class App {
 
     this.renderLevels();
     this.renderSegments();
+    this.renderHardcore();
     this.renderSoundButton();
     this.renderRecord();
     this.el['dict-count'].textContent = this.dict.size.toLocaleString('ko-KR');
@@ -73,6 +75,7 @@ export class App {
     for (const key of ['scr-loading', 'scr-setup', 'scr-game']) {
       this.el[key].hidden = key !== `scr-${name}`;
     }
+    if (name !== 'game') document.body.dataset.hardcore = '0';
     if (name === 'setup') this.renderRecord();
   }
 
@@ -159,6 +162,23 @@ export class App {
     });
   }
 
+  /* ── 하드코어 ────────────────────────────────────────── */
+
+  /** 설정 화면의 하드코어 스위치: 켜면 시간·선공을 잠그고 5초 고정·봇 선공을 보여 준다. */
+  renderHardcore() {
+    const on = Boolean(this.settings.hardcore);
+    const btn = this.el['btn-hardcore'];
+    btn.setAttribute('aria-checked', String(on));
+    btn.setAttribute('aria-label', `하드코어 ${on ? '켬' : '끔'}`);
+    this.el['hardcore-desc'].textContent = on
+      ? '5초 고정 · 봇 선공 고정 · 난이도는 위에서 그대로'
+      : '끄면 일반 모드 · 켜면 5초 고정 · 봇 선공';
+    this.el['time-locked'].hidden = !on;
+    this.el['first-locked'].hidden = !on;
+    this.el['time-opts'].hidden = on;
+    this.el['first-opts'].hidden = on;
+  }
+
   renderSoundButton() {
     const btn = this.el['btn-sound'];
     const on = this.settings.sound;
@@ -170,17 +190,22 @@ export class App {
 
   renderRecord() {
     // 예전 4단계 기준으로 저장된 전적(localStorage hanbang.record.v1)도 그대로 읽는다.
+    // 하드코어 전적은 같은 키 안의 `3:hc` 처럼 구분된 행으로 따로 쌓인다.
     const known = new Set(LEVELS.map((l) => l.id));
     const rows = Object.entries(this.record)
-      .filter(([lv, r]) => r.plays && known.has(Number(lv)))
-      .sort((a, b) => Number(b[0]) - Number(a[0]));
+      .map(([key, r]) => ({ key, r, ...parseRecordKey(key) }))
+      .filter(({ level, r }) => r && r.plays && known.has(level))
+      .sort((a, b) => (Number(a.hardcore) - Number(b.hardcore)) || (b.level - a.level));
     if (!rows.length) {
       this.el.record.innerHTML = '<span>아직 전적이 없어요. 첫 대전을 시작해 보세요.</span>';
       return;
     }
-    this.el.record.innerHTML = rows.map(([lv, r]) => {
-      const name = levelInfo(Number(lv)).name;
-      return `<span>Lv.${lv} ${name} · <b>${r.wins}</b>승 ${r.losses}패 · 최고 <b>${r.bestScore}</b>점</span>`;
+    this.el.record.innerHTML = rows.map(({ level, hardcore, r }) => {
+      const name = levelInfo(level).name;
+      const head = hardcore
+        ? `<span class="rec-hc">🔥 하드코어 Lv.${level} ${name}</span>`
+        : `Lv.${level} ${name}`;
+      return `<span>${head} · <b>${r.wins}</b>승 ${r.losses}패 · 최고 <b>${r.bestScore}</b>점</span>`;
     }).join('<br>');
   }
 
@@ -213,7 +238,12 @@ export class App {
     });
 
     this.el['btn-quit'].addEventListener('click', () => this.armQuit());
-    this.el['btn-hint'].addEventListener('click', () => this.useHint());
+    this.el['btn-hardcore'].addEventListener('click', () => {
+      this.settings.hardcore = !this.settings.hardcore;
+      this.persist();
+      this.renderHardcore();
+      this.sfx.play('tap');
+    });
 
     this.el.composer.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -227,7 +257,7 @@ export class App {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !this.el['ov-result'].hidden) this.hideResult();
       if (e.key === 'Enter' && this.screen === 'setup') {
-        if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+        if (document.activeElement && ['INPUT', 'BUTTON'].includes(document.activeElement.tagName)) return;
         e.preventDefault();
         this.startGame();
       }
@@ -250,6 +280,10 @@ export class App {
     this.sfx.unlock();
     const level = overrides.level ?? this.settings.level;
     const info = levelInfo(level);
+    // 하드코어: 5초 고정 · 봇 선공 고정 (실제 대국도 반드시)
+    const hardcore = overrides.hardcore ?? Boolean(this.settings.hardcore);
+    const timeLimit = hardcore ? 5 : (overrides.timeLimit ?? this.settings.timeLimit);
+    const first = hardcore ? 'bot' : (overrides.first ?? this.settings.first);
 
     this.hideResult();
     this.engine?.destroy();
@@ -263,7 +297,9 @@ export class App {
     this.el['bot-face'].textContent = info.face;
     this.el['bot-name'].textContent = info.botName;
     this.el['bot-lv'].textContent = info.label;
+    this.el['game-hardcore'].hidden = !hardcore;
     document.body.dataset.level = String(level);
+    document.body.dataset.hardcore = hardcore ? '1' : '0';
     this.show('game');
     this.el.arena.scrollTop = 0;
 
@@ -275,8 +311,9 @@ export class App {
     const engine = new Engine({
       dict: this.dict,
       level,
-      timeLimit: overrides.timeLimit ?? this.settings.timeLimit,
-      first: overrides.first ?? this.settings.first,
+      hardcore,
+      timeLimit,
+      first,
       startChar: overrides.startChar ?? null,
       mission: overrides.mission ?? null,
       on: {
@@ -308,14 +345,12 @@ export class App {
       input.disabled = false;
       input.placeholder = '단어 입력';
       this.el['btn-submit'].disabled = false;
-      this.el['btn-hint'].disabled = false;
       this.lastTick = -1;
       if (this.screen === 'game' && this.isFinePointer()) input.focus({ preventScroll: true });
     } else {
       input.disabled = true;
       input.placeholder = '봇이 고르는 중…';
       this.el['btn-submit'].disabled = true;
-      this.el['btn-hint'].disabled = true;
       this.el['countdown'].classList.remove('urgent');
       const timerEl = document.querySelector('.timer');
       timerEl.classList.remove('warn', 'urgent');
@@ -328,7 +363,6 @@ export class App {
   onBotThinking() {
     this.el['word-input'].disabled = true;
     this.el['btn-submit'].disabled = true;
-    this.el['btn-hint'].disabled = true;
   }
 
   setNeed(state) {
@@ -419,14 +453,13 @@ export class App {
   onEnd(payload) {
     this.el['word-input'].disabled = true;
     this.el['btn-submit'].disabled = true;
-    this.el['btn-hint'].disabled = true;
     cancelAnimationFrame(this.rafId);
 
     this.record = recordResult(this.record, this.engine.level, {
       win: payload.win,
       bestCombo: payload.bestCombo,
       score: payload.scoreMe,
-    });
+    }, { hardcore: Boolean(payload.hardcore ?? this.engine.hardcore) });
     this.renderRecord();
 
     if (payload.win) this.sfx.play('win');
@@ -554,18 +587,6 @@ export class App {
     }
   }
 
-  useHint() {
-    if (!this.engine || this.engine.phase !== 'me') return;
-    const hint = this.engine.hint();
-    if (!hint) return;
-    this.sfx.play('hint');
-    if (!hint.count) {
-      this.toast('이 글자로 이을 단어가 없어요.');
-      return;
-    }
-    this.toast(`남은 단어 ${hint.count.toLocaleString('ko-KR')}개 · 예: ${hint.mask} (${hint.length}글자)`);
-  }
-
   armQuit() {
     if (!this.engine || this.engine.phase === 'over') {
       this.show('setup');
@@ -624,6 +645,7 @@ export class App {
     sheet.classList.toggle('lose', !payload.win);
     this.el['result-badge'].textContent = payload.win ? '🏆' : '💀';
     this.el['result-title'].textContent = payload.win ? '승리' : '패배';
+    this.el['result-hardcore'].hidden = !payload.hardcore;
     this.renderResultLevel(payload.state?.level);
     this.el['result-reason'].textContent = reasonLine || '';
     this.el['result-me'].textContent = payload.scoreMe.toLocaleString('ko-KR');

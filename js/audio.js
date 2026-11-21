@@ -100,10 +100,6 @@ export class Sfx {
       case 'start':
         [392, 523, 659].forEach((f, i) => this.tone({ freq: f, type: 'sine', dur: 0.12, gain: 0.1, delay: i * 0.06 }));
         break;
-      case 'hint':
-        this.tone({ freq: 880, type: 'sine', dur: 0.07, gain: 0.07 });
-        this.tone({ freq: 1174, type: 'sine', dur: 0.09, gain: 0.06, delay: 0.05 });
-        break;
       case 'mission': {
         // 미션이 겹친 만큼 음을 더 쌓아 올린다
         const stack = Math.min(opts.stack || 1, 4);

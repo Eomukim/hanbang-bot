@@ -177,6 +177,71 @@ button { cursor: pointer; }
   transition: background .18s, color .18s;
 }
 .segmented button[aria-checked="true"] { background: rgba(255,255,255,.12); color: #fff; box-shadow: 0 2px 10px -4px #000; }
+.segmented.locked { border-style: dashed; border-color: rgba(255,122,77,.34); }
+.segmented.locked button,
+.segmented.locked button:disabled {
+  color: #ffc2a3; font-weight: 800; cursor: default; opacity: 1;
+  background: rgba(255,122,77,.1); border-radius: 9px;
+}
+
+/* ── hardcore ─────────────────────────────────────────────── */
+.hardcore-card {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 11px 13px;
+  text-align: left;
+  transition: transform .12s ease, background .2s, border-color .2s, box-shadow .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.hardcore-card:hover { background: rgba(255,255,255,.08); border-color: var(--line-strong); }
+.hardcore-card:active { transform: scale(.99); }
+.hardcore-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hardcore-text b { font-size: 13.5px; font-weight: 900; letter-spacing: -.2px; }
+.hardcore-text small { font-size: 11px; color: var(--dim-2); letter-spacing: -.2px; }
+.hardcore-card[aria-checked="true"] {
+  border-color: rgba(255,106,61,.55);
+  background: linear-gradient(140deg, rgba(255,106,61,.17), rgba(255,193,77,.06));
+  box-shadow: 0 0 0 1px rgba(255,106,61,.28), 0 16px 34px -20px rgba(255,106,61,.95);
+}
+.hardcore-card[aria-checked="true"] .hardcore-text b { color: #ffd9c7; }
+.hardcore-card[aria-checked="true"] .hardcore-text small { color: #ffb694; }
+.switch {
+  position: relative; flex: 0 0 auto; margin-left: auto;
+  width: 42px; height: 24px; border-radius: 99px;
+  background: rgba(255,255,255,.1); border: 1px solid var(--line);
+  transition: background .2s, border-color .2s;
+}
+.switch i {
+  position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--dim);
+  transition: transform .2s cubic-bezier(.2,1.2,.4,1), background .2s;
+}
+.hardcore-card[aria-checked="true"] .switch {
+  background: linear-gradient(120deg, #ffa63d, #ff2d55);
+  border-color: transparent;
+}
+.hardcore-card[aria-checked="true"] .switch i { transform: translateX(18px); background: #fff; }
+
+.hardcore-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px 5px; border-radius: 999px;
+  font-size: 11px; font-weight: 900; letter-spacing: .04em;
+  color: #2a0800;
+  background: linear-gradient(96deg, #ffc14d, #ff6a3d 52%, #ff2d55);
+  box-shadow: 0 0 20px -2px rgba(255,106,61,.75), inset 0 1px 0 rgba(255,255,255,.5);
+  animation: hcGlow 2.6s ease-in-out infinite;
+  white-space: nowrap;
+}
+.hardcore-badge small { font-size: 10px; font-weight: 800; opacity: .78; letter-spacing: .01em; }
+.game-top > .hardcore-badge { font-size: 12px; padding: 5px 13px 6px; }
+@keyframes hcGlow { 50% { box-shadow: 0 0 30px 0 rgba(255,106,61,.95), inset 0 1px 0 rgba(255,255,255,.65); } }
+.result-hardcore { display: flex; width: max-content; margin: 9px auto 0; font-size: 12px; padding: 5px 13px 6px; }
+
+.hardcore-card:focus-visible, .segmented button:focus-visible { outline: 2px solid rgba(255,106,61,.7); outline-offset: 2px; }
 
 .setup-actions { display: grid; gap: 10px; }
 .setting-row {
@@ -257,13 +322,15 @@ button { cursor: pointer; }
 }
 
 .game-top {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 7px;
   padding: 9px 12px 10px;
   border-bottom: 1px solid rgba(255,255,255,.06);
   background: linear-gradient(180deg, rgba(8,9,15,.85), rgba(8,9,15,.35));
   backdrop-filter: blur(10px);
   flex: 0 0 auto;
 }
+.game-top-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.game-top > .hardcore-badge { align-self: center; }
 .bot-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .bot-face {
   width: 34px; height: 34px; border-radius: 11px;
@@ -451,9 +518,8 @@ button { cursor: pointer; }
 .composer input:focus { border-color: rgba(94,234,212,.6); background: rgba(94,234,212,.06); box-shadow: 0 0 0 3px rgba(94,234,212,.12); }
 .composer input:disabled { opacity: .5; }
 .composer .btn { padding: 0 12px; font-size: 13px; border-radius: 12px; }
-.composer .btn.hint { flex: 0 0 auto; color: var(--dim); }
 .composer .btn.go {
-  flex: 0 0 auto; min-width: 64px;
+  flex: 0 0 auto; min-width: 76px;
   border: 0; color: #05121a; font-weight: 900;
   background: linear-gradient(120deg, #4fe3cd, #6f8cff);
 }
@@ -695,3 +761,14 @@ body[data-level="5"] .bot-face { filter: drop-shadow(0 0 10px rgba(180,123,255,.
 @media (min-height: 640px) {
   .stage { flex: 1 1 auto; justify-content: center; }
 }
+
+/* ── hardcore mode tint (난이도 색보다 우선) ─────────────────── */
+body[data-hardcore="1"] { --accent: #ff9a3d; --accent-2: #ff2d55; }
+body[data-hardcore="1"] .need-char b { text-shadow: 0 0 24px rgba(255,106,61,.75); }
+body[data-hardcore="1"] .turn-panel { border-top-color: rgba(255,106,61,.36); }
+body[data-hardcore="1"] .stage-word.bot h2 { text-shadow: 0 0 34px rgba(255,106,61,.5); }
+body[data-hardcore="1"] .bot-face { filter: drop-shadow(0 0 10px rgba(255,106,61,.55)); }
+body[data-hardcore="1"] .countdown.urgent b { color: #ff3b5c; }
+
+/* 하드코어 전적 줄 */
+.record .rec-hc { color: #ffb694; font-weight: 800; }

@@ -4,6 +4,8 @@
 로컬(파일 서버) 또는 라이브 URL을 headless Chromium으로 열어
  - 콘솔/페이지 에러, 가로 오버플로
  - 두음법칙 · 중복 차단 · 4단계 극악 한방 승리 · 봇 난이도 규칙
+ - 힌트 삭제(버튼·로직·문구·API 없음)와 입력 바 배치
+ - 하드코어 모드(스위치 · 5초 고정 · 봇 선공 고정 · 헤더/결과 배지 · 별도 전적 · 끄면 일반 모드)
  - 내 단어장 삭제(버튼·모달·사전 API 없음, 남은 localStorage 값 무시)
  - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
  - 5단계 난이도 카드(데스크톱/모바일 배치)와 4단계 기준 localStorage 호환
@@ -817,6 +819,259 @@ def scenario_no_custom(page, tag):
     page.wait_for_timeout(100)
 
 
+def scenario_no_hint(page, tag):
+    """힌트 삭제: 버튼·문구·앱/엔진 API가 없고, 입력 바가 빈칸 없이 채워진다."""
+    print(f'  · 힌트 삭제 [{tag}]')
+    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(150)
+    gone = page.evaluate("""() => ({
+        btn: !!document.getElementById('btn-hint'),
+        cls: document.querySelectorAll('.btn.hint, .hint').length,
+        setupText: document.body.innerText.includes('힌트'),
+        appApi: ['useHint', 'hint'].filter((k) => typeof window.__HB.app[k] === 'function'),
+        audioCase: typeof window.__HB.app.sfx.play,
+    })""")
+    check(not gone['btn'] and gone['cls'] == 0, f'[{tag}] 힌트 버튼·클래스 없음', json.dumps(gone, ensure_ascii=False)[:160])
+    check(not gone['setupText'], f'[{tag}] 설정 화면 힌트 문구 0건')
+    check(not gone['appApi'], f'[{tag}] 힌트 앱 API 없음', str(gone['appApi']))
+
+    page.evaluate("window.__HB.startGame({level:2, first:'me', hardcore:false})")
+    page.wait_for_timeout(400)
+    game = page.evaluate("""() => {
+        const box = document.getElementById('composer').getBoundingClientRect();
+        const input = document.getElementById('word-input').getBoundingClientRect();
+        const go = document.getElementById('btn-submit').getBoundingClientRect();
+        return {
+            text: document.body.innerText.includes('힌트'),
+            engineHint: typeof window.__HB.engine.hint,
+            btn: !!document.getElementById('btn-hint'),
+            children: [...document.getElementById('composer').children].map((el) => el.id || el.tagName),
+            input: Math.round(input.width), go: Math.round(go.width), box: Math.round(box.width),
+            inputFill: Math.round(input.width / box.width * 100),
+        };
+    }""")
+    check(not game['text'], f'[{tag}] 대전 화면 힌트 문구 0건')
+    check(game['engineHint'] == 'undefined', f'[{tag}] 힌트 엔진 API 없음', game['engineHint'])
+    check(not game['btn'], f'[{tag}] 대전 화면 힌트 버튼 없음')
+    check(game['children'] == ['word-input', 'btn-submit'], f'[{tag}] 입력 바 구성(입력+입력 버튼)', str(game['children']))
+    check(game['inputFill'] >= 70 and game['go'] >= 60 and abs(game['input'] + game['go'] + 8 - game['box']) <= 3,
+          f'[{tag}] 입력 바가 폭을 고르게 채움',
+          f"입력 {game['input']}px({game['inputFill']}%) + 버튼 {game['go']}px = {game['box']}px")
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 입력 바 가로 오버플로 0', str(overflow(page)))
+    shot(page, f'{tag}-16-no-hint')
+    page.evaluate("window.__HB.app.engine.destroy(); window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(120)
+
+
+def hardcore_view(page):
+    return page.evaluate("""() => ({
+        exists: !!document.getElementById('btn-hardcore'),
+        role: document.getElementById('btn-hardcore')?.getAttribute('role'),
+        on: document.getElementById('btn-hardcore')?.getAttribute('aria-checked'),
+        desc: document.getElementById('hardcore-desc')?.textContent || '',
+        timeLocked: !document.getElementById('time-locked').hidden,
+        firstLocked: !document.getElementById('first-locked').hidden,
+        timeLockedText: document.getElementById('time-locked').innerText.trim(),
+        firstLockedText: document.getElementById('first-locked').innerText.trim(),
+        timeOptsHidden: document.getElementById('time-opts').hidden,
+        firstOptsHidden: document.getElementById('first-opts').hidden,
+        lockedDisabled: [...document.querySelectorAll('#time-locked button, #first-locked button')].map((b) => b.disabled),
+        timeBtns: [...document.querySelectorAll('#time-opts button')].map((b) => b.dataset.time),
+        firstBtns: [...document.querySelectorAll('#first-opts button')].map((b) => b.dataset.first),
+        saved: JSON.parse(localStorage.getItem('hanbang.settings.v1') || '{}'),
+    })""")
+
+
+def hardcore_game(page):
+    return page.evaluate("""() => {
+        const st = window.__HB.state();
+        const badge = document.getElementById('game-hardcore');
+        return {
+            hc: window.__HB.engine.hardcore,
+            limit: window.__HB.engine.timeLimit,
+            first: window.__HB.engine.first,
+            phase: st.phase,
+            left: window.__HB.engine.timeLeft(),
+            timeText: document.getElementById('time-left').textContent,
+            chain: st.chain.map((c) => c.who),
+            badge: !badge.hidden,
+            badgeText: badge.innerText.replace(/\\s+/g, ' ').trim(),
+            body: document.body.dataset.hardcore,
+            level: st.level,
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+    }""")
+
+
+def scenario_hardcore(page, tag, report_dir=None):
+    """하드코어: 스위치 · 5초 고정 · 봇 선공 · 배지 · 별도 전적 · 끄면 일반 모드."""
+    print(f'  · 하드코어 모드 [{tag}]')
+    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(200)
+
+    # 기준 상태(꺼짐)로 맞춘다
+    if page.evaluate("document.getElementById('btn-hardcore').getAttribute('aria-checked')") == 'true':
+        page.click('#btn-hardcore')
+        page.wait_for_timeout(180)
+    off = hardcore_view(page)
+    check(off['exists'] and off['role'] == 'switch', f'[{tag}] 하드코어 토글 스위치 존재', json.dumps(off, ensure_ascii=False)[:120])
+    check(off['on'] == 'false' and not off['timeLocked'] and not off['firstLocked'],
+          f'[{tag}] 기본은 하드코어 꺼짐(일반 모드)', json.dumps(off, ensure_ascii=False)[:160])
+    check(off['timeBtns'] == ['10', '15', '20'] and off['firstBtns'] == ['me', 'bot'],
+          f'[{tag}] 일반 모드 시간·선공 선택 유지', f"{off['timeBtns']} / {off['firstBtns']}")
+
+    # Lv.5 에서 켜기 → Lv.3 으로 바꿔도 유지되는지
+    page.click('.level[data-lv="5"]')
+    page.wait_for_timeout(120)
+    page.click('#btn-hardcore')
+    page.wait_for_timeout(220)
+    on = hardcore_view(page)
+    check(on['on'] == 'true', f'[{tag}] 하드코어 스위치 켜짐', str(on['on']))
+    check(on['timeLocked'] and '5초' in on['timeLockedText'] and on['firstLocked'] and '봇부터' in on['firstLockedText'],
+          f'[{tag}] 설정 화면 5초 고정·봇부터 잠금 표시', f"{on['timeLockedText']} / {on['firstLockedText']}")
+    check(on['timeOptsHidden'] and on['firstOptsHidden'] and all(on['lockedDisabled']),
+          f'[{tag}] 잠금 중 시간·선공 변경 불가', str(on['lockedDisabled']))
+    check(on['saved'].get('hardcore') is True, f'[{tag}] 하드코어 설정 저장', str(on['saved']))
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 하드코어 설정 화면 가로 오버플로 0', str(overflow(page)))
+    report_shot(page, tag, report_dir, 'hardcore-setup')
+
+    page.click('.level[data-lv="3"]')
+    page.wait_for_timeout(120)
+    board_before = page.evaluate("JSON.parse(localStorage.getItem('hanbang.record.v1') || '{}')")
+    page.click('#btn-start')
+    page.wait_for_selector('#scr-game:not([hidden])')
+    wait_my_turn(page, 7000)
+    page.wait_for_timeout(420)   # 봇 단어 등장 애니메이션이 끝난 뒤
+    g = hardcore_game(page)
+    check(g['hc'] is True and g['limit'] == 5 and g['first'] == 'bot',
+          f'[{tag}] 하드코어 대국: 5초·봇 선공 고정', json.dumps({k: g[k] for k in ('hc', 'limit', 'first', 'level')}, ensure_ascii=False))
+    check(g['badge'] and '하드코어' in g['badgeText'], f'[{tag}] 대전 헤더 하드코어 배지', g['badgeText'])
+    check(g['body'] == '1', f'[{tag}] 하드코어 화면 테마 적용', g['body'])
+    check(g['chain'][:1] == ['bot'], f'[{tag}] 봇이 반드시 선공', str(g['chain']))
+    check(g['phase'] == 'me' and 0 < g['left'] <= 5 and g['timeText'] in ('5', '4'),
+          f'[{tag}] 첫 내 턴 타이머 5초', f"{g['left']:.2f}s / 표시 {g['timeText']}")
+    check(g['overflow'] <= 0, f'[{tag}] 하드코어 대전 가로 오버플로 0', str(g['overflow']))
+
+    # 매 턴 5초로 리셋되는지: 한 단어 두고 다음 내 턴의 남은 시간을 본다
+    st = wait_my_turn(page, 6000)
+    word = None
+    if st and st['phase'] == 'me':
+        word = page.evaluate("""() => {
+            const d = window.__HB.dict, st = window.__HB.state();
+            const used = new Set(st.chain.map((c) => c.word));
+            const cands = d.candidatesFor(st.needChar, used);
+            const easy = cands.filter((x) => x.length <= 4);
+            return (easy.length ? easy : cands)[Math.min(4, (easy.length || cands.length) - 1)] || null;
+        }""")
+    if word:
+        page.fill('#word-input', word)
+        page.click('#btn-submit')
+        st2 = wait_my_turn(page, 6000)
+        left2 = page.evaluate("window.__HB.engine.timeLeft()")
+        check(st2 and st2['phase'] == 'me' and 3.8 < left2 <= 5.0,
+              f'[{tag}] 매 턴 5초 리셋', f'{word} 입력 후 {left2:.2f}s')
+        page.wait_for_timeout(250)
+        report_shot(page, tag, report_dir, 'hardcore-game')
+    else:
+        check(False, f'[{tag}] 하드코어 턴 확보')
+
+    # 5초 초과 → 시간 초과 패배에도 배지
+    try:
+        page.wait_for_function("() => !document.getElementById('ov-result').hidden", timeout=9000)
+    except Exception:
+        pass
+    page.wait_for_timeout(150)
+    res = result_view(page)
+    hc_badge = page.evaluate("!document.getElementById('result-hardcore').hidden")
+    check(res['visible'] and res['title'] == '패배' and '시간' in res['reason'],
+          f'[{tag}] 하드코어 5초 시간 초과', json.dumps(res, ensure_ascii=False)[:160])
+    check(hc_badge, f'[{tag}] 시간 초과 결과에 하드코어 배지')
+    check(res['label'] == 'Lv.3 어려움' and res['lv'] == '3',
+          f'[{tag}] 하드코어 결과에 난이도', json.dumps(res, ensure_ascii=False)[:160])
+    report_shot(page, tag, report_dir, 'hardcore-result')
+
+    rec = page.evaluate("JSON.parse(localStorage.getItem('hanbang.record.v1') || '{}')")
+    before_hc = board_before.get('3:hc', {}).get('plays', 0)
+    before_lv = board_before.get('3', {}).get('plays', 0)
+    check(rec.get('3:hc', {}).get('plays', 0) == before_hc + 1,
+          f'[{tag}] 하드코어 전적 별도 기록(3:hc)', json.dumps(rec.get('3:hc'), ensure_ascii=False))
+    check(rec.get('3', {}).get('plays', 0) == before_lv,
+          f'[{tag}] 일반 Lv.3 전적은 그대로', f"{before_lv} → {rec.get('3', {}).get('plays', 0)}")
+
+    # 승리 결과에도 배지: 봇 선공(하드코어) 뒤 내가 한방 단어로 끝낸다
+    win = None
+    page.evaluate("window.__HB.app.hideResult()")
+    page.evaluate("window.__HB.startGame({level:1, hardcore:true})")
+    for _ in range(12):
+        st = wait_my_turn(page, 7000)
+        if not st or st['phase'] != 'me':
+            break
+        got = page.evaluate("""() => {
+            const d = window.__HB.dict, st = window.__HB.state();
+            const used = new Set(st.chain.map((c) => c.word));
+            const cands = d.candidatesFor(st.needChar, used);
+            if (!cands.length) return null;
+            const kill = cands.find((w) => d.countFrom(w[w.length - 1]) === 0) || null;
+            const easy = cands.filter((w) => w.length <= 4);
+            return { kill, safe: (easy.length ? easy : cands)[Math.min(3, (easy.length || cands.length) - 1)] };
+        }""")
+        if not got:
+            break
+        if got['kill']:
+            page.fill('#word-input', got['kill'])
+            page.click('#btn-submit')
+            page.wait_for_timeout(1600)
+            win = got['kill']
+            break
+        page.fill('#word-input', got['safe'])
+        page.click('#btn-submit')
+        page.wait_for_timeout(400)
+    if win:
+        win_res = result_view(page)
+        win_badge = page.evaluate("!document.getElementById('result-hardcore').hidden")
+        check(win_res['title'] == '승리' and win_badge,
+              f'[{tag}] 승리 결과에 하드코어 배지', f"{win} → {win_res['title']}")
+        shot(page, f'{tag}-17-hardcore-win')
+    else:
+        check(False, f'[{tag}] 하드코어 승리 시나리오 탐색')
+
+    # 포기 결과에도 배지
+    page.evaluate("window.__HB.app.hideResult()")
+    page.evaluate("window.__HB.startGame({level:2, hardcore:true})")
+    page.wait_for_timeout(600)
+    page.evaluate("window.__HB.engine.quit()")
+    page.wait_for_timeout(1000)
+    quit_res = result_view(page)
+    quit_badge = page.evaluate("!document.getElementById('result-hardcore').hidden")
+    check(quit_res['title'] == '패배' and '포기' in quit_res['reason'] and quit_badge,
+          f'[{tag}] 포기 결과에 하드코어 배지', json.dumps(quit_res, ensure_ascii=False)[:140])
+
+    # 끄면 일반 모드: 시간·선공을 다시 고르고, 대국도 그 값으로
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(200)
+    page.click('#btn-hardcore')
+    page.wait_for_timeout(200)
+    off2 = hardcore_view(page)
+    check(off2['on'] == 'false' and not off2['timeLocked'] and not off2['firstLocked'] and not off2['timeOptsHidden'],
+          f'[{tag}] 하드코어 끄면 시간·선공 다시 열림', json.dumps(off2, ensure_ascii=False)[:160])
+    page.click('#time-opts button[data-time="20"]')
+    page.click('#first-opts button[data-first="me"]')
+    page.wait_for_timeout(150)
+    page.click('#btn-start')
+    page.wait_for_selector('#scr-game:not([hidden])')
+    page.wait_for_timeout(400)
+    n = hardcore_game(page)
+    check(n['hc'] is False and n['limit'] == 20 and n['first'] == 'me' and not n['badge'] and n['body'] == '0',
+          f'[{tag}] 일반 모드 복귀(20초·나부터·배지 없음)', json.dumps({k: n[k] for k in ('hc', 'limit', 'first', 'badge', 'body')}, ensure_ascii=False))
+    check(n['timeText'] in ('20', '19'), f'[{tag}] 일반 모드 타이머 20초', n['timeText'])
+    page.evaluate("window.__HB.app.engine.destroy(); window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(150)
+    check(page.evaluate("JSON.parse(localStorage.getItem('hanbang.settings.v1')||'{}').hardcore") is False,
+          f'[{tag}] 하드코어 꺼짐 저장')
+
+
 def scenario_result_level(page, tag):
     """결과 화면: 승리·패배·시간 초과·포기 모두 어떤 난이도였는지 보인다."""
     # 1) Lv.1 에서 진짜 한방 단어로 승리
@@ -1013,10 +1268,6 @@ def run_local(base_url, browser):
         page.wait_for_timeout(500)
         check(state(page)['phase'] == 'me', f'[{vp_name}] 내 턴 시작')
         check(sum(overflow(page).values()) <= 0, f'[{vp_name}] 대전 가로 오버플로 없음', str(overflow(page)))
-        page.click('#btn-hint')
-        page.wait_for_timeout(180)
-        hint_text = page.evaluate("document.querySelector('.toast')?.textContent || ''")
-        check('남은 단어' in hint_text, f'[{vp_name}] 힌트 동작', hint_text)
         # 모바일: 키보드가 올라온 상황(높이 500)에서도 글자·입력창이 보이는지
         if vp_name == 'mobile':
             page.focus('#word-input')
@@ -1042,11 +1293,13 @@ def run_local(base_url, browser):
         scenario_new_words(page, 'local-' + vp_name)
         scenario_bot_levels(page, 'local-' + vp_name)
         scenario_no_custom(page, 'local-' + vp_name)
+        scenario_no_hint(page, 'local-' + vp_name)
         scenario_result_level(page, 'local-' + vp_name)
         scenario_mission(page, 'local-' + vp_name, REPORT_DIR)
         scenario_levels(page, 'local-' + vp_name)
         scenario_hell(page, 'local-' + vp_name)
         scenario_legacy(page, 'local-' + vp_name)
+        scenario_hardcore(page, 'local-' + vp_name, REPORT_DIR)
 
         # 대전 중 스크린샷 (여러 단어가 쌓인 화면)
         page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
@@ -1104,11 +1357,13 @@ def run_live(url, browser):
         scenario_new_words(page, 'live-' + vp_name)
         scenario_bot_levels(page, 'live-' + vp_name)
         scenario_no_custom(page, 'live-' + vp_name)
+        scenario_no_hint(page, 'live-' + vp_name)
         scenario_result_level(page, 'live-' + vp_name)
         scenario_mission(page, 'live-' + vp_name, REPORT_DIR)
         scenario_levels(page, 'live-' + vp_name)
         scenario_hell(page, 'live-' + vp_name)
         scenario_legacy(page, 'live-' + vp_name)
+        scenario_hardcore(page, 'live-' + vp_name, REPORT_DIR)
 
         check(not col.errors, f'[{vp_name}] 페이지 에러 0', json.dumps(col.errors, ensure_ascii=False)[:400])
         errs = [c for c in col.console if c['type'] == 'error']

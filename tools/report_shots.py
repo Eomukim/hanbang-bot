@@ -7,9 +7,12 @@
 - Lv.5 지옥 봇이 실제로: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 · 소수 후보 압박 · 미션/장문
 - 4단계 극악 한방 봇 동작 확인
 - 내 단어장 삭제(버튼·모달·사전 API 없음)와 효과음 설정 행 전체 폭
+- 힌트 삭제(버튼·문구·API 없음)
+- 하드코어 모드: 스위치·5초 고정·봇 선공·헤더/결과 배지·별도 전적, 끄면 일반 모드
 - 결과 화면(승리·패배·포기)의 난이도 배지
 - downloads/hanbang-bot/ 에 setup.png, lv5-setup.png, lv5-game.png, oneshot.png,
-  result-win.png, result-lv5.png, mobile-game.png, mobile-lv5.png, mobile-result.png 저장
+  result-win.png, result-lv5.png, mobile-game.png, mobile-lv5.png, mobile-result.png,
+  hardcore-setup.png, hardcore-game.png, hardcore-result.png 저장
 
 usage:
     python3 tools/report_shots.py --url https://hanbang-bot.onrender.com
@@ -418,6 +421,111 @@ def main():
         page.screenshot(path=os.path.join(OUT, 'result-lv5.png'))
         summary['desktop_lv5_quit'] = {'title': lv5['title'], 'level': lv5['label'], 'reason': lv5['reason']}
         page.evaluate('window.__HB.app.hideResult()')
+
+        # ── 데스크톱: 힌트 삭제 · 하드코어 모드 ──────────────
+        page.evaluate('window.__HB.app.engine && window.__HB.app.engine.destroy()')
+        page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+        page.wait_for_timeout(250)
+        no_hint = page.evaluate("""() => ({
+            btn: !!document.getElementById('btn-hint'),
+            cls: document.querySelectorAll('.btn.hint, .hint').length,
+            text: document.body.innerText.includes('힌트'),
+            api: ['useHint', 'hint'].filter((k) => typeof window.__HB.app[k] === 'function'),
+        })""")
+        check(not no_hint['btn'] and no_hint['cls'] == 0 and not no_hint['text'] and not no_hint['api'],
+              '힌트 버튼·문구·API 삭제', json.dumps(no_hint, ensure_ascii=False))
+
+        if page.evaluate("document.getElementById('btn-hardcore').getAttribute('aria-checked')") == 'true':
+            page.click('#btn-hardcore')
+            page.wait_for_timeout(180)
+        page.click('.level[data-lv="3"]')
+        page.wait_for_timeout(120)
+        page.click('#btn-hardcore')
+        page.wait_for_timeout(300)
+        hc_setup = page.evaluate("""() => ({
+            on: document.getElementById('btn-hardcore').getAttribute('aria-checked'),
+            time: document.getElementById('time-locked').innerText.trim(),
+            first: document.getElementById('first-locked').innerText.trim(),
+            timeLocked: document.getElementById('time-opts').hidden,
+            composer: [...document.getElementById('composer').children].map((el) => el.id || el.tagName),
+        })""")
+        check(hc_setup['on'] == 'true' and '5초' in hc_setup['time'] and '봇부터' in hc_setup['first']
+              and hc_setup['timeLocked'],
+              '하드코어 설정: 5초 고정 · 봇부터 잠금', json.dumps(hc_setup, ensure_ascii=False))
+        check(sum(overflow(page).values()) <= 0, '하드코어 설정 가로 오버플로 0', str(overflow(page)))
+        hits = brand_hits(page)
+        check(not hits, '하드코어 설정 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'hardcore-setup.png'))
+
+        page.click('#btn-start')
+        page.wait_for_selector('#scr-game:not([hidden])')
+        wait_my_turn(page, 7000)
+        page.wait_for_timeout(520)   # 봇 단어 등장 애니메이션이 끝난 뒤
+        hc_game = page.evaluate("""() => {
+            const st = window.__HB.state();
+            const badge = document.getElementById('game-hardcore');
+            return {
+                hardcore: window.__HB.engine.hardcore,
+                limit: window.__HB.engine.timeLimit,
+                first: window.__HB.engine.first,
+                phase: st.phase,
+                chain: st.chain.map((c) => c.who),
+                badge: !badge.hidden,
+                badgeText: badge.innerText.replace(/\\s+/g, ' ').trim(),
+                time: document.getElementById('time-left').textContent,
+                left: window.__HB.engine.timeLeft(),
+                composer: [...document.getElementById('composer').children].map((el) => el.id || el.tagName),
+                input: Math.round(document.getElementById('word-input').getBoundingClientRect().width),
+                go: Math.round(document.getElementById('btn-submit').getBoundingClientRect().width),
+                box: Math.round(document.getElementById('composer').getBoundingClientRect().width),
+            };
+        }""")
+        check(hc_game['hardcore'] and hc_game['limit'] == 5 and hc_game['first'] == 'bot',
+              '하드코어 대국 5초·봇 선공', json.dumps({k: hc_game[k] for k in ('limit', 'first', 'phase')}, ensure_ascii=False))
+        check(hc_game['chain'][:1] == ['bot'], '하드코어 봇 선공 실제 확인', str(hc_game['chain']))
+        check(hc_game['badge'] and '하드코어' in hc_game['badgeText'], '대전 헤더 하드코어 배지', hc_game['badgeText'])
+        check(hc_game['composer'] == ['word-input', 'btn-submit']
+              and hc_game['input'] >= hc_game['box'] * 0.7
+              and abs(hc_game['input'] + hc_game['go'] + 8 - hc_game['box']) <= 3,
+              '힌트 없는 입력 바 폭 채움',
+              f"{hc_game['input']} + {hc_game['go']} = {hc_game['box']}px")
+        check(sum(overflow(page).values()) <= 0, '하드코어 대전 가로 오버플로 0', str(overflow(page)))
+        page.screenshot(path=os.path.join(OUT, 'hardcore-game.png'))
+
+        # 5초를 넘겨 시간 초과 결과까지 기다린다
+        try:
+            page.wait_for_function("() => !document.getElementById('ov-result').hidden", timeout=9000)
+        except Exception:
+            pass
+        page.wait_for_timeout(150)
+        hc_res = result_view(page)
+        hc_badge = page.evaluate("!document.getElementById('result-hardcore').hidden")
+        check(hc_res['title'] == '패배' and '시간' in hc_res['reason'] and hc_badge,
+              '하드코어 결과(시간 초과) 배지', json.dumps(hc_res, ensure_ascii=False))
+        rec = page.evaluate("JSON.parse(localStorage.getItem('hanbang.record.v1') || '{}')")
+        check(bool(rec.get('3:hc')) and rec['3:hc'].get('plays', 0) >= 1,
+              '하드코어 전적 별도 기록', json.dumps(rec.get('3:hc'), ensure_ascii=False))
+        check(sum(overflow(page).values()) <= 0, '하드코어 결과 가로 오버플로 0', str(overflow(page)))
+        hits = brand_hits(page)
+        check(not hits, '하드코어 결과 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'hardcore-result.png'))
+        summary['hardcore'] = {'setup': hc_setup, 'game': {k: hc_game[k] for k in ('limit', 'first', 'badgeText', 'time')},
+                               'result': hc_res, 'record': rec.get('3:hc')}
+
+        page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+        page.wait_for_timeout(200)
+        page.click('#btn-hardcore')
+        page.wait_for_timeout(220)
+        hc_off = page.evaluate("""() => ({
+            on: document.getElementById('btn-hardcore').getAttribute('aria-checked'),
+            timeLocked: !document.getElementById('time-locked').hidden,
+            timeBtns: [...document.querySelectorAll('#time-opts button')].map((b) => b.dataset.time),
+            saved: JSON.parse(localStorage.getItem('hanbang.settings.v1') || '{}').hardcore,
+        })""")
+        check(hc_off['on'] == 'false' and not hc_off['timeLocked'] and hc_off['timeBtns'] == ['10', '15', '20']
+              and hc_off['saved'] is False,
+              '하드코어 끄면 일반 모드 복귀', json.dumps(hc_off, ensure_ascii=False))
+
         summary['desktop_console_errors'] = console
         summary['desktop_page_errors'] = errors
         check(not console, '콘솔 에러 0', json.dumps(console, ensure_ascii=False)[:300])
@@ -479,6 +587,47 @@ def main():
         check(sum(overflow(page).values()) <= 0, '모바일 결과 화면 가로 오버플로 0', str(overflow(page)))
         page.screenshot(path=os.path.join(OUT, 'mobile-result.png'))
         summary['mobile_result'] = mres
+
+        # ── 모바일: 하드코어 설정·대전·결과 ──────────────────
+        page.evaluate('window.__HB.app.hideResult(); window.__HB.app.show(\'setup\')')
+        page.wait_for_timeout(200)
+        if page.evaluate("document.getElementById('btn-hardcore').getAttribute('aria-checked')") == 'true':
+            page.click('#btn-hardcore')
+            page.wait_for_timeout(180)
+        page.click('#btn-hardcore')
+        page.wait_for_timeout(250)
+        check(sum(overflow(page).values()) <= 0, '모바일 하드코어 설정 가로 오버플로 0', str(overflow(page)))
+        page.screenshot(path=os.path.join(OUT, 'mobile-hardcore-setup.png'))
+        page.click('#btn-start')
+        page.wait_for_selector('#scr-game:not([hidden])')
+        wait_my_turn(page, 7000)
+        page.wait_for_timeout(520)
+        m_hc = page.evaluate("""() => {
+            const st = window.__HB.state();
+            return {
+                first: window.__HB.engine.first,
+                limit: window.__HB.engine.timeLimit,
+                chain: st.chain.map((c) => c.who),
+                badge: !document.getElementById('game-hardcore').hidden,
+                time: document.getElementById('time-left').textContent,
+            };
+        }""")
+        check(m_hc['first'] == 'bot' and m_hc['limit'] == 5 and m_hc['badge'] and m_hc['chain'][:1] == ['bot'],
+              '모바일 하드코어 5초·봇 선공·배지', json.dumps(m_hc, ensure_ascii=False))
+        check(sum(overflow(page).values()) <= 0, '모바일 하드코어 대전 가로 오버플로 0', str(overflow(page)))
+        page.screenshot(path=os.path.join(OUT, 'mobile-hardcore-game.png'))
+        page.evaluate('window.__HB.engine.quit()')
+        page.wait_for_timeout(1100)
+        m_hc_res = page.evaluate("""() => ({
+            title: document.getElementById('result-title').textContent,
+            badge: !document.getElementById('result-hardcore').hidden,
+            label: document.getElementById('result-level-label').textContent,
+        })""")
+        check(m_hc_res['title'] == '패배' and m_hc_res['badge'], '모바일 하드코어 결과 배지',
+              json.dumps(m_hc_res, ensure_ascii=False))
+        check(sum(overflow(page).values()) <= 0, '모바일 하드코어 결과 가로 오버플로 0', str(overflow(page)))
+        page.screenshot(path=os.path.join(OUT, 'mobile-hardcore-result.png'))
+        summary['mobile_hardcore'] = m_hc_res
         summary['mobile_console_errors'] = console
         summary['mobile_page_errors'] = errors
         check(not console, '모바일 콘솔 에러 0', json.dumps(console, ensure_ascii=False)[:300])

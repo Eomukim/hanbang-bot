@@ -8,11 +8,13 @@ import { Bot, botLine, pickHellOpening } from './bot.js';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 export class Engine {
-  constructor({ dict, level = 2, timeLimit = 15, first = 'me', startChar = null, mission = null, rng = Math.random, on = {} }) {
+  constructor({ dict, level = 2, timeLimit = 15, first = 'me', hardcore = false, startChar = null, mission = null, rng = Math.random, on = {} }) {
     this.dict = dict;
     this.level = level;
-    this.timeLimit = timeLimit;
-    this.first = first;
+    // 하드코어: 제한 시간 5초 고정 · 봇 선공 고정
+    this.hardcore = Boolean(hardcore);
+    this.timeLimit = this.hardcore ? 5 : timeLimit;
+    this.first = this.hardcore ? 'bot' : first;
     this.rng = rng;
     this.on = on;
     this.bot = new Bot({ level, dict, rng });
@@ -28,7 +30,7 @@ export class Engine {
 
     const starts = dict.goodStartChars(60);
     // Lv.5 지옥에서 봇이 선공이면, 무작위 글자 대신 봇이 유리한 시작 글자로 연다.
-    const hellOpening = !startChar && level >= 5 && first === 'bot'
+    const hellOpening = !startChar && level >= 5 && this.first === 'bot'
       ? pickHellOpening(dict, rng)
       : null;
     this.startChar = startChar || hellOpening || starts[Math.floor(rng() * starts.length)] || '가';
@@ -38,7 +40,6 @@ export class Engine {
     this.deadline = 0;
     this.turnTimer = null;
     this.botTimer = null;
-    this.hinted = false;
     this.finished = false;
   }
 
@@ -60,6 +61,7 @@ export class Engine {
     return {
       phase: this.phase,
       level: this.level,
+      hardcore: this.hardcore,
       first: this.first,
       startChar: this.startChar,
       needChar: this.needChar,
@@ -99,7 +101,6 @@ export class Engine {
   playerTurn() {
     if (this.finished) return;
     this.phase = 'me';
-    this.hinted = false;
     this.deadline = performance.now() + this.timeLimit * 1000;
     clearTimeout(this.turnTimer);
     this.turnTimer = setTimeout(() => {
@@ -227,18 +228,6 @@ export class Engine {
     return Math.round(base * comboMul * missionMultiplier(hits));
   }
 
-  /* ── 힌트 ───────────────────────────────────────────────── */
-
-  hint() {
-    if (this.phase !== 'me') return null;
-    const cands = this.dict.candidatesFor(this.needChar, this.used);
-    if (!cands.length) return { count: 0, sample: null };
-    const sample = cands[Math.floor(this.rng() * cands.length)];
-    const mask = sample.charAt(0) + '○'.repeat(Math.max(0, sample.length - 1));
-    this.hinted = true;
-    return { count: cands.length, sample, mask, length: sample.length };
-  }
-
   /* ── 종료 ───────────────────────────────────────────────── */
 
   finish(winner, reason) {
@@ -250,6 +239,7 @@ export class Engine {
     this.on.end?.({
       winner,
       reason,
+      hardcore: this.hardcore,
       win: winner === 'me',
       scoreMe: this.scores.me,
       scoreBot: this.scores.bot,
