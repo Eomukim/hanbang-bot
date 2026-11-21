@@ -1,13 +1,6 @@
 /**
  * 5단계 봇. 난이도마다 단어를 고르는 방식과 반응이 다르다.
  *
- * Lv.1~4 는 각 단계가 원래 고르던 후보 풀(후속 단어 수·글자 수 한계)을 그대로 두고,
- * **그 풀 안에서만** 미션 중첩·글자 수 점수(`wordValue`)를 챙긴다.
- *  - Lv.1: 가끔 가장 높은 점수의 단어, 나머지는 점수 가중 (한방·4글자 초과 금지)
- *  - Lv.2: 한방(5글자 이하)·장문(4~5글자)·쉬운 단어 풀 안에서 점수 가중
- *  - Lv.3: 한방·유도·압박 풀 유지, 괴물 장문 배제, 유도 풀 안에서 점수 상위 가중
- *  - Lv.4: 한방이면 최고점 한방, 아니면 최소 후속 수가 최우선이고 동률에서만 점수 비교
- *
  * Lv.5 지옥은 페널티 없이 순수하게 세게 둔다.
  *  - 빌드 타임(`build/build_data.py`)에 796,750단어 음절 그래프를 역방향 분석해 둔
  *    승리/패배/무승부 상태(`dict.graphStatus`)와 한방 단어 목록(`dict.shotWords`)을 읽고,
@@ -136,83 +129,6 @@ const pick = (arr, rng) => arr[Math.floor(rng() * arr.length)];
 const delayBetween = (a, b, rng) => a + rng() * (b - a);
 
 const lastOf = (w) => w.charAt(w.length - 1);
-
-/**
- * 단어 하나의 점수 가치: 글자 수 점수 × 미션 중첩 배율.
- * (엔진의 점수식과 같은 모양 — 길수록, 미션 글자가 겹칠수록 높다)
- */
-export function wordValue(w, mission) {
-  const len = w.length;
-  const hits = mission ? countMission(w, mission) : 0;
-  return (len * len + 4 * len) * missionMultiplier(hits);
-}
-
-/** 점수가 가장 높은 단어 하나(동률이면 먼저 만난 단어). */
-function bestByValue(pool, mission) {
-  let best = pool[0];
-  let bestVal = wordValue(best, mission);
-  for (let i = 1; i < pool.length; i += 1) {
-    const val = wordValue(pool[i], mission);
-    if (val > bestVal) {
-      bestVal = val;
-      best = pool[i];
-    }
-  }
-  return best;
-}
-
-/**
- * 풀 안에서만 점수·미션 의지를 갖고 고른다.
- *  - 풀은 그대로 두므로 난이도(후속 단어 수) 등급은 바뀌지 않는다.
- *  - 점수가 낮은 단어도 strength 만큼은 남겨 두어, 늘 같은 최고점만 쓰지는 않는다.
- *    strength 0 = 완전 무작위.
- */
-function pickByValue(pool, mission, rng, strength = 2) {
-  if (pool.length <= 1) return pool[0];
-  const vals = new Array(pool.length);
-  let min = Infinity;
-  let max = -Infinity;
-  for (let i = 0; i < pool.length; i += 1) {
-    const val = wordValue(pool[i], mission);
-    vals[i] = val;
-    if (val < min) min = val;
-    if (val > max) max = val;
-  }
-  if (max === min || strength <= 0) return pick(pool, rng);
-  const span = max - min;
-  let total = 0;
-  for (let i = 0; i < vals.length; i += 1) {
-    const weight = 1 + strength * ((vals[i] - min) / span);
-    vals[i] = weight;
-    total += weight;
-  }
-  let r = rng() * total;
-  for (let i = 0; i < pool.length; i += 1) {
-    r -= vals[i];
-    if (r <= 0) return pool[i];
-  }
-  return pool[pool.length - 1];
-}
-
-/**
- * 길이 상한을 지키는 풀. 상한 이하 단어가 하나라도 있으면 그 안에서만 고르고,
- * 그 글자로 낼 수 있는 단어가 전부 장문일 때만 가장 짧은 것을 쓴다.
- */
-function fitPool(pool, limit) {
-  const short = pool.filter((w) => w.length <= limit);
-  if (short.length) return short;
-  let best = pool[0];
-  for (const w of pool) if (w.length < best.length) best = w;
-  return [best];
-}
-
-/**
- * 한방(즉사) 후보 고르기.
- * 어느 것을 써도 그 판은 바로 끝나므로 난이도는 같다 — 그러니 점수·미션을 챙긴다.
- */
-function killByValue(pool, mission, limit) {
-  return bestByValue(fitPool(pool, limit), mission);
-}
 
 const pressureTier = (n) => (n <= 1 ? 0 : n <= 3 ? 1 : n <= 10 ? 2 : n <= 40 ? 3 : n <= 200 ? 4 : 5);
 
@@ -466,97 +382,74 @@ export class Bot {
     const oneShot = cands.filter((w) => endCount(w) === 0);
 
     if (this.level === 4) {
-      // 한방이 여러 개면 무작위가 아니라 미션 중첩·점수가 가장 높은 한방을 쓴다.
-      // (한방이면 어느 것이든 즉사라서 난이도는 그대로다)
       if (oneShot.length) {
-        return { word: bestByValue(oneShot, mission), delay: delayBetween(200, 480, rng), kind: 'oneshot' };
+        return { word: pick(oneShot, rng), delay: delayBetween(200, 480, rng), kind: 'oneshot' };
       }
-      // 한방이 없으면: 상대가 받아치기 가장 어려운 최소 후속 단어가 여전히 최우선.
-      // 같은 최소 후속 수(동률) 안에서만 미션 중첩·글자 수 점수로 고득점 단어를 고른다.
-      let minEnd = Infinity;
+      // 한방이 없으면: 상대가 받아치기 가장 어려운 최소 후속 단어, 길이 우선
+      let best = null;
+      let bestKey = Infinity;
       for (const w of cands) {
-        const n = endCount(w);
-        if (n < minEnd) minEnd = n;
+        const key = endCount(w) * 100 - w.length;
+        if (key < bestKey) {
+          bestKey = key;
+          best = w;
+        }
       }
-      const tight = [];
-      for (const w of cands) if (endCount(w) === minEnd) tight.push(w);
-      return { word: bestByValue(tight, mission), delay: delayBetween(200, 500, rng), kind: 'outer' };
+      return { word: best, delay: delayBetween(200, 500, rng), kind: 'outer' };
     }
 
     if (this.level === 3) {
       if (turn >= 4 && oneShot.length && rng() < 0.85) {
-        return { word: killByValue(oneShot, mission, 6), delay: delayBetween(700, 1300, rng), kind: 'oneshot' };
+        return { word: pick(oneShot, rng), delay: delayBetween(700, 1300, rng), kind: 'oneshot' };
       }
       const induced = cands.filter((w) => {
         const n = endCount(w);
         return n >= 1 && n <= 3;
       });
       if (induced.length && rng() < 0.7) {
-        return {
-          word: pickByValue(fitPool(induced, 6), mission, rng, 3),
-          delay: delayBetween(700, 1400, rng),
-          kind: 'press',
-        };
+        return { word: pick(induced, rng), delay: delayBetween(700, 1400, rng), kind: 'press' };
       }
       const tough = cands.filter((w) => {
         const n = endCount(w);
         return n > 0 && n <= 30;
       });
       const pool = tough.length ? tough : cands.filter((w) => endCount(w) > 0);
-      return {
-        word: pickByValue(fitPool(pool.length ? pool : cands, 6), mission, rng, 3),
-        delay: delayBetween(750, 1400, rng),
-        kind: 'press',
-      };
+      return { word: pick(pool.length ? pool : cands, rng), delay: delayBetween(750, 1400, rng), kind: 'press' };
     }
 
     if (this.level === 2) {
-      // 한방은 5글자 이하일 때만 — 그런 한방이 없으면 이 턴은 한방 없이 간다(보통 난이도는 장문 금지)
-      const kills = oneShot.filter((w) => w.length <= 5);
-      if (turn > 3 && kills.length && rng() < 0.1) {
-        return { word: bestByValue(kills, mission), delay: delayBetween(1000, 1700, rng), kind: 'oneshot' };
+      if (turn > 3 && oneShot.length && rng() < 0.1) {
+        return { word: pick(oneShot, rng), delay: delayBetween(1000, 1700, rng), kind: 'oneshot' };
       }
-      // 장문은 4~5글자까지만 — 보통 난이도가 16글자 같은 초장문을 쓰지 않게 한다
-      const longWords = cands.filter((w) => w.length >= 4 && w.length <= 5 && endCount(w) > 5);
+      const longWords = cands.filter((w) => w.length >= 4 && endCount(w) > 5);
       if (longWords.length && rng() < 0.22) {
-        return {
-          word: pickByValue(longWords, mission, rng, 2),
-          delay: delayBetween(1000, 1800, rng),
-          kind: 'long',
-        };
+        return { word: pick(longWords, rng), delay: delayBetween(1000, 1800, rng), kind: 'long' };
       }
       const easy = cands.filter((w) => w.length <= 3 && endCount(w) >= 25);
       const pool = easy.length ? easy : cands.filter((w) => endCount(w) > 0);
       return {
-        word: pickByValue(fitPool(pool.length ? pool : cands, 5), mission, rng, 2),
+        word: pick(pool.length ? pool : cands, rng),
         delay: delayBetween(1000, 1800, rng),
         kind: 'normal',
       };
     }
 
-    // 레벨 1: 한방 금지, 후속 단어가 많은 2~3글자.
-    // 쉬움답게 풀은 그대로 두고, 그 안에서 미션 글자·3글자를 가끔 더 챙기는 정도만.
-    const spare = (pool) => (rng() < 0.2 ? bestByValue(pool, mission) : pickByValue(pool, mission, rng, 1.5));
-
+    // 레벨 1: 한방 금지, 후속 단어가 많은 2~3글자
     const safe = cands.filter((w) => {
       const n = endCount(w);
       return n >= 40 && w.length <= 3;
     });
-    if (safe.length) {
-      return { word: spare(safe), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
-    }
+    if (safe.length) return { word: pick(safe, rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
 
     const safer = cands.filter((w) => {
       const n = endCount(w);
       return n >= 15 && w.length <= 4;
     });
-    if (safer.length) {
-      return { word: spare(safer), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
-    }
+    if (safer.length) return { word: pick(safer, rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
 
     const notDead = cands.filter((w) => endCount(w) > 0);
     return {
-      word: spare(fitPool(notDead.length ? notDead : cands, 4)),
+      word: pick(notDead.length ? notDead : cands, rng),
       delay: delayBetween(1500, 2500, rng),
       kind: 'normal',
     };
@@ -576,7 +469,11 @@ export class Bot {
     duel.budget = HELL.budget;
     duel.deadline = performance.now() + HELL.deadlineMs;
 
-    const valueOf = (w) => wordValue(w, mission);
+    const valueOf = (w) => {
+      const len = w.length;
+      const hits = mission ? countMission(w, mission) : 0;
+      return (len * len + 4 * len) * missionMultiplier(hits);
+    };
 
     const kills = [];
     const traps = new Map();     // 끝 글자별: 상대가 죽는 자리로 보내는 최고 점수 단어

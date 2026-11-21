@@ -7,7 +7,6 @@
  - 내 단어장 삭제(버튼·모달·사전 API 없음, 남은 localStorage 값 무시)
  - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
  - 5단계 난이도 카드(데스크톱/모바일 배치)와 4단계 기준 localStorage 호환
- - Lv.1~4: 단계별 풀·길이 한계를 지키면서 점수·미션 의지
  - Lv.5 지옥: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 검증 · 압박/미션·장문 · 응답 시간
  - 미션 규칙(14종 후보 · 미달성 시 유지 · 중첩 보너스 · 성공 시 다음 글자)
  - 모바일(390x844) 레이아웃과 스크린샷
@@ -199,145 +198,6 @@ HELL_PICKS = """
     break;
   }
   if (!out.pressure) out.pressure = {ok: false};
-  return out;
-}
-"""
-
-# Lv.1~4 가 각 단계의 풀 안에서 점수·미션 의지를 갖는지 직접 돌려 보는 스크립트.
-#  · Lv.1 한방 금지·쉬움 길이, Lv.2 6글자 이상 초장문 금지, Lv.3 유도/압박 풀과 장문,
-#  · Lv.4 한방 최고점·최소 후속 수 우선, 그리고 각 단계가 그 풀 안에서 점수를 챙기는지
-LEVEL_INTENT = """
-() => {
-  const dict = window.__HB.dict, Bot = window.__HB.Bot;
-  const last = (w) => w[w.length - 1];
-  const hitsOf = (w, m) => { let n = 0; for (const c of w) if (c === m) n += 1; return n; };
-  const value = (w, m) => {
-    const h = hitsOf(w, m);
-    const mult = h <= 0 ? 1 : h === 1 ? 1.5 : h;
-    return (w.length * w.length + 4 * w.length) * mult;
-  };
-  const argmax = (pool, m) => pool.reduce((a, w) => (value(w, m) > value(a, m) ? w : a), pool[0]);
-  const avg = (arr, m) => arr.reduce((a, w) => a + value(w, m), 0) / Math.max(1, arr.length);
-  const mulberry32 = (a) => () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-  const MISSION_CHARS = ['가', '나', '다', '라', '마', '바', '사', '아', '자', '차', '카', '타', '파', '하'];
-
-  // 같은 자리 목록: 구현끼리·단계끼리 비교가 되도록 결정적으로 만든다
-  const starts = dict.goodStartChars(60).sort();
-  const rngP = mulberry32(20261121);
-  const positions = [];
-  for (let i = 0; i < 480; i += 1) {
-    let cur = starts[Math.floor(rngP() * starts.length)];
-    const used = new Set();
-    for (let k = 0; k < i % 4; k += 1) {
-      const c = dict.candidatesFor(cur, used);
-      if (!c.length) break;
-      const w = c[Math.floor(rngP() * c.length)];
-      used.add(w);
-      cur = last(w);
-    }
-    if (!dict.hasCandidate(cur, used)) continue;
-    positions.push({ cur, used, turn: 4 + (i % 6), mission: MISSION_CHARS[i % MISSION_CHARS.length] });
-  }
-
-  const out = { positions: positions.length, levels: {}, bad: [] };
-  const bad = (msg) => { if (out.bad.length < 8) out.bad.push(msg); };
-
-  for (const level of [1, 2, 3, 4]) {
-    const s = {
-      moves: 0, maxLen: 0, kills: 0, longBad: 0, tierBad: 0, wrongTier: 0,
-      killPick: 0, killBest: 0, tightPick: 0, tightBest: 0,
-      ratio: 0, ratioN: 0, missionPick: 0, missionBase: 0,
-    };
-    for (const p of positions) {
-      const bot = new Bot({ level, dict, rng: mulberry32(p.cur.charCodeAt(0) * 7 + level * 31) });
-      const mv = bot.choose({ needChar: p.cur, used: p.used, turn: p.turn, mission: p.mission });
-      if (!mv) continue;
-      s.moves += 1;
-      const w = mv.word;
-      const n = (x) => dict.countFrom(last(x));
-      const cands = dict.candidatesFor(p.cur, p.used);
-      const end = n(w);
-      const shortExists = cands.some((x) => x.length <= 6 && n(x) > 0);
-      if (w.length > s.maxLen) s.maxLen = w.length;
-      if (end === 0) s.kills += 1;
-
-      // 단계별로 '고를 수 있는 풀'과 그 안에서의 점수·미션 반영
-      let pool = null;
-      if (level === 1) {
-        if (end === 0) bad(`Lv.1 한방 사용 ${w}`);
-        if (w.length > 4 && cands.some((x) => x.length <= 4 && n(x) > 0)) s.longBad += 1;
-        pool = cands.filter((x) => n(x) >= 40 && x.length <= 3);
-      } else if (level === 2) {
-        // 보통: 6글자 이상 금지(그 자리에 5글자 이하 단어가 있을 때), 긴 단어는 4~5글자 & 후속 5개 초과
-        if (w.length > 5 && cands.some((x) => x.length <= 5 && n(x) > 0)) s.longBad += 1;
-        if (end !== 0 && w.length >= 4 && end <= 5) s.tierBad += 1;
-        pool = cands.filter((x) => x.length <= 3 && n(x) >= 25);
-      } else if (level === 3) {
-        // 어려움: 한방 / 유도(1~3) / tough(<=30) 유지, 일반 수는 7자 이상 괴물 장문 배제
-        if (end > 30 && cands.some((x) => { const k = n(x); return k >= 1 && k <= 30; })) s.tierBad += 1;
-        const sameBand = (x) => {
-          const k = n(x);
-          return end >= 1 && end <= 3 ? (k >= 1 && k <= 3) : (k > 0 && k <= 30);
-        };
-        if (end !== 0 && w.length > 6 && cands.some((x) => x.length <= 6 && sameBand(x))) s.longBad += 1;
-        const kills = cands.filter((x) => n(x) === 0);
-        if (end === 0 && kills.length) {
-          s.killPick += 1;
-          const shortKills = kills.filter((x) => x.length <= 6);
-          if (value(w, p.mission) >= value(argmax(shortKills.length ? shortKills : kills, p.mission), p.mission)) s.killBest += 1;
-        }
-        if (end >= 1 && end <= 3) {
-          const ind = cands.filter((x) => { const k = n(x); return k >= 1 && k <= 3 && x.length <= 6; });
-          s.tightPick += 1;
-          if (ind.length) {
-            if (value(w, p.mission) >= value(argmax(ind, p.mission), p.mission)) s.tightBest += 1;
-            pool = ind;
-          }
-        }
-      } else {
-        // 극악: 한방이면 최고점 한방, 아니면 최소 후속 수가 최우선 + 동률에서 최고점
-        const kills = cands.filter((x) => n(x) === 0);
-        if (kills.length) {
-          s.killPick += 1;
-          if (value(w, p.mission) >= value(argmax(kills, p.mission), p.mission)) s.killBest += 1;
-          if (end !== 0) s.wrongTier += 1;
-        } else {
-          const minEnd = Math.min(...cands.map(n));
-          const tight = cands.filter((x) => n(x) === minEnd);
-          s.tightPick += 1;
-          if (end === minEnd && value(w, p.mission) >= value(argmax(tight, p.mission), p.mission)) s.tightBest += 1;
-          pool = tight;
-        }
-      }
-
-      if (pool && pool.length) {
-        s.ratio += value(w, p.mission) / avg(pool, p.mission);
-        s.ratioN += 1;
-        s.missionPick += hitsOf(w, p.mission) > 0 ? 1 : 0;
-        s.missionBase += pool.filter((x) => hitsOf(x, p.mission) > 0).length / pool.length;
-      }
-    }
-    out.levels[level] = {
-      moves: s.moves,
-      maxLen: s.maxLen,
-      kills: s.kills,
-      longBad: s.longBad,
-      tierBad: s.tierBad,
-      wrongTier: s.wrongTier,
-      killPick: s.killPick,
-      killBest: s.killBest,
-      tightPick: s.tightPick,
-      tightBest: s.tightBest,
-      avgRatio: +(s.ratioN ? s.ratio / s.ratioN : 0).toFixed(3),
-      missionShare: +(s.ratioN ? s.missionPick / s.ratioN : 0).toFixed(3),
-      missionBase: +(s.ratioN ? s.missionBase / s.ratioN : 0).toFixed(3),
-    };
-  }
   return out;
 }
 """
@@ -1131,49 +991,6 @@ def scenario_mission(page, tag, report_dir=None):
     page.evaluate("window.__HB.app.hideResult()")
 
 
-def scenario_level_intent(page, tag):
-    """Lv.1~4: 각 단계의 풀·길이 한계를 지키면서 점수·미션 의지를 갖는지."""
-    res = page.evaluate(LEVEL_INTENT)
-    lv = res['levels']
-    check(res['positions'] >= 400, f'[{tag}] Lv.1~4 표본 자리', str(res['positions']))
-    check(not res['bad'], f'[{tag}] Lv.1~4 규칙 위반 0', str(res['bad']))
-
-    one = lv['1']
-    check(one['kills'] == 0, f'[{tag}] Lv.1 한방 금지 유지', f"한방 {one['kills']}/{one['moves']}")
-    check(one['longBad'] == 0 and one['maxLen'] <= 4, f'[{tag}] Lv.1 쉬움 길이 유지', f"최대 {one['maxLen']}자")
-    check(one['avgRatio'] >= 1.08, f'[{tag}] Lv.1 풀 안에서 점수 가중',
-          f"점수/풀평균 {one['avgRatio']}")
-    check(one['missionShare'] >= max(0.05, one['missionBase'] * 3), f'[{tag}] Lv.1 미션 글자 가끔 챙김',
-          f"{one['missionShare']:.1%} / 풀 기준 {one['missionBase']:.1%}")
-
-    two = lv['2']
-    check(two['longBad'] == 0 and two['maxLen'] <= 5, f'[{tag}] Lv.2 6글자 이상 초장문 금지',
-          f"최대 {two['maxLen']}자 · 위반 {two['longBad']}")
-    check(two['tierBad'] == 0, f'[{tag}] Lv.2 긴 단어는 4~5글자·후속 5개 초과', str(two['tierBad']))
-    check(two['avgRatio'] >= 1.15, f'[{tag}] Lv.2 풀 안에서 점수·미션 가중',
-          f"점수/풀평균 {two['avgRatio']}")
-    check(two['kills'] <= two['moves'] * 0.2, f'[{tag}] Lv.2 후반 한방 확률 유지',
-          f"한방 {two['kills']}/{two['moves']}")
-
-    three = lv['3']
-    check(three['tierBad'] == 0, f'[{tag}] Lv.3 유도·압박 풀 유지', str(three['tierBad']))
-    check(three['longBad'] == 0, f'[{tag}] Lv.3 괴물 장문 배제', f"최대 {three['maxLen']}자")
-    check(three['killPick'] > 0 and three['killBest'] >= three['killPick'] * 0.9,
-          f'[{tag}] Lv.3 한방 중 최고점 선택', f"{three['killBest']}/{three['killPick']}")
-    check(three['tightPick'] > 0 and three['tightBest'] >= three['tightPick'] * 0.4,
-          f'[{tag}] Lv.3 유도 풀 안에서 점수 상위 가중', f"{three['tightBest']}/{three['tightPick']}")
-    check(three['avgRatio'] >= 1.05, f'[{tag}] Lv.3 유도 풀 점수 의지', f"{three['avgRatio']}")
-
-    four = lv['4']
-    check(four['wrongTier'] == 0 and four['killPick'] > 0 and four['killBest'] == four['killPick'],
-          f'[{tag}] Lv.4 한방 중 최고점 한방', f"{four['killBest']}/{four['killPick']}")
-    check(four['tightPick'] > 0 and four['tightBest'] == four['tightPick'],
-          f'[{tag}] Lv.4 최소 후속 수 우선 + 동률 최고점', f"{four['tightBest']}/{four['tightPick']}")
-
-    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy(); window.__HB.app.hideResult(); window.__HB.app.show('setup')")
-    page.wait_for_timeout(120)
-
-
 def run_local(base_url, browser):
     print(f'\n=== LOCAL {base_url} ===')
     for vp_name in VIEWPORTS:
@@ -1228,7 +1045,6 @@ def run_local(base_url, browser):
         scenario_result_level(page, 'local-' + vp_name)
         scenario_mission(page, 'local-' + vp_name, REPORT_DIR)
         scenario_levels(page, 'local-' + vp_name)
-        scenario_level_intent(page, 'local-' + vp_name)
         scenario_hell(page, 'local-' + vp_name)
         scenario_legacy(page, 'local-' + vp_name)
 
@@ -1291,7 +1107,6 @@ def run_live(url, browser):
         scenario_result_level(page, 'live-' + vp_name)
         scenario_mission(page, 'live-' + vp_name, REPORT_DIR)
         scenario_levels(page, 'live-' + vp_name)
-        scenario_level_intent(page, 'live-' + vp_name)
         scenario_hell(page, 'live-' + vp_name)
         scenario_legacy(page, 'live-' + vp_name)
 
