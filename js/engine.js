@@ -3,7 +3,7 @@
 import {
   normalizeWord, HANGUL_ONLY, twoeumOf, ERR, MISSION_CHARS, missionHits, missionMultiplier,
 } from './rules.js';
-import { Bot, botLine } from './bot.js';
+import { Bot, botLine, pickHellOpening } from './bot.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -27,7 +27,11 @@ export class Engine {
     this.wordsPlayed = { me: 0, bot: 0 };
 
     const starts = dict.goodStartChars(60);
-    this.startChar = startChar || starts[Math.floor(rng() * starts.length)] || '가';
+    // Lv.5 지옥에서 봇이 선공이면, 무작위 글자 대신 봇이 유리한 시작 글자로 연다.
+    const hellOpening = !startChar && level >= 5 && first === 'bot'
+      ? pickHellOpening(dict, rng)
+      : null;
+    this.startChar = startChar || hellOpening || starts[Math.floor(rng() * starts.length)] || '가';
     this.missionChar = mission || this.pickMission(this.startChar);
     this.needChar = this.startChar;
 

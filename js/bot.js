@@ -133,6 +133,24 @@ const lastOf = (w) => w.charAt(w.length - 1);
 const pressureTier = (n) => (n <= 1 ? 0 : n <= 3 ? 1 : n <= 10 ? 2 : n <= 40 ? 3 : n <= 200 ? 4 : 5);
 
 /**
+ * Lv.5 지옥의 수읽기 예산.
+ * 노드 수(budget)와 시간(deadline)을 함께 두어, 모바일에서도 응답 텀이 끊기지 않게 한다.
+ */
+const HELL = {
+  budget: 200_000,      // 한 수에 허용하는 탐색 노드 수
+  deadlineMs: 220,      // 시간 상한(모바일 포함 안전선)
+  winCandidates: 56,    // 강제 필승 후보 검증 상한 (14 → 56)
+  winPlies: 5,          // 강제 필승 탐색 깊이
+  winPliesDeep: 7,      // 상대 응수가 적은 분기는 더 깊게
+  deepLive: 14,         // 이 수 이하로 좁아진 자리는 깊게 본다
+  safeCandidates: 240,  // 안전 후보 전수 평가 상한
+  replyLimit: 96,       // 독배 평가에서 뜯어보는 상대 응수 수
+};
+
+/** 응수가 적을수록 숨통이 조여진다. */
+const squeezeBonus = (n) => (n <= 1 ? 30 : n <= 3 ? 24 : n <= 10 ? 14 : n <= 40 ? 6 : 0);
+
+/**
  * Lv.5 지옥의 수읽기.
  * 후보 목록·사용된 단어·빌드 타임 그래프를 함께 보면서, 실제 판(used)에서 검증한 수만 둔다.
  */
@@ -145,6 +163,8 @@ class Duel {
     this.visits = 0;
     this.budget = 0;
     this.deadline = 0;
+    this.version = 0;
+    this.killCache = new Map();
   }
 
   bump(ch, d) {
@@ -157,12 +177,14 @@ class Duel {
     if (this.used.has(word)) return false;
     this.used.add(word);
     this.bump(word.charAt(0), 1);
+    this.version += 1;
     return true;
   }
 
   remove(word) {
     if (!this.used.delete(word)) return false;
     this.bump(word.charAt(0), -1);
+    this.version += 1;
     return true;
   }
 
@@ -181,6 +203,17 @@ class Duel {
 
   /** 이 글자에서 바로 낼 수 있는 한방 단어(상대 후보 0). */
   killAt(ch) {
+    const hit = this.killCache.get(ch);
+    if (hit && hit.v === this.version) {
+      this.visits += 1;
+      return hit.res;
+    }
+    const res = this.killAtSlow(ch);
+    this.killCache.set(ch, { v: this.version, res });
+    return res;
+  }
+
+  killAtSlow(ch) {
     const shots = this.dict.shotWords(ch);
     if (shots) {
       for (const w of shots) {
@@ -223,7 +256,10 @@ class Duel {
     return out.slice(0, 64);
   }
 
-  /** 이 글자에서 plies 수 안에 강제로 이길 수 있는 수(모든 상대 응수를 실제로 확인). */
+  /**
+   * 이 글자에서 plies 수 안에 강제로 이길 수 있는 수.
+   * 상대 응수를 하나도 빼먹지 않고 실제로 확인하며, 응수가 적은 분기는 더 깊게 본다.
+   */
   findWin(ch, plies) {
     if (this.outOfTime()) return null;
     const kill = this.killAt(ch);
@@ -237,8 +273,13 @@ class Duel {
       const replies = this.dict.candidatesFor(end, this.used);
       if (replies.length) {
         for (const r of replies) {
+          if (this.outOfTime()) { ok = false; break; }
           this.add(r);
-          const next = this.findWin(lastOf(r), plies - 2);
+          const e2 = lastOf(r);
+          const next = this.findWin(
+            e2,
+            this.liveCount(e2) <= HELL.deepLive ? plies : Math.min(plies, 3),
+          );
           this.remove(r);
           if (!next) {
             ok = false;
@@ -255,6 +296,68 @@ class Duel {
   /** findWin 의 참/거짓 판. */
   winIn(ch, plies) {
     return this.findWin(ch, plies) !== null;
+  }
+
+  /**
+   * 독배 점수: 내가 이 수를 두고 상대가 최선으로 받아쳤을 때 봇에게 남는 이득(미니맥스 최악값).
+   *  상대 응수가 적을수록, 그리고 그 응수들이 전부 봇에게 유리한 자리로 돌아올수록 높다.
+   *   100 = 상대가 무엇을 두든 봇에게 즉사 한방이 생긴다
+   *    80 = 봇이 이기는 자리(W)로 돌아온다 · 40 = 무승부(D) · 0 = 지는 자리(L)
+   *  -100 = 상대 응수 하나로 봇이 막힌다 → 이 수는 지는 수
+   */
+  /**
+   * 응수 평가용 빠른 한방 판정. 후속이 아주 좁을 때만 후보를 직접 훑는다.
+   * (위험한 수 배제는 killAt 으로 정확히 하고, 여기서는 모양만 본다)
+   */
+  quickKill(ch) {
+    const shots = this.dict.shotWords(ch);
+    if (shots) {
+      for (const w of shots) {
+        this.visits += 1;
+        if (!this.used.has(w) && this.dict.countFrom(lastOf(w)) === 0) return w;
+      }
+    }
+    if (this.liveCount(ch) <= 8) {
+      for (const w of this.dict.candidatesFor(ch, this.used, 8)) {
+        this.visits += 1;
+        const end = lastOf(w);
+        if (this.dict.countFrom(end) === 0) return w;
+        this.add(w);
+        const left = this.liveCount(end);
+        this.remove(w);
+        if (!left) return w;
+      }
+    }
+    return null;
+  }
+
+  worstReplyScore(ch) {
+    const n = this.liveCount(ch);
+    if (!n) return { score: 160, worstWord: null, replies: 0 };
+    const replies = this.dict.candidatesFor(ch, this.used, Math.min(n, HELL.replyLimit));
+    let worst = Infinity;
+    let worstWord = null;
+    for (let i = 0; i < replies.length; i += 1) {
+      const r = replies[i];
+      const e2 = lastOf(r);
+      this.visits += 1;
+      let v;
+      if (this.liveCount(e2) === 0) v = -100;
+      else if (this.quickKill(e2)) v = 100;
+      else {
+        const status = this.dict.graphStatus(e2);
+        v = status === 'W' ? 80 : status === 'D' ? 40 : 0;
+        const mine = this.liveCount(e2);
+        if (mine <= 3) v -= 12;
+        else if (mine <= 12) v -= 6;
+      }
+      if (v < worst) {
+        worst = v;
+        worstWord = r;
+      }
+      if (worst <= -100) break;
+    }
+    return { score: worst + squeezeBonus(n), worstWord, replies: n };
   }
 }
 
@@ -354,12 +457,17 @@ export class Bot {
 
   /* ── Lv.5 지옥 ──────────────────────────────────────────── */
 
+  /**
+   * Lv.5 지옥.
+   *  1) 한방 즉사 → 2) 강제 필승(3~7수, used 로 새로 좁아진 함정 포함) →
+   *  3) 안전 후보 전수 평가(독배 점수) → 4) 그래도 없으면 가장 덜 나쁜 수.
+   */
   chooseHell({ needChar, used, cands, mission }) {
     const dict = this.dict;
     const rng = this.rng;
     const duel = new Duel(dict, used);
-    duel.budget = 80_000;
-    duel.deadline = performance.now() + 120;
+    duel.budget = HELL.budget;
+    duel.deadline = performance.now() + HELL.deadlineMs;
 
     const valueOf = (w) => {
       const len = w.length;
@@ -368,32 +476,28 @@ export class Bot {
     };
 
     const kills = [];
+    const traps = new Map();     // 끝 글자별: 상대가 죽는 자리로 보내는 최고 점수 단어
     const endBest = new Map();   // 끝 글자별 최고 점수 단어
-    const winEndBest = new Map();
 
-    // 한 번 훑으면서 후보를 성격별로 나눈다 (비용 상수: 후보 수 × O(1))
+    // 한 번 훑으면서 후보를 성격별로 나눈다 (후보 수 × O(1))
     for (const w of cands) {
       const end = lastOf(w);
       const val = valueOf(w);
-      const staticDead = dict.countFrom(end) === 0;
       const live = duel.liveCount(end);
-      if (staticDead || (live === 0 && dict.countFrom(end) <= 6)) {
+      if (live === 0) {                       // used 를 반영해도 상대가 낼 단어가 없다
         kills.push({ w, val });
         continue;
       }
       const status = dict.graphStatus(end);
-      if (status === 'L') {
-        const prev = winEndBest.get(end);
-        if (!prev || val > prev.val) {
-          winEndBest.set(end, { w, end, val, depth: dict.graphDepth(end), live });
-        }
+      const depth = dict.graphDepth(end);
+      // 정적 패배 노드 + 이미 나온 단어 때문에 1~2수로 좁아진 함정 음절
+      if (status === 'L' || live <= 2) {
+        const prev = traps.get(end);
+        if (!prev || val > prev.val) traps.set(end, { w, end, val, live, status, depth });
       }
       const prev = endBest.get(end);
-      if (!prev || val > prev.val) {
-        endBest.set(end, { w, end, val, live, status, depth: dict.graphDepth(end) });
-      }
+      if (!prev || val > prev.val) endBest.set(end, { w, end, val, live, status, depth });
     }
-    const winning = [...winEndBest.values()];
     const safe = [...endBest.values()];
 
     // 1) 한방 즉사 — 미션 중첩·장문 우선
@@ -403,79 +507,160 @@ export class Bot {
       return { word: best.w, delay: delayBetween(150, 400, rng), kind: 'oneshot' };
     }
 
-    // 2) 강제 필승 — 상대가 무엇을 받아쳐도 다음에 한방/필승으로 끝난다
-    if (winning.length) {
-      winning.sort((a, b) => a.depth - b.depth || b.val - a.val);
-      let best = null;
+    // 2) 강제 필승 — 상대의 모든 응수를 실제 수로 확인한다.
+    //    함정(응수 1~2개)부터, 깊이는 3수 → 5수 → 7수까지.
+    if (traps.size) {
+      const list = [...traps.values()].sort((a, b) => a.live - b.live
+        || (a.status === 'L' ? 0 : 1) - (b.status === 'L' ? 0 : 1)
+        || a.depth - b.depth
+        || b.val - a.val);
+      let pick = null;
       let tested = 0;
-      for (const cand of winning) {
-        if (tested >= 14 || duel.outOfTime()) break;
+      for (const cand of list) {
+        if (tested >= HELL.winCandidates || duel.outOfTime()) break;
         tested += 1;
-        const w = cand.w;
-        duel.add(w);
+        duel.add(cand.w);
         const replies = dict.candidatesFor(cand.end, duel.used);
-        let ok = replies.length === 0;
-        if (!ok) {
-          ok = true;
+        const verifyAt = (plies) => {
           for (const r of replies) {
+            if (duel.outOfTime()) return false;
             duel.add(r);
-            const good = duel.winIn(lastOf(r), 3);
+            const e2 = lastOf(r);
+            const win = duel.findWin(e2, plies);
             duel.remove(r);
-            if (!good) {
-              ok = false;
-              break;
-            }
+            if (!win) return false;
+          }
+          return true;
+        };
+        let proof = 0;
+        if (!replies.length) proof = 3;
+        else {
+          for (const plies of [3, HELL.winPlies, HELL.winPliesDeep]) {
+            if (verifyAt(plies)) { proof = plies; break; }
+            if (duel.outOfTime()) break;
           }
         }
-        duel.remove(w);
-        if (ok && (!best || cand.val > best.val)) best = cand;
+        duel.remove(cand.w);
+        if (!proof) continue;
+        const entry = { ...cand, proof, replies: replies.length };
+        if (!pick || entry.proof < pick.proof
+          || (entry.proof === pick.proof && entry.val > pick.val)) {
+          pick = entry;
+        }
       }
-      if (best) return { word: best.w, delay: delayBetween(150, 400, rng), kind: 'outer', proven: true };
+      if (pick) {
+        return {
+          word: pick.w,
+          delay: delayBetween(150, 400, rng),
+          kind: 'outer',
+          proof: pick.proof,
+          proven: pick.proof === 3,
+        };
+      }
     }
 
-    // 3) 안전 수읽기 — 상대 한방·필승 각을 주는 글자는 배제, 그중 압박·미션·장문
-    //    이론적으로 좋은 자리(승리 L > 무승부 D > 이기는 자리 W) 순으로 보되,
-    //    실제로 위험한 수는 건너뛰고 가장 먼저 확인된 안전한 수를 둔다.
+    // 3) 안전 후보 전수 평가 — 첫 안전 수에서 멈추지 않고, 상대의 모든 응수를 뜯어
+    //    가장 숨통을 조이는 '독배'를 고른다.
     const statusRank = (c) => (c.status === 'L' ? 0 : c.status === 'D' ? 1 : 2);
     const ranked = safe.map((c) => ({ ...c, rank: statusRank(c) }))
       .sort((a, b) => a.rank - b.rank
         || pressureTier(a.live) - pressureTier(b.live)
         || b.val - a.val);
 
-    let safePick = null;
-    let bestFallback = null;
+    const safeScored = [];
+    const unsafe = [];
     let checked = 0;
     for (const cand of ranked) {
-      if (checked >= 160 || duel.outOfTime()) break;
+      if (checked >= HELL.safeCandidates || duel.outOfTime()) break;
       checked += 1;
       const { w, end } = cand;
       duel.add(w);
-      const dangerKill = duel.killAt(end) !== null;
-      const replies = duel.liveCount(end);
+      const live = duel.liveCount(end);
       let exact = 0;
-      if (dangerKill) exact = 3;
-      else if (replies <= 60 && duel.winIn(end, 3)) exact = 2;
-      else if (replies <= 16 && duel.winIn(end, 5)) exact = 2;
+      if (duel.killAt(end)) exact = 3;
+      else if (live <= 60 && duel.winIn(end, 3)) exact = 2;
+      else if (live <= HELL.deepLive && duel.winIn(end, HELL.winPlies)) exact = 2;
+      let devious = null;
+      if (exact === 0 && live && live <= HELL.replyLimit) {
+        devious = duel.worstReplyScore(end);
+        // 상대 응수 하나가 봇을 끝내는 수 → 실제로는 안전하지 않다
+        if (devious.score <= -100 + squeezeBonus(live)) exact = 4;
+      }
       duel.remove(w);
-      const entry = { ...cand, exact, replies };
-      if (!bestFallback || exact < bestFallback.exact
-        || (exact === bestFallback.exact && (entry.rank < bestFallback.rank
-          || (entry.rank === bestFallback.rank
-            && pressureTier(entry.replies) < pressureTier(bestFallback.replies))))) {
-        bestFallback = entry;
-      }
-      if (exact === 0) {
-        safePick = entry;
-        break;
-      }
+      const entry = {
+        ...cand, exact, replies: live, devious,
+        mate: devious ? devious.score : 30 + squeezeBonus(live),
+        checked,
+      };
+      if (exact === 0) safeScored.push(entry);
+      else unsafe.push(entry);
     }
 
-    const best = safePick || bestFallback || safe[0] || winning[0] || { w: cands[0], val: 0, exact: 0 };
+    if (safeScored.length) {
+      // 그래프 상태(이론적 승패)를 먼저 보고, 같은 등급 안에서 독배 점수를 쓴다.
+      safeScored.sort((a, b) => a.rank - b.rank
+        || b.mate - a.mate
+        || a.replies - b.replies
+        || b.val - a.val);
+      const best = safeScored[0];
+      return {
+        word: best.w,
+        delay: delayBetween(150, 400, rng),
+        kind: best.rank === 0 ? 'route' : 'press',
+        proven: false,
+      };
+    }
+
+    // 4) 안전한 수가 하나도 없는 자리 — 가장 덜 나쁜 수
+    let fallback = null;
+    const pool = unsafe.length ? unsafe : ranked.map((c) => ({ ...c, exact: 0, replies: c.live }));
+    for (const entry of pool) {
+      if (!fallback || entry.exact < fallback.exact
+        || (entry.exact === fallback.exact && entry.rank < fallback.rank)
+        || (entry.exact === fallback.exact && entry.rank === fallback.rank
+          && pressureTier(entry.replies) < pressureTier(fallback.replies))) {
+        fallback = entry;
+      }
+    }
+    const best = fallback || { w: cands[0], exact: 4, rank: 2, replies: 0 };
     return {
       word: best.w,
       delay: delayBetween(150, 400, rng),
-      kind: best.exact >= 3 ? 'normal' : best.rank === 0 ? 'route' : 'press',
+      kind: 'normal',
       proven: false,
     };
   }
+}
+
+/**
+ * Lv.5 지옥의 선공 오프닝.
+ * 봇이 먼저 두는 판에서 아무 글자나 잡지 않고, 봇이 유리한 자리로 시작을 끊는다.
+ *  - 그 글자로 낼 단어가 있어야 한다(countFrom > 0).
+ *  - 봇이 0수 한방으로 1초 만에 끝내는 자리(W1)는 피한다.
+ *  - 봇이 이기는 자리(W3·W5·W7) → 무승부(D) → 지는 자리(L) 순으로 고른다.
+ *  - 같은 등급이면 더 빨리 끝나는 자리, 그다음 봇이 고를 수 있는 수가 많은 자리.
+ */
+export function pickHellOpening(dict, rng = Math.random) {
+  const starts = dict.goodStartChars(60);
+  if (!starts.length) return null;
+  const tiers = [[], [], []]; // 봇이 이기는 자리 / 무승부 / 지는 자리
+  for (const ch of starts) {
+    const live = dict.countFrom(ch);
+    if (live <= 0) continue;
+    const status = dict.graphStatus(ch);
+    const depth = dict.graphDepth(ch);
+    if (status === 'W') {
+      if (depth <= 1) continue; // 즉사 한방으로 1초 만에 끝나는 판은 피한다
+      tiers[0].push({ ch, live, depth });
+    } else if (status === 'D') {
+      tiers[1].push({ ch, live, depth: 99 });
+    } else {
+      tiers[2].push({ ch, live, depth: 99 });
+    }
+  }
+  const pool = tiers.find((t) => t.length);
+  if (!pool) return starts[Math.floor(rng() * starts.length)] || null;
+  pool.sort((a, b) => a.depth - b.depth || b.live - a.live);
+  const top = pool.filter((c) => c.depth === pool[0].depth);
+  return top[Math.floor(rng() * top.length)].ch;
 }

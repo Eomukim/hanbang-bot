@@ -688,6 +688,42 @@ def scenario_hell(page, tag):
     page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
     page.wait_for_timeout(200)
 
+    # 봇 선공 오프닝: Lv.5 가 먼저 두는 판은 아무 글자가 아니라 이기는 자리로 연다
+    openings = []
+    for _ in range(4):
+        page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+        page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+        page.evaluate("window.__HB.startGame({level:5, first:'bot', timeLimit:20})")
+        page.wait_for_timeout(900)
+        openings.append(page.evaluate("""() => {
+            const st = window.__HB.state(), d = window.__HB.dict;
+            const first = st.chain.find((c) => c.who === 'bot') || null;
+            const end = first ? first.word[first.word.length - 1] : null;
+            return {
+                start: st.startChar,
+                status: d.graphStatus(st.startChar),
+                depth: d.graphDepth(st.startChar),
+                live: d.countFrom(st.startChar),
+                firstWord: first ? first.word : null,
+                firstLive: first ? d.countFrom(end) : null,
+                firstEndStatus: first ? d.graphStatus(end) : null,
+                endStatus: d.graphStatus(st.startChar),
+                phase: st.phase,
+            };
+        }"""))
+    check(all(o['status'] == 'W' for o in openings),
+          f'[{tag}] Lv.5 봇 선공 오프닝 = 이기는 시작 글자',
+          str([(o['start'], o['status'], o['depth']) for o in openings]))
+    check(all(o['depth'] >= 3 and o['live'] > 0 for o in openings),
+          f'[{tag}] Lv.5 봇 선공 즉사 1수 종료 방지',
+          str([(o['start'], o['depth'], o['live']) for o in openings]))
+    check(all(o['firstWord'] and o['firstEndStatus'] == 'L' for o in openings),
+          f'[{tag}] Lv.5 봇 선공 첫 수가 패배 자리로',
+          str([(o['firstWord'], o['firstEndStatus'], o['firstLive']) for o in openings]))
+    page.evaluate("window.__HB.app.engine && window.__HB.app.engine.destroy()")
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.wait_for_timeout(200)
+
 
 def scenario_custom(page, tag):
     page.evaluate("window.__HB.app.engine.destroy()")
