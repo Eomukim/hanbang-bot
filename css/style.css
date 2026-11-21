@@ -295,6 +295,13 @@ button { cursor: pointer; }
   word-break: break-all;
   color: #fff;
 }
+/* 긴 어인정 표제어(예: 61글자)가 화면을 덮지 않도록 글자 크기를 줄인다 */
+.stage-word h2.long {
+  font-size: clamp(17px, 5.4vw, 24px);
+  line-height: 1.28;
+  letter-spacing: -.02em;
+}
+
 .stage-word.me h2 { text-shadow: 0 0 30px rgba(94,234,212,.32); }
 .stage-word.bot h2 { text-shadow: 0 0 30px rgba(255,122,182,.30); }
 .stage-word h2 em.mis { font-style: normal; color: var(--warn); text-shadow: 0 0 24px rgba(255,193,77,.6); }

@@ -489,7 +489,7 @@ export class App {
     this.el.stage.innerHTML = `
       <div class="stage-word ${entry.who}">
         <div class="stage-who ${entry.who}"><i class="dot"></i>${who} · ${entry.word.length}글자</div>
-        <h2>${wordHtml}</h2>
+        <h2 class="${entry.word.length > 12 ? 'long' : ''}">${wordHtml}</h2>
         <div class="stage-sub">
           <span class="gain">+${entry.score}</span>
           ${kindHtml}${tagHtml}
