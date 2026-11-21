@@ -407,7 +407,8 @@ def main():
         check(props['delayMin'] >= 140 and props['delayMax'] <= 410, 'Lv.5 응답 텀 0.15~0.4초',
               f"{props['delayMin']:.0f}~{props['delayMax']:.0f}ms")
         check(props['msMax'] < 60, 'Lv.5 판단 속도', f"평균 {props['msAvg']}ms / 최대 {props['msMax']}ms")
-        check(picks.get('kill', {}).get('equal'), 'Lv.5 미션·최고점 한방 선택',
+        check(picks.get('kill', {}).get('isKill') and picks.get('kill', {}).get('inBand'),
+              'Lv.5 한방 중 상위권 즉사 선택',
               json.dumps(picks.get('kill'), ensure_ascii=False)[:160])
         check(picks.get('pressure', {}).get('squeezed'), 'Lv.5 소수 후보 글자로 압박',
               json.dumps(picks.get('pressure'), ensure_ascii=False)[:160])

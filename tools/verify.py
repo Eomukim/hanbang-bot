@@ -11,6 +11,7 @@
  - 결과 화면 배틀 내역: 버튼 열기/닫기 · 카드 안 세로 스크롤 · 턴·나/봇·단어·점수·태그 · 0수 종료(포기·시간 초과) · 아주 긴 단어 줄바꿈 · 모바일 오버플로
  - 5단계 난이도 카드(데스크톱/모바일 배치)와 4단계 기준 localStorage 호환
  - Lv.5 지옥: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 검증 · 압박/미션·장문 · 응답 시간
+ - Lv.4·Lv.5 단어 선택 다양화: 같은 글자·같은 자리에서도 단어가 섞이는지(강도 유지)
  - 미션 규칙(14종 후보 · 미달성 시 유지 · 중첩 보너스 · 성공 시 다음 글자)
  - 모바일(390x844) 레이아웃과 스크린샷
 을 확인한다.
@@ -158,16 +159,18 @@ HELL_PICKS = """
   };
   const out = {};
 
-  // 1) 한방이 여러 개일 때: 미션 글자가 겹치거나 더 긴(점수 높은) 한방을 고르는가
+  // 1) 한방이 여러 개일 때: 어떤 한방이든 즉사다. 장문 상위권에서 고르는가
   for (const ch of starts) {
     const cands = dict.candidatesFor(ch, new Set());
     const kills = cands.filter((w) => dict.countFrom(last(w)) === 0);
     if (kills.length < 2) continue;
-    const best = kills.reduce((a, b) => (value(b, '가') > value(a, '가') ? b : a));
-    if (![...kills].some((w) => w.includes('가')) || value(best, '가') === value(kills[0], '가')) continue;
+    const maxLen = Math.max(...kills.map((w) => w.length));
     const mv = new Bot({level: 5, dict}).choose({needChar: ch, used: new Set(), turn: 1, mission: '가'});
-    out.kill = {ok: true, char: ch, expect: best, got: mv.word, kind: mv.kind,
-                equal: mv.word === best, kills: kills.length};
+    out.kill = {ok: true, char: ch, got: mv.word, kind: mv.kind,
+                isKill: dict.countFrom(last(mv.word)) === 0,
+                inBand: mv.word.length >= maxLen - 5,
+                kills: kills.length, band: kills.filter((w) => w.length >= maxLen - 5).length,
+                len: mv.word.length, maxLen};
     break;
   }
   if (!out.kill) out.kill = {ok: false};
@@ -201,6 +204,67 @@ HELL_PICKS = """
     break;
   }
   if (!out.pressure) out.pressure = {ok: false};
+  return out;
+}
+"""
+
+# Lv.4 극악 · Lv.5 지옥의 단어 선택 다양성.
+# 같은 글자·같은 자리에서 15번 두면 매번 같은 단어 하나로 고정되지 않고 여러 단어가 섞이는지,
+# 그리고 그 선택이 한방 즉사·최소 후속 수 같은 강도 기준을 지키는지 본다.
+VARIETY_PROPS = """
+() => {
+  const dict = window.__KKEUTMALBOT.dict, Bot = window.__KKEUTMALBOT.Bot;
+  const last = (w) => w[w.length - 1];
+  const N = 15;
+  const out = {rows: []};
+  const run = (lv, ch, used) => {
+    const cands = new Set(dict.candidatesFor(ch, used));
+    const words = [], kinds = {};
+    for (let i = 0; i < N; i += 1) {
+      const mv = new Bot({level: lv, dict}).choose({needChar: ch, used, turn: 8, mission: '가'});
+      if (!mv) continue;
+      words.push(mv.word);
+      kinds[mv.kind] = (kinds[mv.kind] || 0) + 1;
+    }
+    const counts = {};
+    for (const w of words) counts[w] = (counts[w] || 0) + 1;
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    return {
+      n: words.length,
+      distinct: top.length,
+      maxShare: top.length ? +(top[0][1] / words.length).toFixed(2) : 1,
+      top: top.slice(0, 4),
+      kinds,
+      words,
+      valid: words.every((w) => cands.has(w)),
+    };
+  };
+  for (const ch of ['가', '사', '기']) {
+    const open = dict.candidatesFor(ch, new Set());
+    const kills = open.filter((w) => dict.countFrom(last(w)) === 0);
+    const minEnd = Math.min(...open.map((w) => dict.countFrom(last(w))));
+    // 한방 단어를 모두 쓴 중반 자리: 한방 없이 필승·안전 후보로 두는지
+    const drained = new Set(kills);
+    const dCands = dict.candidatesFor(ch, drained);
+    const dMin = dCands.length ? Math.min(...dCands.map((w) => dict.countFrom(last(w)))) : 0;
+    for (const lv of [4, 5]) {
+      const o = run(lv, ch, new Set());
+      out.rows.push({
+        lv, ch, pos: 'open', kills: kills.length, pool: open.length, ...o,
+        killOk: kills.length ? o.words.every((w) => dict.countFrom(last(w)) === 0) : true,
+        endOk: (!kills.length && lv === 4)
+          ? o.words.every((w) => dict.countFrom(last(w)) <= minEnd + 1) : true,
+      });
+      if (dCands.length) {
+        const d = run(lv, ch, drained);
+        out.rows.push({
+          lv, ch, pos: 'drained', kills: 0, pool: dCands.length, ...d,
+          killOk: true,
+          endOk: lv === 4 ? d.words.every((w) => dict.countFrom(last(w)) <= dMin + 1) : true,
+        });
+      }
+    }
+  }
   return out;
 }
 """
@@ -632,8 +696,8 @@ def scenario_hell(page, tag):
           f'[{tag}] Lv.5 장문 선택', f"{props['longMoves']}/{props['moves']}수 5글자 이상")
 
     picks = page.evaluate(HELL_PICKS)
-    check(picks.get('kill', {}).get('ok') and picks['kill']['equal'],
-          f'[{tag}] Lv.5 한방 중 미션·최고점 우선',
+    check(picks.get('kill', {}).get('ok') and picks['kill']['isKill'] and picks['kill']['inBand'],
+          f'[{tag}] Lv.5 한방 중 상위권 즉사 선택',
           json.dumps(picks.get('kill'), ensure_ascii=False)[:180])
     check(picks.get('mission', {}).get('ok') and picks['mission']['agree'] == picks['mission']['checked'],
           f'[{tag}] Lv.5 같은 끝 글자에서 미션·최고점 단어',
@@ -747,6 +811,29 @@ def scenario_hell(page, tag):
     page.evaluate("window.__KKEUTMALBOT.app.engine && window.__KKEUTMALBOT.app.engine.destroy()")
     page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
     page.wait_for_timeout(200)
+
+
+def scenario_variety(page, tag):
+    """Lv.4·Lv.5: 같은 글자·같은 자리에서도 단어를 섞어 고르는지(강도는 유지)."""
+    data = page.evaluate(VARIETY_PROPS)
+    rows = data['rows']
+    check(len(rows) >= 8, f'[{tag}] 다양성 표본 국면', f'{len(rows)}개')
+    flat = [r for r in rows if r['n'] < 10 or r['distinct'] < 2 or r['maxShare'] > 0.8]
+    check(not flat, f'[{tag}] Lv.4·Lv.5 단어 선택 다양성',
+          '단일 반복: ' + str([(r['lv'], r['ch'], r['pos'], r['distinct'], r['maxShare']) for r in flat[:4]]))
+    for lv in (4, 5):
+        sub = [r for r in rows if r['lv'] == lv]
+        if not sub:
+            continue
+        avg = sum(r['distinct'] for r in sub) / len(sub)
+        print(f"    Lv.{lv} 15수당 서로 다른 단어 평균 {avg:.1f}종 · "
+              + ' '.join(f"{r['ch']}({r['pos']}):{r['distinct']}" for r in sub))
+    check(all(r['valid'] for r in rows), f'[{tag}] 다양성 선택 단어 유효',
+          str([r['top'] for r in rows if not r['valid']][:2]))
+    check(all(r['killOk'] for r in rows), f'[{tag}] 한방 자리 즉사 유지',
+          str([(r['lv'], r['ch'], r['pos']) for r in rows if not r['killOk']][:3]))
+    check(all(r['endOk'] for r in rows), f'[{tag}] Lv.4 최소 후속 수 유지',
+          str([(r['ch'], r['pos'], r['top']) for r in rows if not r['endOk']][:2]))
 
 
 def result_view(page):
@@ -1645,6 +1732,7 @@ def run_local(base_url, browser):
         scenario_mission(page, 'local-' + vp_name, REPORT_DIR)
         scenario_levels(page, 'local-' + vp_name)
         scenario_hell(page, 'local-' + vp_name)
+        scenario_variety(page, 'local-' + vp_name)
         scenario_legacy(page, 'local-' + vp_name)
         scenario_hardcore(page, 'local-' + vp_name, REPORT_DIR)
 
@@ -1710,6 +1798,7 @@ def run_live(url, browser):
         scenario_mission(page, 'live-' + vp_name, REPORT_DIR)
         scenario_levels(page, 'live-' + vp_name)
         scenario_hell(page, 'live-' + vp_name)
+        scenario_variety(page, 'live-' + vp_name)
         scenario_legacy(page, 'live-' + vp_name)
         scenario_hardcore(page, 'live-' + vp_name, REPORT_DIR)
 

@@ -385,17 +385,20 @@ export class Bot {
       if (oneShot.length) {
         return { word: pick(oneShot, rng), delay: delayBetween(200, 480, rng), kind: 'oneshot' };
       }
-      // 한방이 없으면: 상대가 받아치기 가장 어려운 최소 후속 단어, 길이 우선
-      let best = null;
-      let bestKey = Infinity;
+      // 한방이 없으면: 상대 후속 단어가 가장 적은 자리로 몰아넣는다.
+      // 1등 한 단어로 고정하지 않고, 같은 최소 후속 수(모자라면 한 단계 위) 안에서
+      // 길이 상위권을 뽑아 매 판 다른 수를 둔다. 강도는 후속 수가 결정하므로 그대로다.
+      let minEnd = Infinity;
       for (const w of cands) {
-        const key = endCount(w) * 100 - w.length;
-        if (key < bestKey) {
-          bestKey = key;
-          best = w;
-        }
+        const n = endCount(w);
+        if (n < minEnd) minEnd = n;
       }
-      return { word: best, delay: delayBetween(200, 500, rng), kind: 'outer' };
+      let pool = cands.filter((w) => endCount(w) === minEnd);
+      if (pool.length < 2) pool = cands.filter((w) => endCount(w) <= minEnd + 1);
+      const maxLen = pool.reduce((m, w) => (w.length > m ? w.length : m), 0);
+      const long = pool.filter((w) => w.length >= maxLen - 4);
+      const finalPool = long.length >= 2 ? long : pool;
+      return { word: pick(finalPool, rng), delay: delayBetween(200, 500, rng), kind: 'outer' };
     }
 
     if (this.level === 3) {
@@ -485,7 +488,7 @@ export class Bot {
       const val = valueOf(w);
       const live = duel.liveCount(end);
       if (live === 0) {                       // used 를 반영해도 상대가 낼 단어가 없다
-        kills.push({ w, val });
+        kills.push({ w, end, val });
         continue;
       }
       const status = dict.graphStatus(end);
@@ -500,11 +503,21 @@ export class Bot {
     }
     const safe = [...endBest.values()];
 
-    // 1) 한방 즉사 — 미션 중첩·장문 우선
+    // 1) 한방 즉사 — 어떤 한방이든 즉시 승리다. 매번 같은 1등 단어 대신
+    //    장문 상위권(최장 - 5글자) 안에서 골라 매 판 달라지게 한다.
+    //    끝 글자가 같으면 점수가 가장 높은 단어로 모아, 같은 자리에서 더 짧은 단어를 내지 않는다.
     if (kills.length) {
-      let best = kills[0];
-      for (const k of kills) if (k.val > best.val) best = k;
-      return { word: best.w, delay: delayBetween(150, 400, rng), kind: 'oneshot' };
+      const byEnd = new Map();
+      for (const k of kills) {
+        const prev = byEnd.get(k.end);
+        if (!prev || k.val > prev.val) byEnd.set(k.end, k);
+      }
+      const uniq = [...byEnd.values()];
+      const maxLen = Math.max(...uniq.map((k) => k.w.length));
+      let pool = uniq.filter((k) => k.w.length >= maxLen - 5);
+      if (pool.length < 2) pool = uniq;
+      const chosen = pick(pool, rng);
+      return { word: chosen.w, delay: delayBetween(150, 400, rng), kind: 'oneshot' };
     }
 
     // 2) 강제 필승 — 상대의 모든 응수를 실제 수로 확인한다.
@@ -514,7 +527,10 @@ export class Bot {
         || (a.status === 'L' ? 0 : 1) - (b.status === 'L' ? 0 : 1)
         || a.depth - b.depth
         || b.val - a.val);
-      let pick = null;
+      // 같은 최단 proof(=같은 깊이의 필승) 후보를 모아 두고 그 안에서 고른다.
+      // proof 가 같으면 승리까지의 수가 같으니 강도도 같다.
+      const proven = [];
+      let bestProof = Infinity;
       let tested = 0;
       for (const cand of list) {
         if (tested >= HELL.winCandidates || duel.outOfTime()) break;
@@ -542,19 +558,26 @@ export class Bot {
         }
         duel.remove(cand.w);
         if (!proof) continue;
-        const entry = { ...cand, proof, replies: replies.length };
-        if (!pick || entry.proof < pick.proof
-          || (entry.proof === pick.proof && entry.val > pick.val)) {
-          pick = entry;
+        if (proof < bestProof) {
+          bestProof = proof;
+          proven.length = 0;
         }
+        if (proof === bestProof) proven.push({ ...cand, proof, replies: replies.length });
       }
-      if (pick) {
+      if (proven.length) {
+        // 같은 필승이라도 상대 응수가 적은 쪽이 더 조인다 → 좁은 쪽을 우선하되,
+        // 후보가 너무 적으면 한 단계 넓혀 매 판 달라지게 한다.
+        const byReplies = [...proven].sort((a, b) => a.replies - b.replies);
+        let band = byReplies.filter((c) => c.replies <= 3);
+        if (band.length < 3) band = byReplies.filter((c) => c.replies <= 10);
+        if (!band.length) band = byReplies;
+        const chosen = pick(band, rng);
         return {
-          word: pick.w,
+          word: chosen.w,
           delay: delayBetween(150, 400, rng),
           kind: 'outer',
-          proof: pick.proof,
-          proven: pick.proof === 3,
+          proof: chosen.proof,
+          proven: chosen.proof === 3,
         };
       }
     }
@@ -598,15 +621,19 @@ export class Bot {
 
     if (safeScored.length) {
       // 그래프 상태(이론적 승패)를 먼저 보고, 같은 등급 안에서 독배 점수를 쓴다.
+      // 안전한 수 중 최상위권(최고 rank · 독배 점수 4점 이내)에서 골라 매 판 달라지게 한다.
+      // 안전성(exact === 0: 상대 한방 각 없음)은 후보 조건 자체가 보장한다.
       safeScored.sort((a, b) => a.rank - b.rank
         || b.mate - a.mate
         || a.replies - b.replies
         || b.val - a.val);
       const best = safeScored[0];
+      const pool = safeScored.filter((c) => c.rank === best.rank && c.mate >= best.mate - 4);
+      const chosen = pick(pool.length ? pool : safeScored, rng);
       return {
-        word: best.w,
+        word: chosen.w,
         delay: delayBetween(150, 400, rng),
-        kind: best.rank === 0 ? 'route' : 'press',
+        kind: chosen.rank === 0 ? 'route' : 'press',
         proven: false,
       };
     }
@@ -639,6 +666,8 @@ export class Bot {
  *  - 봇이 0수 한방으로 1초 만에 끝내는 자리(W1)는 피한다.
  *  - 봇이 이기는 자리(W3·W5·W7) → 무승부(D) → 지는 자리(L) 순으로 고른다.
  *  - 같은 등급이면 더 빨리 끝나는 자리, 그다음 봇이 고를 수 있는 수가 많은 자리.
+ *  - 최단 깊이 하나로 고정하지 않고, 그로부터 2수 안쪽(최대 7수)의 승리 오프닝
+ *    안에서 고른다 → 매 판 다른 글자로 시작하되 여전히 봇이 이기는 자리다.
  */
 export function pickHellOpening(dict, rng = Math.random) {
   const starts = dict.goodStartChars(60);
@@ -661,6 +690,7 @@ export function pickHellOpening(dict, rng = Math.random) {
   const pool = tiers.find((t) => t.length);
   if (!pool) return starts[Math.floor(rng() * starts.length)] || null;
   pool.sort((a, b) => a.depth - b.depth || b.live - a.live);
-  const top = pool.filter((c) => c.depth === pool[0].depth);
+  const depthLimit = Math.min(pool[0].depth + 2, 7);
+  const top = pool.filter((c) => c.depth <= depthLimit);
   return top[Math.floor(rng() * top.length)].ch;
 }
