@@ -309,6 +309,34 @@ def scenario_custom(page, tag):
         window.__KK.app.renderInjeongCount();
     }""")
 
+    # 내가 한방 단어로 이기는 경로: 후속 단어가 없는 글자(늄)로 끝나는 커스텀 단어
+    page.evaluate("""() => {
+        window.__KK.app.custom['냥늄'] = { mean: '검사용', at: Date.now() };
+        window.__KK.dict.addCustom('냥늄', '검사용');
+        window.__KK.app.hideResult();
+        window.__KK.startGame({ level: 1, first: 'me', startChar: '냥' });
+    }""")
+    page.wait_for_timeout(450)
+    play_word(page, '냥늄', wait=1800)
+    st = state(page)
+    title = page.evaluate("document.getElementById('result-title').textContent")
+    check(st['phase'] == 'over' and title == '승리', f'[{tag}] 한방 단어로 승리', f"{st['phase']} / {title}")
+    shot(page, f'{tag}-08-player-win')
+    page.evaluate("""() => {
+        delete window.__KK.app.custom['냥늄'];
+        window.__KK.dict.removeCustom('냥늄');
+        window.__KK.app.hideResult();
+    }""")
+
+    # 시간 초과 패배
+    page.evaluate("window.__KK.startGame({level:1, first:'me', timeLimit:1})")
+    page.wait_for_timeout(2200)
+    st = state(page)
+    reason = page.evaluate("document.getElementById('result-reason').textContent")
+    check(st['phase'] == 'over' and '시간' in reason, f'[{tag}] 제한 시간 초과 패배', reason)
+    shot(page, f'{tag}-09-timeout')
+    page.evaluate("window.__KK.app.hideResult()")
+
 
 def run_local(base_url, browser):
     print(f'\n=== LOCAL {base_url} ===')
