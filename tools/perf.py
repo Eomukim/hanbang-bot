@@ -2,7 +2,7 @@
 import functools, http.server, socketserver, threading, json
 from playwright.sync_api import sync_playwright
 
-ROOT = '/workspace/work/itda'
+ROOT = '/workspace/work/kkeutmalbot'
 h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
 s = socketserver.ThreadingTCPServer(('127.0.0.1', 0), h); s.daemon_threads = True
 port = s.server_address[1]
@@ -13,7 +13,7 @@ with sync_playwright() as p:
     pg = b.new_page(viewport={'width': 390, 'height': 844})
     t0 = pg.evaluate('performance.now()') if False else None
     pg.goto(f'http://127.0.0.1:{port}/index.html', wait_until='domcontentloaded')
-    pg.wait_for_function('window.__ITDA && window.__ITDA.ready', timeout=90000)
+    pg.wait_for_function('window.__KKEUTMALBOT && window.__KKEUTMALBOT.ready', timeout=90000)
     print('load timing:', pg.evaluate("""() => {
         const nav = performance.getEntriesByType('navigation')[0];
         const res = performance.getEntriesByType('resource').map(r => ({n: r.name.split('/').pop(), d: Math.round(r.duration), size: r.transferSize}));
@@ -21,7 +21,7 @@ with sync_playwright() as p:
     }"""))
 
     print('validate x2000:', pg.evaluate("""() => {
-        const d = window.__ITDA.dict;
+        const d = window.__KKEUTMALBOT.dict;
         const words = d.candidatesFor('가', new Set()).slice(0, 2000);
         const t = performance.now();
         let ok = 0;
@@ -30,7 +30,7 @@ with sync_playwright() as p:
     }"""))
 
     print('bot choose x50:', pg.evaluate("""async () => {
-        const d = window.__ITDA.dict;
+        const d = window.__KKEUTMALBOT.dict;
         const m = await import('./js/bot.js');
         const out = {};
         for (const lv of [1,2,3,4]) {
@@ -47,6 +47,6 @@ with sync_playwright() as p:
         return out;
     }"""))
 
-    print('turns:', pg.evaluate("""() => ({oneShot: window.__ITDA.dict.stats.oneShotCount, induced: window.__ITDA.dict.stats.inducedCount, total: window.__ITDA.dict.size, starts: window.__ITDA.dict.stats.starts})"""))
+    print('turns:', pg.evaluate("""() => ({oneShot: window.__KKEUTMALBOT.dict.stats.oneShotCount, induced: window.__KKEUTMALBOT.dict.stats.inducedCount, total: window.__KKEUTMALBOT.dict.size, starts: window.__KKEUTMALBOT.dict.stats.starts})"""))
     b.close()
 s.shutdown()

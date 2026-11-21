@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""보고용 스크린샷 생성: downloads/itda/ 에 저장."""
+"""보고용 스크린샷 생성: downloads/kkeutmalbot/ 에 저장."""
 import functools
 import http.server
 import json
@@ -11,8 +11,8 @@ import time
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.environ.get('SHOT_OUT', '/workspace/downloads/itda')
-CHROME = os.environ.get('ITDA_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
+OUT = os.environ.get('SHOT_OUT', '/workspace/downloads/kkeutmalbot')
+CHROME = os.environ.get('KKEUTMALBOT_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
 URL = os.environ.get('SHOT_URL', '')
 
 os.makedirs(OUT, exist_ok=True)
@@ -37,13 +37,13 @@ def shot(page, name):
 def wait_my_turn(page, timeout=10000):
     end = time.time() + timeout / 1000
     while time.time() < end:
-        st = page.evaluate('window.__ITDA.state()')
+        st = page.evaluate('window.__KKEUTMALBOT.state()')
         if st and st['phase'] in ('me', 'over') and page.evaluate("!document.getElementById('word-input').disabled"):
             return st
         if st and st['phase'] == 'over':
             return st
         page.wait_for_timeout(100)
-    return page.evaluate('window.__ITDA.state()')
+    return page.evaluate('window.__KKEUTMALBOT.state()')
 
 
 def play(page, word, wait=2400):
@@ -54,7 +54,7 @@ def play(page, word, wait=2400):
 
 def pick_word(page, min_len=2, prefer_count=40):
     return page.evaluate("""([minLen, prefer]) => {
-        const d = window.__ITDA.dict, st = window.__ITDA.state();
+        const d = window.__KKEUTMALBOT.dict, st = window.__KKEUTMALBOT.state();
         const used = new Set(st.chain.map((c) => c.word));
         const cands = d.candidatesFor(st.needChar, used).filter((w) => w.length >= minLen);
         const nice = cands.filter((w) => d.countFrom(w[w.length - 1]) >= prefer);
@@ -71,7 +71,7 @@ with sync_playwright() as p:
                                   has_touch=(vp_name == 'mobile'), locale='ko-KR')
         page = ctx.new_page()
         page.goto(URL, wait_until='domcontentloaded')
-        page.wait_for_function('window.__ITDA && window.__ITDA.ready === true', timeout=90000)
+        page.wait_for_function('window.__KKEUTMALBOT && window.__KKEUTMALBOT.ready === true', timeout=90000)
         page.wait_for_selector('#scr-setup:not([hidden])')
         page.wait_for_timeout(400)
         shot(page, f'{vp_name}-1-setup')
@@ -93,7 +93,7 @@ with sync_playwright() as p:
         if st and st['phase'] == 'me':
             shot(page, f'{vp_name}-2-game')
         else:
-            page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.startGame({level:2, first:'me'})")
+            page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.startGame({level:2, first:'me'})")
             page.wait_for_timeout(600)
             st = wait_my_turn(page)
             w = pick_word(page) if st and st['phase'] == 'me' else None
@@ -112,7 +112,7 @@ with sync_playwright() as p:
 
         # 4단계 한방: 내가 낸 단어 뒤에 봇이 한방 단어를 꽂는 순간
         pick = page.evaluate("""() => {
-            const d = window.__ITDA.dict;
+            const d = window.__KKEUTMALBOT.dict;
             for (const [ch] of d.ranges) {
                 const mine = d.candidatesFor(ch, new Set());
                 for (const w of mine.slice(0, 150)) {
@@ -125,7 +125,7 @@ with sync_playwright() as p:
             return null;
         }""")
         print('level4 scenario:', json.dumps(pick, ensure_ascii=False))
-        page.evaluate(f"window.__ITDA.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
+        page.evaluate(f"window.__KKEUTMALBOT.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
         page.wait_for_timeout(600)
         play(page, pick['word'], wait=520)
         # KO 연출 타이밍
@@ -138,7 +138,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(1400)
         if page.is_visible('#ov-result'):
             shot(page, f'{vp_name}-6-result')
-        page.evaluate("window.__ITDA.app.hideResult()")
+        page.evaluate("window.__KKEUTMALBOT.app.hideResult()")
         ctx.close()
 
     browser.close()

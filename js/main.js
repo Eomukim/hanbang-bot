@@ -33,7 +33,7 @@ async function boot() {
   app.show('setup');
 
   // 검증·자동화용 손잡이
-  window.__ITDA = {
+  window.__KKEUTMALBOT = {
     app,
     dict,
     Bot,

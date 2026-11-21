@@ -1,7 +1,7 @@
 /** localStorage에 남는 설정 · 전적.
  *
- * 설정은 `itda.settings.v1`, 전적은 `itda.record.v1` 에 쌓는다.
- * 예전 이름으로 배포하던 시절의 키는 아래 LEGACY에 한 번만 옮겨 와서,
+ * 설정은 `kkeutmalbot.settings.v1`, 전적은 `kkeutmalbot.record.v1` 에 쌓는다.
+ * 예전 이름(잇다·한방봇)으로 배포하던 시절의 키는 아래 LEGACY에 한 번만 옮겨 와서,
  * 그때 쌓인 설정·전적을 잃지 않는다(옮긴 뒤에도 예전 키는 건드리지 않는다).
  *
  * 내 단어장 기능은 없앴다. 아주 예전 버전이 이 기기에 남긴 커스텀 키는
@@ -11,11 +11,13 @@
  * 구분된 키에 따로 쌓는다. 그래서 예전 4단계 시절 기록도 그대로 읽힌다.
  */
 
-const KEY_SETTINGS = 'itda.settings.v1';
-const KEY_RECORD = 'itda.record.v1';
+const KEY_SETTINGS = 'kkeutmalbot.settings.v1';
+const KEY_RECORD = 'kkeutmalbot.record.v1';
 
 /** 리브랜딩 전 이름으로 저장된 키 → 지금 키. 값이 있으면 한 번 복사한다. */
 const LEGACY = [
+  ['itda.settings.v1', KEY_SETTINGS],
+  ['itda.record.v1', KEY_RECORD],
   ['hanbang.settings.v1', KEY_SETTINGS],
   ['hanbang.record.v1', KEY_RECORD],
 ];

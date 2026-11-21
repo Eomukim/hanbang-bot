@@ -2,7 +2,7 @@
 """보고용 라이브 스크린샷과 최종 점검.
 
 - 데스크톱(1280x800)·모바일(390x844)에서 콘솔/페이지 에러 0, 가로 오버플로 0
-- 페이지 텍스트·타이틀·메타태그에 옛 이름(한방봇/hanbang/끄투/kkutu) 0건, 새 이름(잇다) 표시
+- 페이지 텍스트·타이틀·메타태그에 옛 이름(잇다/itda/한방봇/hanbang/끄투/kkutu) 0건, 새 이름(끝말봇) 표시
 - 난이도 5단계(Lv.4 극악 · Lv.5 지옥) 카드와 Lv.5 대전 화면
 - Lv.5 지옥 봇이 실제로: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 · 소수 후보 압박 · 미션/장문
 - 4단계 극악 한방 봇 동작 확인
@@ -10,13 +10,13 @@
 - 힌트 삭제(버튼·문구·API 없음)
 - 하드코어 모드: 스위치·5초 고정·봇 선공·헤더/결과 배지·별도 전적, 끄면 일반 모드
 - 결과 화면(승리·패배·포기)의 난이도 배지, 버튼으로 여는 배틀 내역(카드 안 스크롤)
-- downloads/itda/ 에 setup.png, lv5-setup.png, lv5-game.png, oneshot.png,
+- downloads/kkeutmalbot/ 에 setup.png, lv5-setup.png, lv5-game.png, oneshot.png,
   result-win.png, result-lv5.png, mobile-game.png, mobile-lv5.png, mobile-result.png,
   hardcore-setup.png, hardcore-game.png, hardcore-result.png,
   battle-log-open.png, mobile-battle-log-open.png 저장
 
 usage:
-    python3 tools/report_shots.py --url https://itda-game.onrender.com
+    python3 tools/report_shots.py --url https://kkeutmalbot.onrender.com
 """
 import argparse
 import json
@@ -31,9 +31,9 @@ from verify import HELL_PROPS, HELL_PICKS, serve  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-CHROME = os.environ.get('ITDA_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
-OUT = os.environ.get('SHOT_OUT', '/workspace/downloads/itda')
-BAD = ('한방봇', 'hanbang', '끄투', 'kkutu')
+CHROME = os.environ.get('KKEUTMALBOT_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
+OUT = os.environ.get('SHOT_OUT', '/workspace/downloads/kkeutmalbot')
+BAD = ('잇다', 'itda', '한방봇', 'hanbang', '끄투', 'kkutu')
 
 FAILS = []
 
@@ -56,7 +56,7 @@ def new_page(browser, vp):
 
 
 def wait_ready(page, timeout=90000):
-    page.wait_for_function('window.__ITDA && window.__ITDA.ready === true', timeout=timeout)
+    page.wait_for_function('window.__KKEUTMALBOT && window.__KKEUTMALBOT.ready === true', timeout=timeout)
     page.wait_for_selector('#scr-setup:not([hidden])', timeout=timeout)
 
 
@@ -89,19 +89,19 @@ def brand_hits(page):
 def wait_my_turn(page, timeout=8000):
     end = time.time() + timeout / 1000
     while time.time() < end:
-        st = page.evaluate('window.__ITDA.state()')
+        st = page.evaluate('window.__KKEUTMALBOT.state()')
         if not st or st['phase'] == 'over':
             return st
         if st['phase'] == 'me' and page.evaluate("!document.getElementById('word-input').disabled"):
             return st
         page.wait_for_timeout(120)
-    return page.evaluate('window.__ITDA.state()')
+    return page.evaluate('window.__KKEUTMALBOT.state()')
 
 
 def human_word(page, cautious=False):
     """사람처럼 2~4글자 단어를 고른다. cautious 면 봇에게 바로 한방을 내주지 않는 자리로."""
     return page.evaluate("""(cautious) => {
-        const d = window.__ITDA.dict, st = window.__ITDA.state();
+        const d = window.__KKEUTMALBOT.dict, st = window.__KKEUTMALBOT.state();
         const used = new Set(st.chain.map((c) => c.word));
         const cands = d.candidatesFor(st.needChar, used);
         if (!cands.length) return null;
@@ -129,7 +129,7 @@ def human_word(page, cautious=False):
 
 def live_kill(page, node, used):
     return page.evaluate("""([node, usedWords]) => {
-        const d = window.__ITDA.dict;
+        const d = window.__KKEUTMALBOT.dict;
         const used = new Set(usedWords);
         const shots = d.shotWords(node);
         if (shots) for (const w of shots) if (!used.has(w) && d.countFrom(w[w.length - 1]) === 0) return w;
@@ -155,7 +155,7 @@ def result_view(page):
 def log_word(page):
     """배틀 내역 스크린샷용 수: 태그가 붙는 단어와 긴 단어를 섞는다."""
     return page.evaluate("""() => {
-        const d = window.__ITDA.dict, st = window.__ITDA.state();
+        const d = window.__KKEUTMALBOT.dict, st = window.__KKEUTMALBOT.state();
         const used = new Set(st.chain.map((c) => c.word));
         const cands = d.candidatesFor(st.needChar, used);
         const taggedLong = cands.filter((x) => (d.flagOf(x) & 1) && x.length >= 6 && x.length <= 12);
@@ -166,9 +166,9 @@ def log_word(page):
 
 def play_log_game(page, turns=6):
     """결과 화면 배틀 내역을 볼 판: 몇 수 주고받고 끝낸다."""
-    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
-    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-    page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:20})")
+    page.evaluate("window.__KKEUTMALBOT.app.engine && window.__KKEUTMALBOT.app.engine.destroy()")
+    page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
+    page.evaluate("window.__KKEUTMALBOT.startGame({level:2, first:'me', timeLimit:20})")
     page.wait_for_timeout(400)
     for _ in range(turns):
         st = wait_my_turn(page, 8000)
@@ -177,17 +177,17 @@ def play_log_game(page, turns=6):
         word = log_word(page)
         if not word:
             break
-        before = page.evaluate('window.__ITDA.state().chain.length')
+        before = page.evaluate('window.__KKEUTMALBOT.state().chain.length')
         page.fill('#word-input', word)
         page.click('#btn-submit')
         try:
             page.wait_for_function(
-                f"() => window.__ITDA.state().chain.length > {before} + 1 || window.__ITDA.state().phase === 'over'",
+                f"() => window.__KKEUTMALBOT.state().chain.length > {before} + 1 || window.__KKEUTMALBOT.state().phase === 'over'",
                 timeout=8000)
         except Exception:
             break
-    if page.evaluate('window.__ITDA.state().phase') != 'over':
-        page.evaluate('window.__ITDA.engine.quit()')
+    if page.evaluate('window.__KKEUTMALBOT.state().phase') != 'over':
+        page.evaluate('window.__KKEUTMALBOT.engine.quit()')
     page.wait_for_timeout(1100)
 
 
@@ -220,9 +220,9 @@ def blog_view(page):
 
 def play_hell_game(page, turns=4, shot_path=None):
     """Lv.5 지옥과 실제로 한 판: 사람처럼 두고 봇의 응수·태그·시간·한방 각을 기록."""
-    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
-    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-    page.evaluate("window.__ITDA.startGame({level:5, first:'me', timeLimit:20})")
+    page.evaluate("window.__KKEUTMALBOT.app.engine && window.__KKEUTMALBOT.app.engine.destroy()")
+    page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
+    page.evaluate("window.__KKEUTMALBOT.startGame({level:5, first:'me', timeLimit:20})")
     page.wait_for_timeout(350)
     info = {'gaps': [], 'tags': [], 'bot': [], 'handed': 0, 'avoidable': 0, 'kills': 0, 'proven': 0, 'shot': False}
     for _ in range(turns):
@@ -232,13 +232,13 @@ def play_hell_game(page, turns=4, shot_path=None):
         w = human_word(page, cautious=True)
         if not w:
             break
-        before = page.evaluate("window.__ITDA.state().chain.length")
+        before = page.evaluate("window.__KKEUTMALBOT.state().chain.length")
         t0 = time.time()
         page.fill('#word-input', w)
         page.click('#btn-submit')
         try:
             page.wait_for_function(
-                f"() => window.__ITDA.state().chain.length > {before} + 1 || window.__ITDA.state().phase === 'over'",
+                f"() => window.__KKEUTMALBOT.state().chain.length > {before} + 1 || window.__KKEUTMALBOT.state().phase === 'over'",
                 timeout=6000)
             info['gaps'].append((time.time() - t0) * 1000)
         except Exception:
@@ -246,7 +246,7 @@ def play_hell_game(page, turns=4, shot_path=None):
         tag_text = page.evaluate("document.querySelector('#stage .tag.danger')?.textContent || ''")
         if tag_text:
             info['tags'].append(tag_text)
-        st = page.evaluate('window.__ITDA.state()')
+        st = page.evaluate('window.__KKEUTMALBOT.state()')
         bot = [c for c in st['chain'] if c['who'] == 'bot']
         if bot:
             last = bot[-1]
@@ -263,7 +263,7 @@ def play_hell_game(page, turns=4, shot_path=None):
                 info['handed'] += 1
                 # 같은 자리에서 피할 수 있었는지: 봇이 다른 끝 글자를 고를 수 있었는지
                 alt = page.evaluate("""([usedWords]) => {
-                    const d = window.__ITDA.dict, st = window.__ITDA.state();
+                    const d = window.__KKEUTMALBOT.dict, st = window.__KKEUTMALBOT.state();
                     const prev = st.chain[st.chain.length - 2];
                     const used = new Set(usedWords);
                     used.delete(st.chain[st.chain.length - 1].word);
@@ -296,7 +296,7 @@ def play_hell_game(page, turns=4, shot_path=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--url', default='https://itda-game.onrender.com')
+    ap.add_argument('--url', default='https://kkeutmalbot.onrender.com')
     ap.add_argument('--local', action='store_true')
     args = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
@@ -316,7 +316,7 @@ def main():
         ctx, page, console, errors = new_page(browser, {'width': 1280, 'height': 800})
         page.goto(url, wait_until='domcontentloaded')
         wait_ready(page)
-        size = page.evaluate('window.__ITDA.dict.size')
+        size = page.evaluate('window.__KKEUTMALBOT.dict.size')
         check(size > 300000, '사전 로드', f'{size}단어')
         check(sum(overflow(page).values()) <= 0, '설정 화면 가로 오버플로 0', str(overflow(page)))
         hits = brand_hits(page)
@@ -328,9 +328,9 @@ def main():
             og: document.querySelector('meta[property="og:title"]')?.getAttribute('content'),
             app: document.querySelector('meta[name="application-name"]')?.getAttribute('content'),
         })""")
-        check('잇다' in brand['title'] and brand['logo'] == '잇다' and brand['kicker'] == '끝말잇기'
-              and '잇다' in (brand['og'] or '') and brand['app'] == '잇다',
-              '새 이름 잇다 표시', json.dumps(brand, ensure_ascii=False))
+        check('끝말봇' in brand['title'] and brand['logo'] == '끝말봇' and brand['kicker'] == '끝말잇기'
+              and '끝말봇' in (brand['og'] or '') and brand['app'] == '끝말봇',
+              '새 이름 끝말봇 표시', json.dumps(brand, ensure_ascii=False))
         page.screenshot(path=os.path.join(OUT, 'setup.png'))
 
         gone = page.evaluate("""() => ({
@@ -338,7 +338,7 @@ def main():
             modal: !!document.getElementById('ov-custom'),
             text: document.body.innerText.includes('내 단어장'),
             api: ['custom', 'customByStart', 'addCustom', 'removeCustom', 'setCustom', 'customStartCount', 'meanOf']
-                .filter((k) => window.__ITDA.dict[k] !== undefined),
+                .filter((k) => window.__KKEUTMALBOT.dict[k] !== undefined),
             row: Math.round(document.getElementById('btn-sound').getBoundingClientRect().width),
             box: Math.round(document.querySelector('.setup-actions').getBoundingClientRect().width),
         })""")
@@ -373,7 +373,7 @@ def main():
             game['avoidable'] += more['avoidable']
             game['kills'] += more['kills']
             game['proven'] += more['proven']
-        st = page.evaluate('window.__ITDA.state()')
+        st = page.evaluate('window.__KKEUTMALBOT.state()')
         check(len(game['bot']) >= 2, 'Lv.5 실제 대전 응수', f"{len(game['bot'])}수")
         check(game['avoidable'] == 0, 'Lv.5 상대 한방 각 회피',
               f"내준 자리 {game['handed']}회 / 피할 수 있었던 {game['avoidable']}회")
@@ -422,7 +422,7 @@ def main():
 
         # ── 데스크톱: 4단계 극악 한방 ───────────────────────
         pick = page.evaluate("""() => {
-            const d = window.__ITDA.dict;
+            const d = window.__KKEUTMALBOT.dict;
             for (const [ch] of d.ranges) {
                 const mine = d.candidatesFor(ch, new Set());
                 for (const w of mine.slice(0, 150)) {
@@ -436,17 +436,17 @@ def main():
         }""")
         check(pick is not None, '한방 시나리오 탐색', str(pick))
         if pick:
-            page.evaluate("window.__ITDA.app.engine.destroy()")
-            page.evaluate("window.__ITDA.app.hideResult()")
-            page.evaluate(f"window.__ITDA.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
+            page.evaluate("window.__KKEUTMALBOT.app.engine.destroy()")
+            page.evaluate("window.__KKEUTMALBOT.app.hideResult()")
+            page.evaluate(f"window.__KKEUTMALBOT.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
             page.wait_for_timeout(500)
             page.fill('#word-input', pick['word'])
             page.click('#btn-submit')
             page.wait_for_timeout(3600)
-            st = page.evaluate('window.__ITDA.state()')
+            st = page.evaluate('window.__KKEUTMALBOT.state()')
             bot_words = [c['word'] for c in st['chain'] if c['who'] == 'bot']
             last_bot = bot_words[-1] if bot_words else ''
-            is_oneshot = page.evaluate("([w]) => !!w && window.__ITDA.dict.isOneShot(w)", [last_bot])
+            is_oneshot = page.evaluate("([w]) => !!w && window.__KKEUTMALBOT.dict.isOneShot(w)", [last_bot])
             check(st['phase'] == 'over' and is_oneshot, '4단계 극악 봇 한방 즉사',
                   f'{last_bot} / {st["phase"]}')
             check(page.is_visible('#ov-result'), '결과 화면 표시')
@@ -461,7 +461,7 @@ def main():
 
         # ── 데스크톱: 승리 결과 화면 난이도 ─────────────────
         win_pick = page.evaluate("""() => {
-            const d = window.__ITDA.dict;
+            const d = window.__KKEUTMALBOT.dict;
             for (const [ch] of d.ranges) {
                 const w = d.candidatesFor(ch, new Set()).find((x) => d.countFrom(x[x.length - 1]) === 0);
                 if (w) return { start: ch, word: w };
@@ -469,9 +469,9 @@ def main():
             return null;
         }""")
         if check(win_pick is not None, '승리용 한방 단어 탐색', str(win_pick)):
-            page.evaluate('window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()')
-            page.evaluate('window.__ITDA.app.hideResult()')
-            page.evaluate(f"window.__ITDA.startGame({{level:1, first:'me', startChar:'{win_pick['start']}'}})")
+            page.evaluate('window.__KKEUTMALBOT.app.engine && window.__KKEUTMALBOT.app.engine.destroy()')
+            page.evaluate('window.__KKEUTMALBOT.app.hideResult()')
+            page.evaluate(f"window.__KKEUTMALBOT.startGame({{level:1, first:'me', startChar:'{win_pick['start']}'}})")
             page.wait_for_timeout(450)
             page.fill('#word-input', win_pick['word'])
             page.click('#btn-submit')
@@ -487,17 +487,17 @@ def main():
             summary['desktop_win'] = {'word': win_pick['word'], 'title': win['title'], 'level': win['label']}
 
         # ── 데스크톱: Lv.5 포기 결과 화면 난이도 ────────────
-        page.evaluate('window.__ITDA.app.hideResult()')
-        page.evaluate("window.__ITDA.startGame({level:5, first:'me', timeLimit:20})")
+        page.evaluate('window.__KKEUTMALBOT.app.hideResult()')
+        page.evaluate("window.__KKEUTMALBOT.startGame({level:5, first:'me', timeLimit:20})")
         page.wait_for_timeout(400)
-        page.evaluate('window.__ITDA.engine.quit()')
+        page.evaluate('window.__KKEUTMALBOT.engine.quit()')
         page.wait_for_timeout(1000)
         lv5 = result_view(page)
         check(lv5['title'] == '패배' and lv5['label'] == 'Lv.5 지옥',
               '포기 결과 화면 난이도(Lv.5 지옥)', json.dumps(lv5, ensure_ascii=False))
         page.screenshot(path=os.path.join(OUT, 'result-lv5.png'))
         summary['desktop_lv5_quit'] = {'title': lv5['title'], 'level': lv5['label'], 'reason': lv5['reason']}
-        page.evaluate('window.__ITDA.app.hideResult()')
+        page.evaluate('window.__KKEUTMALBOT.app.hideResult()')
 
         # ── 데스크톱: 결과 화면 배틀 내역 ─────────────────────
         play_log_game(page, turns=7)
@@ -518,17 +518,17 @@ def main():
         check(not hits, '배틀 내역 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
         page.screenshot(path=os.path.join(OUT, 'battle-log-open.png'))
         summary['battle_log'] = blog
-        page.evaluate('window.__ITDA.app.hideResult()')
+        page.evaluate('window.__KKEUTMALBOT.app.hideResult()')
 
         # ── 데스크톱: 힌트 삭제 · 하드코어 모드 ──────────────
-        page.evaluate('window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()')
-        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.evaluate('window.__KKEUTMALBOT.app.engine && window.__KKEUTMALBOT.app.engine.destroy()')
+        page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
         page.wait_for_timeout(250)
         no_hint = page.evaluate("""() => ({
             btn: !!document.getElementById('btn-hint'),
             cls: document.querySelectorAll('.btn.hint, .hint').length,
             text: document.body.innerText.includes('힌트'),
-            api: ['useHint', 'hint'].filter((k) => typeof window.__ITDA.app[k] === 'function'),
+            api: ['useHint', 'hint'].filter((k) => typeof window.__KKEUTMALBOT.app[k] === 'function'),
         })""")
         check(not no_hint['btn'] and no_hint['cls'] == 0 and not no_hint['text'] and not no_hint['api'],
               '힌트 버튼·문구·API 삭제', json.dumps(no_hint, ensure_ascii=False))
@@ -560,18 +560,18 @@ def main():
         wait_my_turn(page, 7000)
         page.wait_for_timeout(520)   # 봇 단어 등장 애니메이션이 끝난 뒤
         hc_game = page.evaluate("""() => {
-            const st = window.__ITDA.state();
+            const st = window.__KKEUTMALBOT.state();
             const badge = document.getElementById('game-hardcore');
             return {
-                hardcore: window.__ITDA.engine.hardcore,
-                limit: window.__ITDA.engine.timeLimit,
-                first: window.__ITDA.engine.first,
+                hardcore: window.__KKEUTMALBOT.engine.hardcore,
+                limit: window.__KKEUTMALBOT.engine.timeLimit,
+                first: window.__KKEUTMALBOT.engine.first,
                 phase: st.phase,
                 chain: st.chain.map((c) => c.who),
                 badge: !badge.hidden,
                 badgeText: badge.innerText.replace(/\\s+/g, ' ').trim(),
                 time: document.getElementById('time-left').textContent,
-                left: window.__ITDA.engine.timeLeft(),
+                left: window.__KKEUTMALBOT.engine.timeLeft(),
                 composer: [...document.getElementById('composer').children].map((el) => el.id || el.tagName),
                 input: Math.round(document.getElementById('word-input').getBoundingClientRect().width),
                 go: Math.round(document.getElementById('btn-submit').getBoundingClientRect().width),
@@ -600,7 +600,7 @@ def main():
         hc_badge = page.evaluate("!document.getElementById('result-hardcore').hidden")
         check(hc_res['title'] == '패배' and '시간' in hc_res['reason'] and hc_badge,
               '하드코어 결과(시간 초과) 배지', json.dumps(hc_res, ensure_ascii=False))
-        rec = page.evaluate("JSON.parse(localStorage.getItem('itda.record.v1') || '{}')")
+        rec = page.evaluate("JSON.parse(localStorage.getItem('kkeutmalbot.record.v1') || '{}')")
         check(bool(rec.get('3:hc')) and rec['3:hc'].get('plays', 0) >= 1,
               '하드코어 전적 별도 기록', json.dumps(rec.get('3:hc'), ensure_ascii=False))
         check(sum(overflow(page).values()) <= 0, '하드코어 결과 가로 오버플로 0', str(overflow(page)))
@@ -610,7 +610,7 @@ def main():
         summary['hardcore'] = {'setup': hc_setup, 'game': {k: hc_game[k] for k in ('limit', 'first', 'badgeText', 'time')},
                                'result': hc_res, 'record': rec.get('3:hc')}
 
-        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
         page.wait_for_timeout(200)
         page.click('#btn-hardcore')
         page.wait_for_timeout(220)
@@ -618,7 +618,7 @@ def main():
             on: document.getElementById('btn-hardcore').getAttribute('aria-checked'),
             timeLocked: !document.getElementById('time-locked').hidden,
             timeBtns: [...document.querySelectorAll('#time-opts button')].map((b) => b.dataset.time),
-            saved: JSON.parse(localStorage.getItem('itda.settings.v1') || '{}').hardcore,
+            saved: JSON.parse(localStorage.getItem('kkeutmalbot.settings.v1') || '{}').hardcore,
         })""")
         check(hc_off['on'] == 'false' and not hc_off['timeLocked'] and hc_off['timeBtns'] == ['10', '15', '20']
               and hc_off['saved'] is False,
@@ -663,7 +663,7 @@ def main():
             page.fill('#word-input', w)
             page.click('#btn-submit')
             page.wait_for_timeout(1400)
-        st = page.evaluate('window.__ITDA.state()')
+        st = page.evaluate('window.__KKEUTMALBOT.state()')
         bot_moves = [c for c in st['chain'] if c['who'] == 'bot'] if st else []
         check(len(bot_moves) >= 1, '모바일 Lv.5 대전 진행', f"{len(bot_moves)}수")
         check(sum(overflow(page).values()) <= 0, '모바일 Lv.5 대전 가로 오버플로 0', str(overflow(page)))
@@ -673,7 +673,7 @@ def main():
         summary['mobile_game'] = {'bot_moves': [(c['word'], c['kind']) for c in bot_moves], 'brand_hits': hits}
 
         # ── 모바일: 결과 화면 난이도 ────────────────────────
-        page.evaluate('window.__ITDA.engine.quit()')
+        page.evaluate('window.__KKEUTMALBOT.engine.quit()')
         page.wait_for_timeout(1000)
         mres = page.evaluate("""() => ({
             title: document.getElementById('result-title').textContent,
@@ -704,7 +704,7 @@ def main():
         summary['mobile_battle_log'] = mblog
 
         # ── 모바일: 하드코어 설정·대전·결과 ──────────────────
-        page.evaluate('window.__ITDA.app.hideResult(); window.__ITDA.app.show(\'setup\')')
+        page.evaluate('window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show(\'setup\')')
         page.wait_for_timeout(200)
         if page.evaluate("document.getElementById('btn-hardcore').getAttribute('aria-checked')") == 'true':
             page.click('#btn-hardcore')
@@ -718,10 +718,10 @@ def main():
         wait_my_turn(page, 7000)
         page.wait_for_timeout(520)
         m_hc = page.evaluate("""() => {
-            const st = window.__ITDA.state();
+            const st = window.__KKEUTMALBOT.state();
             return {
-                first: window.__ITDA.engine.first,
-                limit: window.__ITDA.engine.timeLimit,
+                first: window.__KKEUTMALBOT.engine.first,
+                limit: window.__KKEUTMALBOT.engine.timeLimit,
                 chain: st.chain.map((c) => c.who),
                 badge: !document.getElementById('game-hardcore').hidden,
                 time: document.getElementById('time-left').textContent,
@@ -731,7 +731,7 @@ def main():
               '모바일 하드코어 5초·봇 선공·배지', json.dumps(m_hc, ensure_ascii=False))
         check(sum(overflow(page).values()) <= 0, '모바일 하드코어 대전 가로 오버플로 0', str(overflow(page)))
         page.screenshot(path=os.path.join(OUT, 'mobile-hardcore-game.png'))
-        page.evaluate('window.__ITDA.engine.quit()')
+        page.evaluate('window.__KKEUTMALBOT.engine.quit()')
         page.wait_for_timeout(1100)
         m_hc_res = page.evaluate("""() => ({
             title: document.getElementById('result-title').textContent,
