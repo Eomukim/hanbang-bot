@@ -183,7 +183,8 @@ def play_hell_game(page, turns=4, shot_path=None):
             info['bot'].append(last)
             if last['kind'] == 'oneshot':
                 info['kills'] += 1
-            if last['kind'] == 'outer':
+            # 'outer' = 실제 응수를 확인한 강제 필승, 'route' = 그래프상 이기는 자리(화면 표기 '필승 라인')
+            if last['kind'] in ('outer', 'route'):
                 info['proven'] += 1
             # 봇이 내준 자리에 내가 바로 한방을 쓸 수 있는가 = 봇이 한방 각을 내줬는가
             used = [c['word'] for c in st['chain']]
@@ -282,8 +283,8 @@ def main():
         # ── 데스크톱: Lv.5 지옥과 실제 대전 ─────────────────
         shot_path = os.path.join(OUT, 'lv5-game.png')
         game = play_hell_game(page, turns=5, shot_path=shot_path)
-        for _ in range(2):   # 첫 수에 끝난 판이면 한 판 더 (증거를 2수 이상 모으기 위해)
-            if len(game['bot']) >= 2:
+        for _ in range(3):   # 증거가 모자라면 판을 더 둔다 (2수 이상 + 한방/필승 수 1회)
+            if len(game['bot']) >= 2 and (game['kills'] + game['proven']) >= 1:
                 break
             more = play_hell_game(page, turns=5, shot_path=None)
             for key in ('gaps', 'tags', 'bot'):
