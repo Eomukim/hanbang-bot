@@ -29,7 +29,6 @@ async function boot() {
     return;
   }
 
-  app.el['dict-count'].textContent = dict.size.toLocaleString('ko-KR');
   app.show('setup');
 
   // 검증·자동화용 손잡이

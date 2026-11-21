@@ -6,12 +6,13 @@
 - 난이도 5단계(Lv.4 극악 · Lv.5 지옥) 카드와 Lv.5 대전 화면
 - Lv.5 지옥 봇이 실제로: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 · 소수 후보 압박 · 미션/장문
 - 4단계 극악 한방 봇 동작 확인
+- 설정 화면 정리: 상단 태그라인·하단 규칙/팁/전적 블록 없음, 대전 시작이 마지막 요소, 세로 스크롤 0
 - 내 단어장 삭제(버튼·모달·사전 API 없음)와 효과음 설정 행 전체 폭
 - 힌트 삭제(버튼·문구·API 없음)
 - 하드코어 모드: 스위치·5초 고정·봇 선공·헤더/결과 배지·별도 전적, 끄면 일반 모드
 - 결과 화면(승리·패배·포기)의 난이도 배지, 버튼으로 여는 배틀 내역(카드 안 스크롤)
 - downloads/kkeutmalbot/ 에 setup.png, lv5-setup.png, lv5-game.png, oneshot.png,
-  result-win.png, result-lv5.png, mobile-game.png, mobile-lv5.png, mobile-result.png,
+  result-win.png, result-lv5.png, mobile-setup.png, mobile-game.png, mobile-lv5.png, mobile-result.png,
   hardcore-setup.png, hardcore-game.png, hardcore-result.png,
   battle-log-open.png, mobile-battle-log-open.png 저장
 
@@ -332,6 +333,29 @@ def main():
         check('끝말봇' in brand['title'] and brand['logo'] == '끝말봇' and brand['kicker'] == '끝말잇기'
               and '끝말봇' in (brand['og'] or '') and brand['app'] == '끝말봇',
               '새 이름 끝말봇 표시', json.dumps(brand, ensure_ascii=False))
+
+        clean = page.evaluate("""() => {
+            const setup = document.querySelector('#scr-setup .setup');
+            const kids = [...setup.children];
+            const last = kids[kids.length - 1];
+            const sec = document.getElementById('scr-setup');
+            const box = document.querySelector('.brand').getBoundingClientRect();
+            const r = document.getElementById('btn-start').getBoundingClientRect();
+            return {
+                removed: document.querySelectorAll('.tagline, .rules-line, .tips, .record, #dict-count, #record').length,
+                last: last ? (last.id || last.className) : '',
+                kids: kids.map((el) => el.id || el.className),
+                scroll: sec.scrollHeight - sec.clientHeight,
+                brandTop: Math.round(box.top), startBottom: Math.round(r.bottom),
+                viewH: window.innerHeight,
+            };
+        }""")
+        check(clean['removed'] == 0 and clean['last'] == 'btn-start',
+              '설정 화면 정리(태그라인·규칙·팁·전적 없음 · 대전 시작이 마지막)',
+              json.dumps(clean, ensure_ascii=False))
+        check(clean['scroll'] <= 1 and clean['startBottom'] <= clean['viewH'] and clean['brandTop'] > 0,
+              '설정 화면이 스크롤 없이 한 화면에', f"{clean['brandTop']}~{clean['startBottom']} / {clean['viewH']}px")
+        summary['setup'] = clean
         page.screenshot(path=os.path.join(OUT, 'setup.png'))
 
         gone = page.evaluate("""() => ({
@@ -648,6 +672,27 @@ def main():
               json.dumps(mobile_gone, ensure_ascii=False))
         check(mobile_gone['row'] >= mobile_gone['box'] - 1, '모바일 효과음 설정 행 전체 폭',
               f"{mobile_gone['row']}/{mobile_gone['box']}px")
+        mobile_clean = page.evaluate("""() => {
+            const setup = document.querySelector('#scr-setup .setup');
+            const kids = [...setup.children];
+            const last = kids[kids.length - 1];
+            const sec = document.getElementById('scr-setup');
+            const r = document.getElementById('btn-start').getBoundingClientRect();
+            const box = document.querySelector('.brand').getBoundingClientRect();
+            return {
+                removed: document.querySelectorAll('.tagline, .rules-line, .tips, .record, #dict-count, #record').length,
+                last: last ? (last.id || last.className) : '',
+                scroll: sec.scrollHeight - sec.clientHeight,
+                brandTop: Math.round(box.top), startBottom: Math.round(r.bottom),
+                viewH: window.innerHeight,
+            };
+        }""")
+        check(mobile_clean['removed'] == 0 and mobile_clean['last'] == 'btn-start'
+              and mobile_clean['scroll'] <= 1 and mobile_clean['startBottom'] <= mobile_clean['viewH']
+              and mobile_clean['brandTop'] > 0,
+              '모바일 설정 화면 정리·스크롤 없음', json.dumps(mobile_clean, ensure_ascii=False))
+        summary['mobile_setup'] = mobile_clean
+        page.screenshot(path=os.path.join(OUT, 'mobile-setup.png'))
         page.click('.level[data-lv="5"]')
         page.wait_for_timeout(200)
         check(sum(overflow(page).values()) <= 0, '모바일 Lv.5 카드 가로 오버플로 0', str(overflow(page)))

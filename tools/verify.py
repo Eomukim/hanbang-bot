@@ -5,6 +5,7 @@
  - 콘솔/페이지 에러, 가로 오버플로
  - 두음법칙 · 중복 차단 · 4단계 극악 한방 승리 · 봇 난이도 규칙
  - 힌트 삭제(버튼·로직·문구·API 없음)와 입력 바 배치
+ - 설정 화면 정리(상단 태그라인·하단 규칙/팁/전적 블록이 DOM·CSS·JS에 없음, 대전 시작이 마지막 요소, 세로 스크롤 0)와 전적 저장 유지
  - 하드코어 모드(스위치 · 5초 고정 · 봇 선공 고정 · 헤더/결과 배지 · 별도 전적 · 끄면 일반 모드)
  - 내 단어장 삭제(버튼·모달·사전 API 없음, 남은 localStorage 값 무시)
  - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
@@ -810,7 +811,8 @@ def legacy_round(page, tag, old):
         sound: document.getElementById('sound-value').textContent,
         soundPressed: document.getElementById('btn-sound').getAttribute('aria-pressed'),
         first: document.querySelector('#first-opts button[aria-checked="true"]')?.dataset.first,
-        record: document.getElementById('record').innerText,
+        record: JSON.parse(localStorage.getItem('kkeutmalbot.record.v1') || '{}'),
+        recordDom: !!document.getElementById('record') || !!document.querySelector('#scr-setup .record'),
         migratedSettings: !!localStorage.getItem('kkeutmalbot.settings.v1'),
         migratedRecord: !!localStorage.getItem('kkeutmalbot.record.v1'),
         legacyKept: !!localStorage.getItem(old + '.settings.v1'),
@@ -818,8 +820,10 @@ def legacy_round(page, tag, old):
     check(view['checked'] == '4', f'[{tag}] {old} 설정 Lv.4 복원', str(view['checked']))
     check(view['sound'] == '끔' and view['soundPressed'] == 'false' and view['first'] == 'bot',
           f'[{tag}] {old} 설정 소리·선공 복원', f"{view['sound']} / {view['first']}")
-    check('Lv.4 극악' in view['record'] and 'Lv.1 쉬움' in view['record'] and '3승 4패' in view['record'],
-          f'[{tag}] {old} 전적 Lv.4 극악으로 표시', view['record'].replace('\n', ' | ')[:120])
+    row4 = view['record'].get('4', {})
+    check(row4.get('wins') == 3 and row4.get('losses') == 4 and row4.get('bestScore') == 260,
+          f'[{tag}] {old} 전적 새 키로 유지(화면엔 미표시)', json.dumps(row4, ensure_ascii=False)[:120])
+    check(not view['recordDom'], f'[{tag}] {old} 전적을 설정 화면에 그리지 않음', str(view['recordDom']))
     check(view['migratedSettings'] and view['migratedRecord'] and view['legacyKept'],
           f'[{tag}] {old} 키 → 새 키 이전(옛 키 보존)', json.dumps(view, ensure_ascii=False)[:120])
     check(sum(overflow(page).values()) <= 0, f'[{tag}] {old} 설정 화면 가로 오버플로 0', str(overflow(page)))
@@ -1275,13 +1279,19 @@ def scenario_hardcore(page, tag, report_dir=None):
     check(rec.get('3', {}).get('plays', 0) == before_lv,
           f'[{tag}] 일반 Lv.3 전적은 그대로', f"{before_lv} → {rec.get('3', {}).get('plays', 0)}")
 
-    # 설정 화면 전적에 하드코어 행이 구분되어 보이는지
+    # 전적은 화면에 그리지 않고 store(localStorage)에만 쌓인다
     page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
     page.wait_for_timeout(200)
-    rec_text = page.evaluate("document.getElementById('record').innerText")
-    check('하드코어' in rec_text and 'Lv.3 어려움' in rec_text,
-          f'[{tag}] 설정 화면 전적에 하드코어 구분 표시',
-          rec_text.replace(chr(10), ' | ')[:140])
+    rec_view = page.evaluate("""() => ({
+        dom: !!document.getElementById('record') || !!document.querySelector('#scr-setup .record'),
+        last: [...document.querySelector('#scr-setup .setup').children].pop()?.id || '',
+        hcRow: JSON.parse(localStorage.getItem('kkeutmalbot.record.v1') || '{}')['3:hc'] || null,
+    })""")
+    check(not rec_view['dom'] and rec_view['last'] == 'btn-start',
+          f'[{tag}] 설정 화면에 전적 블록 없이 대전 시작이 마지막',
+          json.dumps(rec_view, ensure_ascii=False)[:140])
+    check(bool(rec_view['hcRow']) and rec_view['hcRow'].get('plays', 0) >= 1,
+          f'[{tag}] 하드코어 전적은 화면 없이 저장', json.dumps(rec_view['hcRow'], ensure_ascii=False))
 
     # 승리 결과에도 배지: 봇 선공(하드코어) 뒤 내가 한방 단어로 끝낸다
     win = None
@@ -1848,6 +1858,84 @@ def scenario_mission(page, tag, report_dir=None):
     page.evaluate("window.__KKEUTMALBOT.app.hideResult()")
 
 
+def scenario_setup_clean(page, tag):
+    """설정 화면 정리: 상단 태그라인과 '대전 시작' 아래 규칙·팁·전적 블록이
+    DOM·CSS·JS 어디에도 남지 않고, 대전 시작 버튼이 마지막 요소이며,
+    데스크톱·모바일 모두 세로 스크롤 없이 한 화면에 들어오는지."""
+    print(f'  · 설정 화면 정리 [{tag}]')
+    page.evaluate("window.__KKEUTMALBOT.app.engine && window.__KKEUTMALBOT.app.engine.destroy()")
+    page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
+    page.wait_for_timeout(200)
+
+    view = page.evaluate("""() => {
+        const setup = document.querySelector('#scr-setup .setup');
+        const sec = document.getElementById('scr-setup');
+        const kids = [...setup.children];
+        const last = kids[kids.length - 1];
+        const r = document.getElementById('btn-start').getBoundingClientRect();
+        const text = setup.innerText;
+        return {
+            nodes: {
+                tagline: !!document.querySelector('.tagline'),
+                rules: !!document.querySelector('.rules-line'),
+                tips: !!document.querySelector('.tips'),
+                record: !!document.getElementById('record'),
+                dictCount: !!document.getElementById('dict-count'),
+                any: document.querySelectorAll('.tagline, .rules-line, .tips, .record').length,
+            },
+            leftoverText: /끝말을 이어가는|2글자 이상|중복 금지|한방 단어 조심|아직 전적이 없어요/.test(text),
+            lastId: last ? last.id : '',
+            kids: kids.map((el) => el.id || el.className),
+            startTop: Math.round(r.top), startBottom: Math.round(r.bottom),
+            viewH: window.innerHeight,
+            scroll: { h: sec.scrollHeight, client: sec.clientHeight },
+        };
+    }""")
+    nodes = view['nodes']
+    check(not any(nodes.values()), f'[{tag}] 설정 화면에서 지운 요소 DOM에 없음',
+          json.dumps(nodes, ensure_ascii=False))
+    check(not view['leftoverText'], f'[{tag}] 지운 요소의 문구 0건', str(view['leftoverText']))
+    check(view['lastId'] == 'btn-start', f'[{tag}] 대전 시작 버튼이 설정 화면 마지막 요소',
+          str(view['kids']))
+    check(view['startTop'] > 0 and view['startBottom'] <= view['viewH'],
+          f'[{tag}] 대전 시작 버튼이 스크롤 없이 보임',
+          f"start {view['startTop']}~{view['startBottom']} / 화면 {view['viewH']}px")
+    check(view['scroll']['h'] <= view['scroll']['client'] + 1,
+          f'[{tag}] 설정 화면 세로 스크롤 없음',
+          f"{view['scroll']['h']} / {view['scroll']['client']}px")
+
+    # 더 이상 쓰지 않는 선택자·함수가 CSS·JS에 남아 있지 않은지(맨 파일 내용 기준)
+    src = page.evaluate("""async () => {
+        const load = (p) => fetch(p).then((r) => r.text());
+        const [css, ui, main] = await Promise.all([load('css/style.css'), load('js/ui.js'), load('js/main.js')]);
+        const js = ui + main;
+        return {
+            css: ['.tagline', '.rules-line', '.tips', '.record {', '.rec-hc'].filter((sel) => css.includes(sel)),
+            js: ['renderRecord', 'dict-count', "getElementById('record')"].filter((needle) => js.includes(needle)),
+        };
+    }""")
+    check(not src['css'], f'[{tag}] 지운 요소의 CSS 규칙 없음', str(src['css']))
+    check(not src['js'], f'[{tag}] 지운 요소를 찾는 JS 참조 없음', str(src['js']))
+
+    # 전적 저장 자체는 그대로: 한 판을 끝내면 화면 없이도 localStorage에 쌓인다
+    before = page.evaluate("JSON.parse(localStorage.getItem('kkeutmalbot.record.v1') || '{}')")
+    page.evaluate("window.__KKEUTMALBOT.startGame({level:2, first:'me', timeLimit:1})")
+    try:
+        page.wait_for_function("() => !document.getElementById('ov-result').hidden", timeout=9000)
+    except Exception:
+        pass
+    after = page.evaluate("JSON.parse(localStorage.getItem('kkeutmalbot.record.v1') || '{}')")
+    plays_before = before.get('2', {}).get('plays', 0)
+    check(after.get('2', {}).get('plays', 0) == plays_before + 1,
+          f'[{tag}] 전적은 화면 없이도 저장',
+          f"Lv.2 {plays_before} → {after.get('2', {}).get('plays', 0)}판")
+    page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
+    page.wait_for_timeout(200)
+    check(page.evaluate("!document.getElementById('record') && document.querySelectorAll('#scr-setup .record').length === 0"),
+          f'[{tag}] 대국 뒤에도 설정 화면에 전적 블록 없음')
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 화면 가로 오버플로 0', str(overflow(page)))
+
+
 def run_local(base_url, browser):
     print(f'\n=== LOCAL {base_url} ===')
     for vp_name in VIEWPORTS:
@@ -1898,6 +1986,7 @@ def run_local(base_url, browser):
         scenario_easy_game(page, 'local-' + vp_name)
         scenario_no_custom(page, 'local-' + vp_name)
         scenario_no_hint(page, 'local-' + vp_name)
+        scenario_setup_clean(page, 'local-' + vp_name)
         scenario_result_level(page, 'local-' + vp_name)
         scenario_battle_log(page, 'local-' + vp_name)
         scenario_mission(page, 'local-' + vp_name, REPORT_DIR)
@@ -1966,6 +2055,7 @@ def run_live(url, browser):
         scenario_easy_game(page, 'live-' + vp_name)
         scenario_no_custom(page, 'live-' + vp_name)
         scenario_no_hint(page, 'live-' + vp_name)
+        scenario_setup_clean(page, 'live-' + vp_name)
         scenario_result_level(page, 'live-' + vp_name)
         scenario_battle_log(page, 'live-' + vp_name)
         scenario_mission(page, 'live-' + vp_name, REPORT_DIR)

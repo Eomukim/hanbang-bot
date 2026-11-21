@@ -90,12 +90,6 @@ export function recordKey(level, hardcore = false) {
   return hardcore ? `${level}:hc` : String(level);
 }
 
-/** 전적 행이 하드코어 대국인지, 어느 난이도인지 읽는다. */
-export function parseRecordKey(key) {
-  const hardcore = key.endsWith(':hc');
-  return { level: Number(hardcore ? key.slice(0, -3) : key), hardcore };
-}
-
 /** 전적: { [level | '3:hc']: { wins, losses, bestCombo, bestScore, plays } } */
 export function loadRecord() {
   return readJSON(KEY_RECORD, {});

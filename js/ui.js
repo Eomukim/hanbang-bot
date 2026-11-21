@@ -2,7 +2,7 @@
 
 import { Engine } from './engine.js';
 import { LEVELS, levelInfo, botLine } from './bot.js';
-import { saveSettings, recordResult, parseRecordKey } from './store.js';
+import { saveSettings, recordResult } from './store.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -25,6 +25,7 @@ export class App {
   constructor({ dict, settings, record, sfx }) {
     this.dict = dict;
     this.settings = settings;
+    // 전적은 대국이 끝날 때마다 store.js 로 쌓기만 한다(설정 화면에는 표시하지 않는다).
     this.record = record;
     this.sfx = sfx;
     this.engine = null;
@@ -45,7 +46,7 @@ export class App {
       'scr-loading', 'scr-setup', 'scr-game', 'load-fill', 'load-meta', 'load-error',
       'levels', 'lv-desc', 'time-opts', 'first-opts', 'time-locked', 'first-locked',
       'btn-hardcore', 'hardcore-desc',
-      'btn-sound', 'sound-icon', 'sound-value', 'btn-start', 'record', 'dict-count',
+      'btn-sound', 'sound-icon', 'sound-value', 'btn-start',
       'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit', 'game-hardcore',
       'arena', 'stage', 'stage-hint', 'bot-bubble', 'chain',
       'need-char', 'need-alt', 'cand-count', 'chip-mission', 'chip-combo',
@@ -61,8 +62,6 @@ export class App {
     this.renderSegments();
     this.renderHardcore();
     this.renderSoundButton();
-    this.renderRecord();
-    this.el['dict-count'].textContent = this.dict.size.toLocaleString('ko-KR');
 
     this.bindEvents();
     this.show('setup');
@@ -77,7 +76,6 @@ export class App {
       this.el[key].hidden = key !== `scr-${name}`;
     }
     if (name !== 'game') document.body.dataset.hardcore = '0';
-    if (name === 'setup') this.renderRecord();
   }
 
   setProgress(ratio, words) {
@@ -187,27 +185,6 @@ export class App {
     btn.setAttribute('aria-label', `효과음 ${on ? '켬' : '끔'}`);
     this.el['sound-icon'].textContent = on ? '🔊' : '🔇';
     this.el['sound-value'].textContent = on ? '켬' : '끔';
-  }
-
-  renderRecord() {
-    // 예전 4단계 기준으로 저장된 전적(localStorage `kkeutmalbot.record.v1`)도 그대로 읽는다.
-    // 하드코어 전적은 같은 키 안의 `3:hc` 처럼 구분된 행으로 따로 쌓인다.
-    const known = new Set(LEVELS.map((l) => l.id));
-    const rows = Object.entries(this.record)
-      .map(([key, r]) => ({ key, r, ...parseRecordKey(key) }))
-      .filter(({ level, r }) => r && r.plays && known.has(level))
-      .sort((a, b) => (Number(a.hardcore) - Number(b.hardcore)) || (b.level - a.level));
-    if (!rows.length) {
-      this.el.record.innerHTML = '<span>아직 전적이 없어요. 첫 대전을 시작해 보세요.</span>';
-      return;
-    }
-    this.el.record.innerHTML = rows.map(({ level, hardcore, r }) => {
-      const name = levelInfo(level).name;
-      const head = hardcore
-        ? `<span class="rec-hc">🔥 하드코어 Lv.${level} ${name}</span>`
-        : `Lv.${level} ${name}`;
-      return `<span>${head} · <b>${r.wins}</b>승 ${r.losses}패 · 최고 <b>${r.bestScore}</b>점</span>`;
-    }).join('<br>');
   }
 
   persist() {
@@ -462,7 +439,6 @@ export class App {
       bestCombo: payload.bestCombo,
       score: payload.scoreMe,
     }, { hardcore: Boolean(payload.hardcore ?? this.engine.hardcore) });
-    this.renderRecord();
 
     if (payload.win) this.sfx.play('win');
     else this.sfx.play('lose');
