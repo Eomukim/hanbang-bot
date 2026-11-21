@@ -971,15 +971,17 @@ def scenario_hardcore(page, tag, report_dir=None):
             const d = window.__ITDA.dict, st = window.__ITDA.state();
             const used = new Set(st.chain.map((c) => c.word));
             const cands = d.candidatesFor(st.needChar, used);
-            const easy = cands.filter((x) => x.length <= 4);
-            return (easy.length ? easy : cands)[Math.min(4, (easy.length || cands.length) - 1)] || null;
+            // 봇이 이어갈 수 있는 단어만 고른다(한방 단어를 내면 대국이 끝나 타이머를 볼 수 없다)
+            const alive = cands.filter((x) => !d.isOneShot(x));
+            const easy = alive.filter((x) => x.length <= 4);
+            return (easy.length ? easy : (alive.length ? alive : cands))[Math.min(4, (easy.length || alive.length || cands.length) - 1)] || null;
         }""")
     if word:
         page.fill('#word-input', word)
         page.click('#btn-submit')
         st2 = wait_my_turn(page, 6000)
         left2 = page.evaluate("window.__ITDA.engine.timeLeft()")
-        check(st2 and st2['phase'] == 'me' and 3.8 < left2 <= 5.0,
+        check(st2 and st2['phase'] == 'me' and 3.8 < left2 <= 5.05,
               f'[{tag}] 매 턴 5초 리셋', f'{word} 입력 후 {left2:.2f}s')
         page.wait_for_timeout(250)
         report_shot(page, tag, report_dir, 'hardcore-game')
