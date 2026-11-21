@@ -9,7 +9,7 @@ is the Kkuko Utils open DB word list collected with `build/collect_kkuko.py`
 (CC BY-NC-SA 4.0, attribution in NOTICE.md). Both are merged, de-duplicated and
 re-indexed together.
 
-Outputs (into ./data):
+Out of ./data:
     words.txt   one word per line: "word" or "word<TAB>flag" when flag != 0.
                 Sorted by code point, so every starting syllable occupies one
                 contiguous range (the browser derives the start index from this).
@@ -19,6 +19,10 @@ Outputs (into ./data):
                 syllable the win/lose status and depth of the perfect-play
                 retrograde analysis, and the one-shot words that start there.
                 The Lv.5 bot reads it at runtime.
+                And the everyday-word bands (easy): 1~3 = 국립국어원 학습용
+                어휘 A/B/C 단계 표준어, 5~7 = 같은 목록의 외래어. Lv.1·Lv.2 가
+                낯선 방언·옛말·어인정 대신 일상 단어를 고를 때 쓴다.
+                (목록 원본은 build/easy_words.txt, 만드는 법은 build/build_easy.py)
 """
 import json
 import os
@@ -42,6 +46,13 @@ MIN_LEN = 2
 
 # 브랜드 이름과 겹치는 표제어는 사전에서 뺀다 (게임 화면에 옛 이름이 뜨지 않도록).
 BLOCKED_WORDS = {"끄투"}
+
+# 일상 어휘 목록(build/build_easy.py 가 만드는 파일). 없으면 easy 정보 없이 빌드한다.
+EASY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "easy_words.txt")
+# 이 비트가 붙은 표제어는 일상어로 치지 않는다: 어인정 2 · 방언 8 · 옛말 16 · 문화어 32
+EASY_EXCLUDE = FLAG_RECOGNIZED | FLAG_SATURI | FLAG_OLD | FLAG_MUNHWA
+# 외래어(flag 1) 일상어는 단계에 4를 더해 뒤 순위로 둔다 (예: 컴퓨터·커피)
+EASY_LOANWORD_SHIFT = 4
 
 # Hangul syllable arithmetic
 HANGUL_BASE = 0xAC00
@@ -201,6 +212,50 @@ def build_graph(ordered, starts):
     }
 
 
+def read_easy(path):
+    """일상 어휘 목록: 한 줄에 '단어<TAB>단계'. '#' 로 시작하는 줄은 설명이다."""
+    rows = {}
+    if not os.path.exists(path):
+        print("easy list    : (없음) %s" % path)
+        return rows
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n").rstrip("\r")
+            if not line or line.startswith("#"):
+                continue
+            word, _, tier = line.partition("\t")
+            try:
+                tier = int(tier or 0)
+            except ValueError:
+                continue
+            if word and tier:
+                rows[word] = tier
+    print("easy list    :", len(rows), "words from", path)
+    return rows
+
+
+def easy_bands(words, easy):
+    """사전에 실제로 남은 단어만 골라 단계별로 묶는다.
+
+    방언·옛말·문화어·어인정 표제어는 뺀다(일상어 판정과 원본 flag 가 어긋나는 경우).
+    표준어는 적힌 단계 그대로, 외래어는 +4 단계로 뒤에 둔다.
+    """
+    bands = {}
+    dropped = 0
+    for word, tier in easy.items():
+        flag = words.get(word)
+        if flag is None:
+            continue
+        if flag & EASY_EXCLUDE:
+            dropped += 1
+            continue
+        band = tier + (EASY_LOANWORD_SHIFT if flag & FLAG_LOANWORD else 0)
+        bands.setdefault(band, []).append(word)
+    for band in bands:
+        bands[band].sort()
+    return bands, dropped
+
+
 def read_open_db(path):
     """오픈DB 단어 목록. 한 줄에 단어 하나, 뒤에 탭+flag가 붙어도 읽는다."""
     rows = 0
@@ -285,6 +340,9 @@ def main():
     one_shot = [w for w in ordered if group_count(w[-1]) == 0]
     induced = [w for w in ordered if 0 < group_count(w[-1]) <= 5]
     graph = build_graph(ordered, starts)
+    # 일상 어휘: 사전에 남은 단어만, 단계별로 공백으로 이어 붙여 저장한다(전송량 절약).
+    easy = read_easy(EASY_PATH)
+    bands, easy_dropped = easy_bands(words, easy)
 
     words_path = os.path.join(out_dir, "words.txt")
     with open(words_path, "w", encoding="utf-8") as f:
@@ -318,6 +376,12 @@ def main():
         "inducedCount": len(induced),
         "inducedSamples": induced[:40],
         "flagCounts": flag_counts,
+        "easy": {
+            "version": 1,
+            "source": "국립국어원 한국어 학습용 어휘 목록 + TOPIK 어휘 목록 — 출처 표기는 NOTICE.md",
+            "total": sum(len(v) for v in bands.values()),
+            "bands": {str(k): " ".join(v) for k, v in sorted(bands.items())},
+        },
         "graph": graph,
     }
     with open(os.path.join(out_dir, "stats.json"), "w", encoding="utf-8") as f:
@@ -331,6 +395,8 @@ def main():
     print("start syll.   :", len(starts))
     print("one-shot words:", len(one_shot), one_shot[:8])
     print("induced words :", len(induced), induced[:8])
+    print("easy words    :", sum(len(v) for v in bands.values()),
+          {k: len(v) for k, v in sorted(bands.items())}, "(dropped %d)" % easy_dropped)
     print("graph nodes   :", graph['nodes'], graph['statusCounts'],
           "maxDepth", graph['maxWinDepth'], graph['maxLoseDepth'])
     print("words.txt     : %.1f KB" % (size / 1024.0))

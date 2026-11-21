@@ -10,6 +10,8 @@
  - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
  - 결과 화면 배틀 내역: 버튼 열기/닫기 · 카드 안 세로 스크롤 · 턴·나/봇·단어·점수·태그 · 0수 종료(포기·시간 초과) · 아주 긴 단어 줄바꿈 · 모바일 오버플로
  - 5단계 난이도 카드(데스크톱/모바일 배치)와 4단계 기준 localStorage 호환
+- Lv.1·Lv.2 일상 어휘 선택(흔한 글자 → 쉬운 일상 단어, 방언·옛말·문화어·어인정 제외, Lv.1 한방 금지)과
+  Lv.3~5 의 사전 전체 사용 유지, 실제 Lv.1 대전에서도 일상 단어로 답하는지
  - Lv.5 지옥: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 검증 · 압박/미션·장문 · 응답 시간
  - Lv.4·Lv.5 단어 선택 다양화: 같은 글자·같은 자리에서도 단어가 섞이는지(강도 유지)
  - 미션 규칙(14종 후보 · 미달성 시 유지 · 중첩 보너스 · 성공 시 다음 글자)
@@ -493,6 +495,173 @@ def scenario_new_words(page, tag):
               f'[{tag}] 오픈DB 신규 단어 입력 인정', sample)
         page.evaluate("window.__KKEUTMALBOT.app.hideResult()")
     page.evaluate("window.__KKEUTMALBOT.app.engine && window.__KKEUTMALBOT.app.engine.destroy()")
+
+
+# ── Lv.1·Lv.2 일상 어휘 선택 ─────────────────────────────────────
+# 흔한 글자에서 봇이 실제로 고르는 단어를 여러 번 뽑아, 그 단어가
+#  · 사전에 있는지 · 한방 단어가 아닌지 · 방언/옛말/문화어/어인정이 아닌지 · 일상 어휘인지
+# 를 한 번에 본다. Lv.3~5 는 기존대로 사전 전체를 쓰는지도 같이 확인한다.
+EASY_CHARS = ['가', '사', '바', '나', '하']
+EASY_PROPS = """
+({chars, n}) => {
+  const dict = window.__KKEUTMALBOT.dict, Bot = window.__KKEUTMALBOT.Bot;
+  const BAD = 2 | 8 | 16 | 32;   // 어인정 · 방언 · 옛말 · 문화어
+  const endN = (w) => dict.countFrom(w[w.length - 1]);
+  const record = (mv) => ({
+    word: mv ? mv.word : null,
+    tier: mv ? dict.easyTier(mv.word) : 0,
+    len: mv ? mv.word.length : 0,
+    end: mv ? endN(mv.word) : 0,
+    flag: mv ? dict.flagOf(mv.word) : -1,
+    oneShot: mv ? dict.isOneShot(mv.word) : false,
+    inDict: mv ? dict.has(mv.word) : false,
+  });
+  const out = { easyTotal: dict.easy.size, levels: {}, deep: {} };
+  for (const lv of [1, 2]) {
+    const bot = new Bot({level: lv, dict});
+    const per = {};
+    for (const ch of chars) {
+      per[ch] = { picks: [], early: [] };
+      for (let i = 0; i < n; i += 1) {
+        per[ch].picks.push(record(bot.choose({needChar: ch, used: new Set(), turn: 6, mission: null})));
+      }
+      // 초반(3턴 이하)에는 한방 단어를 두지 않는다
+      for (let i = 0; i < 5; i += 1) {
+        per[ch].early.push(record(bot.choose({needChar: ch, used: new Set(), turn: 1, mission: null})));
+      }
+    }
+    out.levels[lv] = per;
+  }
+  for (const lv of [3, 4, 5]) {
+    const bot = new Bot({level: lv, dict});
+    const all = [];
+    for (const ch of chars) {
+      for (let i = 0; i < n; i += 1) {
+        const mv = bot.choose({needChar: ch, used: new Set(), turn: 8, mission: null});
+        if (mv) all.push({ word: mv.word, tier: dict.easyTier(mv.word), flag: dict.flagOf(mv.word) });
+      }
+    }
+    out.deep[lv] = all;
+  }
+  out.bad = BAD;
+  // Lv.2 의 ‘가끔 한방’은 일상 단어로만, Lv.1 은 한방 없이
+  out.shotTest = {};
+  for (const lv of [1, 2]) {
+    const bot = new Bot({level: lv, dict});
+    const rows = [];
+    for (const ch of ['바', '기', '아', '슬']) {
+      for (let i = 0; i < 40; i += 1) {
+        const mv = bot.choose({needChar: ch, used: new Set(), turn: 8, mission: null});
+        if (!mv) continue;
+        rows.push({ ch, word: mv.word, kind: mv.kind, tier: dict.easyTier(mv.word), oneShot: dict.isOneShot(mv.word) });
+      }
+    }
+    out.shotTest[lv] = rows;
+  }
+  return out;
+}
+"""
+
+
+def scenario_easy_words(page, tag):
+    """Lv.1·Lv.2 가 흔한 글자에서 일상 단어를 고르는지, Lv.3~5 는 그대로인지."""
+    props = page.evaluate(EASY_PROPS, {'chars': EASY_CHARS, 'n': 20})
+    bad = props['bad']
+    check(props['easyTotal'] >= 5000, f'[{tag}] 일상 어휘 목록 로드', f"{props['easyTotal']}단어")
+
+    for lv, title in ((1, 'Lv.1'), (2, 'Lv.2')):
+        per = props['levels'][str(lv)]
+        rows = []
+        for ch in EASY_CHARS:
+            picks = [p for p in per[ch]['picks']]
+            words = [p['word'] for p in picks]
+            rows.append((ch, words))
+            plain_ok = all(p['inDict'] and not (p['flag'] & bad) for p in picks)
+            check(plain_ok, f'[{tag}] {title} "{ch}" 표준어·사전 단어', ' '.join(w or '·' for w in words))
+            if lv == 1:
+                ok = all(p['tier'] > 0 and p['len'] <= 4 and not p['oneShot'] and p['end'] > 0 for p in picks)
+                check(ok, f'[{tag}] {title} "{ch}" 일상 단어·한방 금지',
+                      ' '.join(f"{p['word']}({p['tier']})" for p in picks[:10]))
+                check(len(set(w for w in words if w)) >= 4, f'[{tag}] {title} "{ch}" 단어 다양성',
+                      f'{len(set(words))}종')
+            else:
+                easy = sum(1 for p in picks if p['tier'] > 0)
+                ok = easy >= len(picks) * 0.8 and all(not p['oneShot'] or p['len'] <= 3 for p in picks)
+                check(ok, f'[{tag}] {title} "{ch}" 일상 단어 위주({easy}/{len(picks)})',
+                      ' '.join(f"{p['word']}({p['tier']})" for p in picks[:10]))
+            early = per[ch]['early']
+            check(all(not p['oneShot'] for p in early),
+                  f'[{tag}] {title} "{ch}" 초반 한방 금지', ' '.join(p['word'] or '·' for p in early))
+
+        # 사람이 읽어 볼 표본: 글자별 20수
+        print(f'  -- {tag} {title} 표본 --')
+        for ch, words in rows:
+            print(f'     {ch}: ' + ' '.join(w or '·' for w in words))
+
+    # Lv.2 의 ‘가끔 한방’은 일상 단어로만, Lv.1 은 한방 없이
+    shot2 = props['shotTest']['2']
+    ones = [r for r in shot2 if r['kind'] == 'oneshot']
+    check(bool(ones) and all(r['tier'] > 0 for r in ones),
+          f'[{tag}] Lv.2 가끔 한방은 일상 단어',
+          f"{len(ones)}/{len(shot2)}수 한방 · " + ' '.join(f"{r['word']}({r['tier']})" for r in ones[:8]))
+    shot1 = props['shotTest']['1']
+    check(not any(r['oneShot'] or r['kind'] == 'oneshot' for r in shot1),
+          f'[{tag}] Lv.1 한방 0수', f"{len(shot1)}수 표본")
+
+    # Lv.3~5 는 사전 전체(796,750단어)를 그대로 쓴다 — 일상 목록 밖 단어도 나온다
+    for lv in (3, 4, 5):
+        deep = props['deep'][str(lv)]
+        outside = [d for d in deep if not d['tier']]
+        check(len(deep) >= 40 and len(outside) >= len(deep) * 0.5,
+              f'[{tag}] Lv.{lv} 사전 전체 사용 유지',
+              f'{len(deep)}수 중 일상 목록 밖 {len(outside)}수 · ' + ' '.join(d['word'] for d in deep[:5]))
+
+
+def scenario_easy_game(page, tag):
+    """Lv.1 실제 대전: 사람이 일상 단어로만 이어 가면 봇도 일상 단어로만 답하는지."""
+    page.evaluate("window.__KKEUTMALBOT.app.engine && window.__KKEUTMALBOT.app.engine.destroy()")
+    page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
+    page.evaluate("window.__KKEUTMALBOT.startGame({level:1, first:'me', startChar:'가', timeLimit:20})")
+    page.wait_for_timeout(400)
+    played = []
+    for _ in range(6):
+        st = wait_my_turn(page, 6000)
+        if not st or st['phase'] != 'me':
+            break
+        mine = page.evaluate("""() => {
+            const d = window.__KKEUTMALBOT.dict, st = window.__KKEUTMALBOT.state();
+            const used = new Set(st.chain.map((c) => c.word));
+            const cands = d.candidatesFor(st.needChar, used).filter((w) => d.easyTier(w) && d.countFrom(w[w.length - 1]) > 0);
+            const flow = cands.filter((w) => d.easyCountFrom(w[w.length - 1]) >= 3);
+            const pool = flow.length ? flow : cands;
+            return pool[0] || null;
+        }""")
+        if not mine:
+            break
+        played.append(mine)
+        play_word(page, mine, wait=2800)
+    st = state(page)
+    bot_words = [c['word'] for c in st['chain'] if c['who'] == 'bot']
+    info = page.evaluate("""(ws) => ws.map((w) => ({
+        word: w,
+        tier: window.__KKEUTMALBOT.dict.easyTier(w),
+        flag: window.__KKEUTMALBOT.dict.flagOf(w),
+        oneShot: window.__KKEUTMALBOT.dict.isOneShot(w),
+        len: w.length,
+    }))""", bot_words)
+    check(len(played) >= 3 and len(info) >= 2, f'[{tag}] Lv.1 일상 단어 대전 진행',
+          f"나 {len(played)}수 / 봇 {len(info)}수 | {' '.join(played)}")
+    if info:
+        check(all(not i['oneShot'] for i in info), f'[{tag}] Lv.1 대전 중 한방 금지',
+              ' '.join(i['word'] for i in info))
+        check(all(not (i['flag'] & (2 | 8 | 16 | 32)) for i in info), f'[{tag}] Lv.1 대전 중 표준어',
+              ' '.join(i['word'] for i in info))
+        easy = sum(1 for i in info if i['tier'] > 0)
+        check(easy >= len(info) * 0.75, f'[{tag}] Lv.1 대전 중 일상 단어({easy}/{len(info)})',
+              ' '.join(f"{i['word']}({i['tier']})" for i in info))
+    page.evaluate("window.__KKEUTMALBOT.app.engine && window.__KKEUTMALBOT.app.engine.destroy()")
+    page.evaluate("window.__KKEUTMALBOT.app.hideResult(); window.__KKEUTMALBOT.app.show('setup')")
+    page.wait_for_timeout(150)
 
 
 def scenario_bot_levels(page, tag):
@@ -1725,6 +1894,8 @@ def run_local(base_url, browser):
         scenario_twoeum(page, 'local-' + vp_name)
         scenario_new_words(page, 'local-' + vp_name)
         scenario_bot_levels(page, 'local-' + vp_name)
+        scenario_easy_words(page, 'local-' + vp_name)
+        scenario_easy_game(page, 'local-' + vp_name)
         scenario_no_custom(page, 'local-' + vp_name)
         scenario_no_hint(page, 'local-' + vp_name)
         scenario_result_level(page, 'local-' + vp_name)
@@ -1791,6 +1962,8 @@ def run_live(url, browser):
         scenario_twoeum(page, 'live-' + vp_name)
         scenario_new_words(page, 'live-' + vp_name)
         scenario_bot_levels(page, 'live-' + vp_name)
+        scenario_easy_words(page, 'live-' + vp_name)
+        scenario_easy_game(page, 'live-' + vp_name)
         scenario_no_custom(page, 'live-' + vp_name)
         scenario_no_hint(page, 'live-' + vp_name)
         scenario_result_level(page, 'live-' + vp_name)

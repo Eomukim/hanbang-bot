@@ -16,7 +16,7 @@ export const LEVELS = [
     name: '쉬움',
     face: '🙂',
     label: 'Lv.1 순한 봇',
-    desc: '한방 단어는 절대 안 씀 · 쉬운 2~3글자',
+    desc: '한방 금지 · 일상 단어 2~3글자',
     botName: '끝말봇 주니어',
   },
   {
@@ -24,7 +24,7 @@ export const LEVELS = [
     name: '보통',
     face: '😐',
     label: 'Lv.2 보통',
-    desc: '가끔 긴 단어 · 초반엔 한방 금지',
+    desc: '일상 단어 위주 · 가끔 긴 단어',
     botName: '끝말봇 루키',
   },
   {
@@ -129,6 +129,26 @@ const pick = (arr, rng) => arr[Math.floor(rng() * arr.length)];
 const delayBetween = (a, b, rng) => a + rng() * (b - a);
 
 const lastOf = (w) => w.charAt(w.length - 1);
+
+/** 어인정 2 · 방언 8 · 옛말 16 · 문화어 32 — 일상어로 치지 않는 표제어 비트 */
+const NOT_EVERYDAY = 2 | 8 | 16 | 32;
+
+/**
+ * 일상어 점수(낮을수록 쉬움). Lv.1·Lv.2 가 같은 기준을 쓴다.
+ *  - 표준어 단계(1~3) → 외래어 단계(5~7)
+ *  - 끝 글자에 일상 단어가 이어지는 쪽(판이 쉬운 쪽으로 계속 흐른다)
+ *  - 후속 단어가 많은 글자(300 / 100 / 40 이상)
+ *  - 2~3글자 우선
+ */
+function easyScore(dict, word) {
+  const tier = dict.easyTier(word);
+  const end = lastOf(word);
+  const n = dict.countFrom(end);
+  const bucket = n >= 300 ? 0 : n >= 100 ? 1 : n >= 40 ? 2 : 3;
+  const tierRank = tier <= 3 ? (tier - 1) * 0.5 : 4 + (tier - 5) * 0.5;
+  const flow = dict.easyCountFrom(end) >= 3 ? 0 : 4;
+  return tierRank + flow + bucket + (word.length <= 3 ? 0 : 1);
+}
 
 const pressureTier = (n) => (n <= 1 ? 0 : n <= 3 ? 1 : n <= 10 ? 2 : n <= 40 ? 3 : n <= 200 ? 4 : 5);
 
@@ -421,15 +441,26 @@ export class Bot {
     }
 
     if (this.level === 2) {
+      // 초반(3턴 이하)에는 한방을 두지 않는다. 이후에도 10% 정도만, 그것도 짧고 일상적인 단어로.
       if (turn > 3 && oneShot.length && rng() < 0.1) {
-        return { word: pick(oneShot, rng), delay: delayBetween(1000, 1700, rng), kind: 'oneshot' };
+        const shots = this.calmShots(oneShot);
+        if (shots.length) return { word: pick(shots, rng), delay: delayBetween(1000, 1700, rng), kind: 'oneshot' };
       }
-      const longWords = cands.filter((w) => w.length >= 4 && endCount(w) > 5);
-      if (longWords.length && rng() < 0.22) {
-        return { word: pick(longWords, rng), delay: delayBetween(1000, 1800, rng), kind: 'long' };
+      // 가끔 장문(4~6글자): 낯선 표제어 대신 일상 단어를 먼저 본다.
+      const longPool = this.plain(cands.filter((w) => w.length >= 4 && w.length <= 6 && endCount(w) > 5));
+      const longWords = longPool.filter((w) => dict.easyTier(w));
+      const longs = longWords.length ? longWords : longPool;
+      if (longs.length && rng() < 0.22) {
+        return { word: pick(longs, rng), delay: delayBetween(1000, 1800, rng), kind: 'long' };
       }
-      const easy = cands.filter((w) => w.length <= 3 && endCount(w) >= 25);
-      const pool = easy.length ? easy : cands.filter((w) => endCount(w) > 0);
+      // 본 수: 일상적인 2~4글자, 후속 단어가 남아 있는 쪽
+      const everyday = cands.filter((w) => dict.easyTier(w) && w.length <= 4 && endCount(w) >= 25);
+      if (everyday.length) return this.everydayMove(everyday, rng, 'normal', 1000, 1800);
+      const everydayThin = cands.filter((w) => dict.easyTier(w) && w.length <= 4 && endCount(w) > 0);
+      if (everydayThin.length) return this.everydayMove(everydayThin, rng, 'normal', 1000, 1800);
+      const plain = this.plain(cands.filter((w) => w.length <= 4 && endCount(w) >= 25));
+      const thin = plain.length ? plain : this.plain(cands.filter((w) => w.length <= 4 && endCount(w) > 0));
+      const pool = thin.length ? thin : this.plain(cands.filter((w) => endCount(w) > 0));
       return {
         word: pick(pool.length ? pool : cands, rng),
         delay: delayBetween(1000, 1800, rng),
@@ -437,25 +468,64 @@ export class Bot {
       };
     }
 
-    // 레벨 1: 한방 금지, 후속 단어가 많은 2~3글자
-    const safe = cands.filter((w) => {
+    // 레벨 1: 한방 금지 · 일상적인 쉬운 2~3글자 우선.
+    //  일상 어휘 풀이 비어 있을 때만 표준어 일반 풀 → 일반 비한방 풀로 내려간다.
+    const everyday = cands.filter((w) => dict.easyTier(w) && w.length <= 3 && endCount(w) > 0);
+    if (everyday.length) return this.everydayMove(everyday, rng, 'normal', 1500, 2500);
+
+    const everydayAny = cands.filter((w) => dict.easyTier(w) && endCount(w) > 0);
+    if (everydayAny.length) return this.everydayMove(everydayAny, rng, 'normal', 1500, 2500);
+
+    const plain = this.plain(cands.filter((w) => endCount(w) > 0));
+    const safe = plain.filter((w) => {
       const n = endCount(w);
       return n >= 40 && w.length <= 3;
     });
     if (safe.length) return { word: pick(safe, rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
 
-    const safer = cands.filter((w) => {
+    const safer = plain.filter((w) => {
       const n = endCount(w);
       return n >= 15 && w.length <= 4;
     });
     if (safer.length) return { word: pick(safer, rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
 
+    if (plain.length) return { word: pick(plain, rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
+
     const notDead = cands.filter((w) => endCount(w) > 0);
-    return {
-      word: pick(notDead.length ? notDead : cands, rng),
-      delay: delayBetween(1500, 2500, rng),
-      kind: 'normal',
-    };
+    if (notDead.length) return { word: pick(notDead, rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
+
+    // 남은 후보가 전부 한방 단어뿐 → 순한 봇은 그런 수를 두지 않는다(막힌 것으로 처리).
+    return null;
+  }
+
+  /** 방언·옛말·문화어·어인정 표제어를 뺀 표준어 후보만 남긴다. */
+  plain(list) {
+    const dict = this.dict;
+    return list.filter((w) => (dict.flagOf(w) & NOT_EVERYDAY) === 0);
+  }
+
+  /**
+   * Lv.2 가 가끔 쓸 한방 단어: 일상 목록에 있는 짧은(2~3글자) 단어만.
+   *  한방 단어는 태생이 ‘끝 글자에 후속 단어가 없는’ 낯선 표제어라(“가녘”·“나노뿝”),
+   *  일상 목록에 있는 것만 쓴다. 없으면 한방을 두지 않고 보통 수로 넘긴다.
+   */
+  calmShots(list) {
+    const dict = this.dict;
+    return list.filter((w) => w.length <= 3 && dict.easyTier(w));
+  }
+
+  /**
+   * 일상 어휘 후보 중 가장 쉬운 무리에서 하나를 고른다.
+   * 1등 점수 무리가 너무 좁으면(2개 미만) 한 단계 넓혀 매 판 단어가 달라지게 한다.
+   */
+  everydayMove(pool, rng, kind = 'normal', minDelay = 1500, maxDelay = 2500) {
+    const dict = this.dict;
+    const scored = pool.map((w) => ({ w, s: easyScore(dict, w) }));
+    let best = Infinity;
+    for (const c of scored) if (c.s < best) best = c.s;
+    let band = scored.filter((c) => c.s <= best);
+    if (band.length < 2) band = scored.filter((c) => c.s <= best + 1);
+    return { word: pick(band, rng).w, delay: delayBetween(minDelay, maxDelay, rng), kind };
   }
 
   /* ── Lv.5 지옥 ──────────────────────────────────────────── */

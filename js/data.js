@@ -27,6 +27,10 @@ export class Dictionary {
     this.flags = new Uint8Array(0);
     /** @type {Map<string, [number, number]>} 시작 음절 → [시작, 끝) */
     this.ranges = new Map();
+    /** @type {Map<string, number>} 일상 어휘 → 단계(1~3 표준어, 5~7 외래어). 없으면 0 */
+    this.easy = new Map();
+    /** @type {Map<string, number>} 시작 음절 → 그 글자로 시작하는 일상 어휘 수 */
+    this.easyStarts = new Map();
     this.stats = null;
     /** 빌드 타임 음절 대전 그래프: 승리·패배 노드의 깊이와 한방 단어 */
     this.graph = { win: new Map(), lose: new Map(), shots: new Map(), statusCounts: null };
@@ -45,7 +49,10 @@ export class Dictionary {
     } catch {
       /* 통계 파일이 없어도 사전은 쓸 수 있다 */
     }
-    if (dict.stats) dict.setGraph(dict.stats.graph);
+    if (dict.stats) {
+      dict.setGraph(dict.stats.graph);
+      dict.setEasy(dict.stats.easy);
+    }
 
     const res = await fetch(wordsUrl, { cache: 'no-cache' });
     if (!res.ok) throw new Error(`단어 사전을 불러오지 못했습니다 (HTTP ${res.status})`);
@@ -124,7 +131,47 @@ export class Dictionary {
     return dict;
   }
 
-  /* ── 사전 조회 ─────────────────────────────────────────── */
+  /* ── 일상 어휘 ───────────────────────────────────────────── */
+
+  /**
+   * 빌드 타임에 만든 일상 어휘 단계를 붙인다.
+   * stats.easy.bands 는 {단계: "단어 단어 …"} 형태다(전송량을 줄이려고 공백으로 이어 붙였다).
+   */
+  setEasy(easy) {
+    const bands = easy && easy.bands;
+    if (!bands) return;
+    const map = new Map();
+    for (const [band, list] of Object.entries(bands)) {
+      const tier = Number(band) || 0;
+      if (!tier || typeof list !== 'string') continue;
+      for (const word of list.split(' ')) {
+        if (!word) continue;
+        const prev = map.get(word);
+        if (!prev || tier < prev) map.set(word, tier);
+      }
+    }
+    this.easy = map;
+    const counts = new Map();
+    for (const word of map.keys()) {
+      const ch = word.charAt(0);
+      counts.set(ch, (counts.get(ch) || 0) + 1);
+    }
+    this.easyStarts = counts;
+  }
+
+  /** 일상 어휘 단계(1~3 표준어 · 5~7 외래어). 목록에 없으면 0. */
+  easyTier(word) {
+    return this.easy.get(word) || 0;
+  }
+
+  /** 이 글자로 이어갈 수 있는 일상 어휘 수(두음법칙 변환 글자까지 합산). */
+  easyCountFrom(ch) {
+    let n = 0;
+    for (const start of allowedStarts(ch)) n += this.easyStarts.get(start) || 0;
+    return n;
+  }
+
+  /* ── 사전 조회 ───────────────────────────────────────────── */
 
   /** 빌드 타임에 계산한 음절 대전 그래프를 붙인다. */
   setGraph(graph) {
