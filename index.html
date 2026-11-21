@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>끄투 킬러 — 4단계 한방 끝말잇기</title>
+<meta name="description" content="366,095 단어 사전과 두음법칙, 4단계 한방 봇이 기다리는 1:1 끝말잇기.">
+<meta name="theme-color" content="#08090f">
+<meta property="og:title" content="끄투 킬러 — 4단계 한방 끝말잇기">
+<meta property="og:description" content="한방 단어를 꽂는 지옥 봇과의 1:1 끝말잇기. 366,095 단어 · 두음법칙 · 내 어인정.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e1a'/%3E%3Ctext x='32' y='45' font-size='34' font-family='sans-serif' font-weight='800' text-anchor='middle' fill='%235eead4'%3E%EA%BE%B8%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="bg" aria-hidden="true">
+  <div class="bg-glow bg-glow-a"></div>
+  <div class="bg-glow bg-glow-b"></div>
+  <div class="bg-grid"></div>
+</div>
+
+<main id="app">
+
+  <!-- ────────────── 로딩 ────────────── -->
+  <section class="screen screen-loading" id="scr-loading" data-screen="loading">
+    <div class="load-inner">
+      <div class="logo-mark">끄투<span>킬러</span></div>
+      <p class="load-title">사전을 펼치는 중…</p>
+      <div class="load-bar"><i id="load-fill"></i></div>
+      <p class="load-meta" id="load-meta">0 단어</p>
+      <p class="load-error" id="load-error" hidden></p>
+    </div>
+  </section>
+
+  <!-- ────────────── 설정 ────────────── -->
+  <section class="screen screen-setup" id="scr-setup" data-screen="setup" hidden>
+    <div class="setup">
+      <header class="brand">
+        <div class="logo-mark">끄투<span>킬러</span></div>
+        <p class="tagline">한방 단어를 꽂는 봇과의 1:1 끝말잇기</p>
+      </header>
+
+      <div class="field">
+        <div class="field-head"><span>난이도</span><em id="lv-desc">보통</em></div>
+        <div class="levels" id="levels" role="radiogroup" aria-label="난이도"></div>
+      </div>
+
+      <div class="field field-split">
+        <div>
+          <div class="field-head"><span>제한 시간</span></div>
+          <div class="segmented" id="time-opts" role="radiogroup" aria-label="제한 시간"></div>
+        </div>
+        <div>
+          <div class="field-head"><span>선공</span></div>
+          <div class="segmented" id="first-opts" role="radiogroup" aria-label="선공"></div>
+        </div>
+      </div>
+
+      <div class="setup-actions">
+        <button class="btn ghost" id="btn-injeong" type="button">
+          내 어인정 <b id="injeong-count">0</b>
+        </button>
+        <button class="btn ghost" id="btn-sound" type="button" aria-pressed="true">소리 켬</button>
+      </div>
+
+      <button class="btn primary big" id="btn-start" type="button">
+        <span>대전 시작</span><kbd>Enter</kbd>
+      </button>
+      <p class="rules-line">2글자 이상 · 두음법칙 인정 · 중복 금지 · <b id="dict-count">366,095</b> 단어</p>
+
+      <ul class="tips">
+        <li><i>가</i><div><b>두음법칙 자동 인정</b><span>‘력’으로 끝나면 ‘역’으로 시작해도 됩니다</span></div></li>
+        <li><i>미</i><div><b>미션 글자 보너스</b><span>미션 글자가 든 단어는 점수 +50%</span></div></li>
+        <li><i>방</i><div><b>한방 단어 조심</b><span>후속 단어가 없는 글자로 끝내면 그대로 승리</span></div></li>
+      </ul>
+
+      <div class="record" id="record"></div>
+    </div>
+  </section>
+
+  <!-- ────────────── 대전 ────────────── -->
+  <section class="screen screen-game" id="scr-game" data-screen="game" hidden>
+    <header class="game-top">
+      <div class="bot-info">
+        <span class="bot-face" id="bot-face" aria-hidden="true">🙂</span>
+        <div class="bot-text"><b id="bot-name">킬러봇</b><small id="bot-lv">Lv.2 보통</small></div>
+      </div>
+      <div class="scoreboard" aria-label="점수">
+        <span class="side me"><i>나</i><b id="score-me">0</b></span>
+        <span class="vs">:</span>
+        <span class="side bot"><b id="score-bot">0</b><i>봇</i></span>
+      </div>
+      <button class="icon-btn" id="btn-quit" type="button" aria-label="대전 포기">✕</button>
+    </header>
+
+    <div class="arena" id="arena">
+      <div class="stage" id="stage">
+        <p class="stage-hint" id="stage-hint">첫 단어를 입력하세요</p>
+      </div>
+      <div class="bot-bubble" id="bot-bubble" hidden></div>
+      <ol class="chain" id="chain" aria-label="지난 단어"></ol>
+    </div>
+
+    <div class="turn-panel" id="turn-panel">
+      <div class="turn-head">
+        <div class="need">
+          <span class="need-label">이어야 할 글자</span>
+          <span class="need-char"><b id="need-char">가</b><em id="need-alt" hidden>두음</em></span>
+        </div>
+        <div class="turn-info">
+          <span class="mini" id="cand-count"></span>
+          <span class="mini mission" id="chip-mission" hidden></span>
+          <span class="mini combo" id="chip-combo" hidden></span>
+        </div>
+        <div class="countdown" id="countdown"><b id="time-left">15</b><span>초</span></div>
+      </div>
+      <div class="timer" aria-hidden="true"><i id="timer-fill"></i></div>
+      <form class="composer" id="composer" autocomplete="off" novalidate>
+        <button type="button" class="btn hint" id="btn-hint" aria-label="힌트">힌트</button>
+        <input id="word-input" name="word" type="text" enterkeyhint="send"
+               placeholder="단어 입력" maxlength="24" aria-label="단어 입력"
+               autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false">
+        <button type="submit" class="btn go" id="btn-submit">입력</button>
+      </form>
+    </div>
+  </section>
+</main>
+
+<!-- ────────────── 결과 ────────────── -->
+<div class="overlay" id="ov-result" hidden>
+  <div class="sheet result-sheet" role="dialog" aria-modal="true" aria-labelledby="result-title">
+    <div class="result-badge" id="result-badge">🏆</div>
+    <h2 id="result-title">승리</h2>
+    <p class="result-reason" id="result-reason"></p>
+    <div class="result-score">
+      <div><i>나</i><b id="result-me">0</b></div>
+      <span>:</span>
+      <div><i>봇</i><b id="result-bot">0</b></div>
+    </div>
+    <dl class="result-stats" id="result-stats"></dl>
+    <div class="result-actions">
+      <button class="btn primary" id="btn-again" type="button">다시 대전</button>
+      <button class="btn ghost" id="btn-tosetup" type="button">난이도 변경</button>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────── 내 어인정 ────────────── -->
+<div class="overlay" id="ov-injeong" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="injeong-title">
+    <header class="sheet-head">
+      <h2 id="injeong-title">내 어인정</h2>
+      <button class="icon-btn" id="btn-injeong-close" type="button" aria-label="닫기">✕</button>
+    </header>
+    <p class="sheet-desc">사전에 없는 단어를 직접 추가하면 <b>나와 봇 모두</b> 쓸 수 있습니다. 이 기기에 저장됩니다.</p>
+    <form class="injeong-form" id="injeong-form" autocomplete="off">
+      <input id="injeong-word" type="text" maxlength="24" placeholder="단어" aria-label="추가할 단어" spellcheck="false">
+      <input id="injeong-mean" type="text" maxlength="40" placeholder="뜻 (선택)" aria-label="뜻">
+      <button class="btn go" type="submit">추가</button>
+    </form>
+    <p class="injeong-msg" id="injeong-msg" role="status"></p>
+    <ul class="injeong-list" id="injeong-list"></ul>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: kkutu-killer
+    runtime: static
+    staticPublishPath: ./
+    headers:
+      - path: /data/*
+        name: Cache-Control
+        value: public, max-age=86400
+      - path: /js/*
+        name: Cache-Control
+        value: public, max-age=600
+      - path: /css/*
+        name: Cache-Control
+        value: public, max-age=600
