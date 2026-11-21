@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<title>끄투 킬러 — 4단계 한방 끝말잇기</title>
-<meta name="description" content="366,095 단어 사전과 두음법칙, 4단계 한방 봇이 기다리는 1:1 끝말잇기.">
+<title>끝말잇기 한방봇 — 4단계 한방 대전</title>
+<meta name="description" content="366,094 단어 사전과 두음법칙, 4단계 한방 봇이 기다리는 1:1 끝말잇기.">
 <meta name="theme-color" content="#08090f">
-<meta property="og:title" content="끄투 킬러 — 4단계 한방 끝말잇기">
-<meta property="og:description" content="한방 단어를 꽂는 지옥 봇과의 1:1 끝말잇기. 366,095 단어 · 두음법칙 · 내 어인정.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e1a'/%3E%3Ctext x='32' y='45' font-size='34' font-family='sans-serif' font-weight='800' text-anchor='middle' fill='%235eead4'%3E%EA%BE%B8%3C/text%3E%3C/svg%3E">
+<meta property="og:title" content="끝말잇기 한방봇 — 4단계 한방 대전">
+<meta property="og:description" content="한방 단어를 꽂는 4단계 봇과의 1:1 끝말잇기. 366,094 단어 · 두음법칙 · 내 단어장.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e1a'/%3E%3Ctext x='32' y='45' font-size='34' font-family='sans-serif' font-weight='800' text-anchor='middle' fill='%235eead4'%3E%ED%95%9C%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -23,7 +23,8 @@
   <!-- ────────────── 로딩 ────────────── -->
   <section class="screen screen-loading" id="scr-loading" data-screen="loading">
     <div class="load-inner">
-      <div class="logo-mark">끄투<span>킬러</span></div>
+      <p class="brand-kicker">끝말잇기</p>
+      <div class="logo-mark">한방<span>봇</span></div>
       <p class="load-title">사전을 펼치는 중…</p>
       <div class="load-bar"><i id="load-fill"></i></div>
       <p class="load-meta" id="load-meta">0 단어</p>
@@ -35,8 +36,9 @@
   <section class="screen screen-setup" id="scr-setup" data-screen="setup" hidden>
     <div class="setup">
       <header class="brand">
-        <div class="logo-mark">끄투<span>킬러</span></div>
-        <p class="tagline">한방 단어를 꽂는 봇과의 1:1 끝말잇기</p>
+        <p class="brand-kicker">끝말잇기</p>
+        <div class="logo-mark">한방<span>봇</span></div>
+        <p class="tagline">한방 단어를 꽂는 4단계 봇과의 1:1 대전</p>
       </header>
 
       <div class="field">
@@ -56,8 +58,8 @@
       </div>
 
       <div class="setup-actions">
-        <button class="btn ghost" id="btn-injeong" type="button">
-          내 어인정 <b id="injeong-count">0</b>
+        <button class="btn ghost" id="btn-custom" type="button">
+          내 단어장 <b id="custom-count">0</b>
         </button>
         <button class="btn ghost" id="btn-sound" type="button" aria-pressed="true">소리 켬</button>
       </div>
@@ -65,7 +67,7 @@
       <button class="btn primary big" id="btn-start" type="button">
         <span>대전 시작</span><kbd>Enter</kbd>
       </button>
-      <p class="rules-line">2글자 이상 · 두음법칙 인정 · 중복 금지 · <b id="dict-count">366,095</b> 단어</p>
+      <p class="rules-line">2글자 이상 · 두음법칙 인정 · 중복 금지 · <b id="dict-count">366,094</b> 단어</p>
 
       <ul class="tips">
         <li><i>가</i><div><b>두음법칙 자동 인정</b><span>‘력’으로 끝나면 ‘역’으로 시작해도 됩니다</span></div></li>
@@ -82,7 +84,7 @@
     <header class="game-top">
       <div class="bot-info">
         <span class="bot-face" id="bot-face" aria-hidden="true">🙂</span>
-        <div class="bot-text"><b id="bot-name">킬러봇</b><small id="bot-lv">Lv.2 보통</small></div>
+        <div class="bot-text"><b id="bot-name">한방봇</b><small id="bot-lv">Lv.2 보통</small></div>
       </div>
       <div class="scoreboard" aria-label="점수">
         <span class="side me"><i>나</i><b id="score-me">0</b></span>
@@ -144,21 +146,21 @@
   </div>
 </div>
 
-<!-- ────────────── 내 어인정 ────────────── -->
-<div class="overlay" id="ov-injeong" hidden>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="injeong-title">
+<!-- ────────────── 내 단어장 ────────────── -->
+<div class="overlay" id="ov-custom" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="custom-title">
     <header class="sheet-head">
-      <h2 id="injeong-title">내 어인정</h2>
-      <button class="icon-btn" id="btn-injeong-close" type="button" aria-label="닫기">✕</button>
+      <h2 id="custom-title">내 단어장</h2>
+      <button class="icon-btn" id="btn-custom-close" type="button" aria-label="닫기">✕</button>
     </header>
-    <p class="sheet-desc">사전에 없는 단어를 직접 추가하면 <b>나와 봇 모두</b> 쓸 수 있습니다. 이 기기에 저장됩니다.</p>
-    <form class="injeong-form" id="injeong-form" autocomplete="off">
-      <input id="injeong-word" type="text" maxlength="24" placeholder="단어" aria-label="추가할 단어" spellcheck="false">
-      <input id="injeong-mean" type="text" maxlength="40" placeholder="뜻 (선택)" aria-label="뜻">
+    <p class="sheet-desc">사전에 없는 단어를 직접 등록하면 <b>나와 봇 모두</b> 쓸 수 있습니다. 이 기기에 저장됩니다.</p>
+    <form class="custom-form" id="custom-form" autocomplete="off">
+      <input id="custom-word" type="text" maxlength="24" placeholder="단어" aria-label="추가할 단어" spellcheck="false">
+      <input id="custom-mean" type="text" maxlength="40" placeholder="뜻 (선택)" aria-label="뜻">
       <button class="btn go" type="submit">추가</button>
     </form>
-    <p class="injeong-msg" id="injeong-msg" role="status"></p>
-    <ul class="injeong-list" id="injeong-list"></ul>
+    <p class="custom-msg" id="custom-msg" role="status"></p>
+    <ul class="custom-list" id="custom-list"></ul>
   </div>
 </div>
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""보고용 스크린샷 생성: downloads/kkutu-killer/ 에 저장."""
+"""보고용 스크린샷 생성: downloads/hanbang-bot/ 에 저장."""
 import functools
 import http.server
 import json
@@ -11,8 +11,8 @@ import time
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.environ.get('SHOT_OUT', '/workspace/downloads/kkutu-killer')
-CHROME = os.environ.get('KK_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
+OUT = os.environ.get('SHOT_OUT', '/workspace/downloads/hanbang-bot')
+CHROME = os.environ.get('HB_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
 URL = os.environ.get('SHOT_URL', '')
 
 os.makedirs(OUT, exist_ok=True)
@@ -37,13 +37,13 @@ def shot(page, name):
 def wait_my_turn(page, timeout=10000):
     end = time.time() + timeout / 1000
     while time.time() < end:
-        st = page.evaluate('window.__KK.state()')
+        st = page.evaluate('window.__HB.state()')
         if st and st['phase'] in ('me', 'over') and page.evaluate("!document.getElementById('word-input').disabled"):
             return st
         if st and st['phase'] == 'over':
             return st
         page.wait_for_timeout(100)
-    return page.evaluate('window.__KK.state()')
+    return page.evaluate('window.__HB.state()')
 
 
 def play(page, word, wait=2400):
@@ -54,7 +54,7 @@ def play(page, word, wait=2400):
 
 def pick_word(page, min_len=2, prefer_count=40):
     return page.evaluate("""([minLen, prefer]) => {
-        const d = window.__KK.dict, st = window.__KK.state();
+        const d = window.__HB.dict, st = window.__HB.state();
         const used = new Set(st.chain.map((c) => c.word));
         const cands = d.candidatesFor(st.needChar, used).filter((w) => w.length >= minLen);
         const nice = cands.filter((w) => d.countFrom(w[w.length - 1]) >= prefer);
@@ -71,7 +71,7 @@ with sync_playwright() as p:
                                   has_touch=(vp_name == 'mobile'), locale='ko-KR')
         page = ctx.new_page()
         page.goto(URL, wait_until='domcontentloaded')
-        page.wait_for_function('window.__KK && window.__KK.ready === true', timeout=90000)
+        page.wait_for_function('window.__HB && window.__HB.ready === true', timeout=90000)
         page.wait_for_selector('#scr-setup:not([hidden])')
         page.wait_for_timeout(400)
         shot(page, f'{vp_name}-1-setup')
@@ -93,7 +93,7 @@ with sync_playwright() as p:
         if st and st['phase'] == 'me':
             shot(page, f'{vp_name}-2-game')
         else:
-            page.evaluate("window.__KK.app.hideResult(); window.__KK.startGame({level:2, first:'me'})")
+            page.evaluate("window.__HB.app.hideResult(); window.__HB.startGame({level:2, first:'me'})")
             page.wait_for_timeout(600)
             st = wait_my_turn(page)
             w = pick_word(page) if st and st['phase'] == 'me' else None
@@ -110,32 +110,32 @@ with sync_playwright() as p:
             page.set_viewport_size({'width': 390, 'height': 844})
             page.wait_for_timeout(300)
 
-        # 내 어인정
-        page.evaluate("window.__KK.app.engine.destroy(); window.__KK.app.hideResult(); window.__KK.app.show('setup')")
-        page.click('#btn-injeong')
-        page.fill('#injeong-word', '냥냥이')
-        page.fill('#injeong-mean', '고양이를 귀엽게 부르는 말')
-        page.click('#injeong-form button[type=submit]')
+        # 내 단어장
+        page.evaluate("window.__HB.app.engine.destroy(); window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+        page.click('#btn-custom')
+        page.fill('#custom-word', '냥냥이')
+        page.fill('#custom-mean', '고양이를 귀엽게 부르는 말')
+        page.click('#custom-form button[type=submit]')
         page.wait_for_timeout(300)
-        shot(page, f'{vp_name}-4-injeong')
-        page.click('#btn-injeong-close')
+        shot(page, f'{vp_name}-4-custom')
+        page.click('#btn-custom-close')
 
         # 4단계 한방: 내가 낸 단어 뒤에 봇이 한방 단어를 꽂는 순간
         pick = page.evaluate("""() => {
-            const d = window.__KK.dict;
+            const d = window.__HB.dict;
             for (const [ch] of d.ranges) {
                 const mine = d.candidatesFor(ch, new Set());
                 for (const w of mine.slice(0, 150)) {
                     const last = w[w.length - 1];
                     const bot = d.candidatesFor(last, new Set([w]));
                     const os = bot.find((x) => d.isOneShot(x));
-                    if (os) return { start: ch, word: w, killer: os };
+                    if (os) return { start: ch, word: w, oneshot: os };
                 }
             }
             return null;
         }""")
         print('level4 scenario:', json.dumps(pick, ensure_ascii=False))
-        page.evaluate(f"window.__KK.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
+        page.evaluate(f"window.__HB.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
         page.wait_for_timeout(600)
         play(page, pick['word'], wait=520)
         # KO 연출 타이밍
@@ -148,7 +148,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(1400)
         if page.is_visible('#ov-result'):
             shot(page, f'{vp_name}-6-result')
-        page.evaluate("window.__KK.app.hideResult()")
+        page.evaluate("window.__HB.app.hideResult()")
         ctx.close()
 
     browser.close()

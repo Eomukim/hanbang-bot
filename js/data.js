@@ -11,7 +11,7 @@ import { twoeumOf, allowedStarts } from './rules.js';
 
 const FLAG_TAGS = [
   [1, '외래어'],
-  [2, '어인정'],
+  [2, '사전 인정'],
   [8, '방언'],
   [16, '옛말'],
   [32, '문화어'],
@@ -23,13 +23,13 @@ export class Dictionary {
   constructor() {
     /** @type {string[]} 코드 포인트 순 단어 */
     this.words = [];
-    /** @type {Uint8Array} 단어별 KKuTu flag 비트 */
+    /** @type {Uint8Array} 단어별 원본 사전 flag 비트 */
     this.flags = new Uint8Array(0);
     /** @type {Map<string, [number, number]>} 시작 음절 → [시작, 끝) */
     this.ranges = new Map();
-    /** @type {Map<string, {mean: string, at: number}>} 내 어인정 */
+    /** @type {Map<string, {mean: string, at: number}>} 내 단어장 */
     this.custom = new Map();
-    /** @type {Map<string, string[]>} 시작 음절 → 내 어인정 단어 */
+    /** @type {Map<string, string[]>} 시작 음절 → 내 단어장 단어 */
     this.customByStart = new Map();
     this.stats = null;
   }
@@ -161,7 +161,7 @@ export class Dictionary {
     for (const [bit, name] of FLAG_TAGS) {
       if (flag & bit) tags.push(name);
     }
-    if (this.custom.has(word)) tags.push('내 어인정');
+    if (this.custom.has(word)) tags.push('내 단어장');
     return tags;
   }
 
@@ -170,7 +170,7 @@ export class Dictionary {
     return this.ranges.get(ch) || null;
   }
 
-  /** 사전 단어 중 ch로 시작하는 수 (내 어인정 제외). */
+  /** 사전 단어 중 ch로 시작하는 수 (내 단어장 제외). */
   dictStartCount(ch) {
     const r = this.ranges.get(ch);
     return r ? r[1] - r[0] : 0;
@@ -250,7 +250,7 @@ export class Dictionary {
     return out;
   }
 
-  /* ── 내 어인정 ─────────────────────────────────────────── */
+  /* ── 내 단어장 ─────────────────────────────────────────── */
 
   setCustom(map) {
     this.custom = new Map();

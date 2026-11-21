@@ -45,7 +45,7 @@ export class App {
   mount() {
     const ids = [
       'scr-loading', 'scr-setup', 'scr-game', 'load-fill', 'load-meta', 'load-error',
-      'levels', 'lv-desc', 'time-opts', 'first-opts', 'btn-injeong', 'injeong-count',
+      'levels', 'lv-desc', 'time-opts', 'first-opts', 'btn-custom', 'custom-count',
       'btn-sound', 'btn-start', 'record', 'dict-count',
       'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit',
       'arena', 'stage', 'stage-hint', 'bot-bubble', 'chain',
@@ -53,15 +53,15 @@ export class App {
       'countdown', 'time-left', 'timer-fill', 'turn-panel', 'composer', 'word-input', 'btn-hint', 'btn-submit',
       'ov-result', 'result-badge', 'result-title', 'result-reason', 'result-me', 'result-bot',
       'result-stats', 'btn-again', 'btn-tosetup',
-      'ov-injeong', 'btn-injeong-close', 'injeong-form', 'injeong-word', 'injeong-mean',
-      'injeong-msg', 'injeong-list',
+      'ov-custom', 'btn-custom-close', 'custom-form', 'custom-word', 'custom-mean',
+      'custom-msg', 'custom-list',
     ];
     for (const id of ids) this.el[id] = $(id);
 
     this.renderLevels();
     this.renderSegments();
     this.renderSoundButton();
-    this.renderInjeongCount();
+    this.renderCustomCount();
     this.renderRecord();
     this.el['dict-count'].textContent = this.dict.size.toLocaleString('ko-KR');
 
@@ -169,8 +169,8 @@ export class App {
     btn.setAttribute('aria-pressed', String(this.settings.sound));
   }
 
-  renderInjeongCount() {
-    this.el['injeong-count'].textContent = String(Object.keys(this.custom).length);
+  renderCustomCount() {
+    this.el['custom-count'].textContent = String(Object.keys(this.custom).length);
   }
 
   renderRecord() {
@@ -227,23 +227,23 @@ export class App {
       if (this.el['word-input'].classList.contains('bad')) this.el['word-input'].classList.remove('bad');
     });
 
-    // 내 어인정
-    this.el['btn-injeong'].addEventListener('click', () => this.openInjeong());
-    this.el['btn-injeong-close'].addEventListener('click', () => this.closeInjeong());
-    this.el['ov-injeong'].addEventListener('click', (e) => {
-      if (e.target === this.el['ov-injeong']) this.closeInjeong();
+    // 내 단어장
+    this.el['btn-custom'].addEventListener('click', () => this.openCustom());
+    this.el['btn-custom-close'].addEventListener('click', () => this.closeCustom());
+    this.el['ov-custom'].addEventListener('click', (e) => {
+      if (e.target === this.el['ov-custom']) this.closeCustom();
     });
-    this.el['injeong-form'].addEventListener('submit', (e) => {
+    this.el['custom-form'].addEventListener('submit', (e) => {
       e.preventDefault();
       this.addCustomWord();
     });
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        if (!this.el['ov-injeong'].hidden) this.closeInjeong();
+        if (!this.el['ov-custom'].hidden) this.closeCustom();
         else if (!this.el['ov-result'].hidden) this.hideResult();
       }
-      if (e.key === 'Enter' && this.screen === 'setup' && this.el['ov-injeong'].hidden) {
+      if (e.key === 'Enter' && this.screen === 'setup' && this.el['ov-custom'].hidden) {
         if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
         e.preventDefault();
         this.startGame();
@@ -633,24 +633,24 @@ export class App {
     }
   }
 
-  /* ── 내 어인정 ─────────────────────────────────────────── */
+  /* ── 내 단어장 ─────────────────────────────────────────── */
 
-  openInjeong() {
-    this.el['ov-injeong'].hidden = false;
-    this.el['injeong-msg'].textContent = '';
-    this.renderInjeong();
-    setTimeout(() => this.el['injeong-word'].focus({ preventScroll: true }), 120);
+  openCustom() {
+    this.el['ov-custom'].hidden = false;
+    this.el['custom-msg'].textContent = '';
+    this.renderCustom();
+    setTimeout(() => this.el['custom-word'].focus({ preventScroll: true }), 120);
   }
 
-  closeInjeong() {
-    this.el['ov-injeong'].hidden = true;
+  closeCustom() {
+    this.el['ov-custom'].hidden = true;
   }
 
-  renderInjeong() {
+  renderCustom() {
     const entries = Object.entries(this.custom).sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
-    const list = this.el['injeong-list'];
+    const list = this.el['custom-list'];
     if (!entries.length) {
-      list.innerHTML = '<li class="injeong-empty">아직 추가한 단어가 없어요.</li>';
+      list.innerHTML = '<li class="custom-empty">아직 추가한 단어가 없어요.</li>';
       return;
     }
     list.innerHTML = entries.map(([word, meta]) => `
@@ -664,16 +664,16 @@ export class App {
         delete this.custom[word];
         this.dict.removeCustom(word);
         saveCustom(this.custom);
-        this.renderInjeong();
-        this.renderInjeongCount();
+        this.renderCustom();
+        this.renderCustomCount();
       });
     });
   }
 
   addCustomWord() {
-    const wordInput = this.el['injeong-word'];
-    const meanInput = this.el['injeong-mean'];
-    const msg = this.el['injeong-msg'];
+    const wordInput = this.el['custom-word'];
+    const meanInput = this.el['custom-mean'];
+    const msg = this.el['custom-msg'];
     const word = normalizeWord(wordInput.value);
 
     msg.classList.remove('ok');
@@ -694,15 +694,15 @@ export class App {
       return;
     }
     if (this.custom[word]) {
-      msg.textContent = '이미 내 어인정에 있어요.';
+      msg.textContent = '이미 내 단어장에 있어요.';
       return;
     }
 
     this.custom[word] = { mean: meanInput.value.trim().slice(0, 40), at: Date.now() };
     this.dict.addCustom(word, this.custom[word].mean);
     saveCustom(this.custom);
-    this.renderInjeongCount();
-    this.renderInjeong();
+    this.renderCustomCount();
+    this.renderCustom();
     msg.classList.add('ok');
     msg.textContent = `‘${word}’ 추가 완료 — 나와 봇 모두 쓸 수 있어요.`;
     wordInput.value = '';

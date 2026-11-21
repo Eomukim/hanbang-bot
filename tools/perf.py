@@ -2,7 +2,7 @@
 import functools, http.server, socketserver, threading, json
 from playwright.sync_api import sync_playwright
 
-ROOT = '/workspace/work/kkutu-killer'
+ROOT = '/workspace/work/hanbang-bot'
 h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
 s = socketserver.ThreadingTCPServer(('127.0.0.1', 0), h); s.daemon_threads = True
 port = s.server_address[1]
@@ -13,7 +13,7 @@ with sync_playwright() as p:
     pg = b.new_page(viewport={'width': 390, 'height': 844})
     t0 = pg.evaluate('performance.now()') if False else None
     pg.goto(f'http://127.0.0.1:{port}/index.html', wait_until='domcontentloaded')
-    pg.wait_for_function('window.__KK && window.__KK.ready', timeout=90000)
+    pg.wait_for_function('window.__HB && window.__HB.ready', timeout=90000)
     print('load timing:', pg.evaluate("""() => {
         const nav = performance.getEntriesByType('navigation')[0];
         const res = performance.getEntriesByType('resource').map(r => ({n: r.name.split('/').pop(), d: Math.round(r.duration), size: r.transferSize}));
@@ -21,7 +21,7 @@ with sync_playwright() as p:
     }"""))
 
     print('validate x2000:', pg.evaluate("""() => {
-        const d = window.__KK.dict;
+        const d = window.__HB.dict;
         const words = d.candidatesFor('가', new Set()).slice(0, 2000);
         const t = performance.now();
         let ok = 0;
@@ -30,7 +30,7 @@ with sync_playwright() as p:
     }"""))
 
     print('bot choose x50:', pg.evaluate("""async () => {
-        const d = window.__KK.dict;
+        const d = window.__HB.dict;
         const m = await import('./js/bot.js');
         const out = {};
         for (const lv of [1,2,3,4]) {
@@ -47,6 +47,6 @@ with sync_playwright() as p:
         return out;
     }"""))
 
-    print('turns:', pg.evaluate("""() => ({oneShot: window.__KK.dict.stats.oneShotCount, induced: window.__KK.dict.stats.inducedCount, total: window.__KK.dict.size, starts: window.__KK.dict.stats.starts})"""))
+    print('turns:', pg.evaluate("""() => ({oneShot: window.__HB.dict.stats.oneShotCount, induced: window.__HB.dict.stats.inducedCount, total: window.__HB.dict.size, starts: window.__HB.dict.stats.starts})"""))
     b.close()
 s.shutdown()

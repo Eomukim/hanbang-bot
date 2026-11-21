@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────
-   KKuTu Killer — arcade word chain
+   Hanbang Bot — arcade word chain
    ───────────────────────────────────────────────────────────── */
 :root {
   --bg: #08090f;
@@ -81,6 +81,7 @@ button { cursor: pointer; }
   font-size: 34px;
   font-weight: 900;
   letter-spacing: -1.5px;
+  white-space: nowrap;
   line-height: 1;
   color: #fff;
   text-shadow: 0 0 26px rgba(94, 234, 212, .35);
@@ -123,6 +124,15 @@ button { cursor: pointer; }
 }
 .brand { text-align: center; padding: 10px 0 4px; }
 .brand .logo-mark { font-size: 44px; }
+.brand-kicker {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: .3em;
+  text-indent: .3em;
+  color: var(--dim);
+}
+.load-inner .brand-kicker { margin-bottom: 6px; }
 .tagline { margin: 10px 0 0; color: var(--dim); font-size: 13.5px; letter-spacing: -.2px; }
 
 .field { display: flex; flex-direction: column; gap: 9px; }
@@ -494,8 +504,8 @@ button { cursor: pointer; }
 .sheet-desc { margin: 0 0 14px; color: var(--dim); font-size: 12.5px; line-height: 1.55; }
 .sheet-desc b { color: var(--text); }
 
-.injeong-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 7px; }
-.injeong-form input {
+.custom-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 7px; }
+.custom-form input {
   min-width: 0;
   background: rgba(255,255,255,.05);
   border: 1px solid var(--line);
@@ -506,25 +516,25 @@ button { cursor: pointer; }
   padding: 10px 11px;
   outline: none;
 }
-.injeong-form input:focus { border-color: rgba(94,234,212,.55); }
-.injeong-form .btn { padding: 0 14px; font-size: 13px; border: 0; background: linear-gradient(120deg,#4fe3cd,#6f8cff); color: #05121a; font-weight: 900; }
-.injeong-msg { min-height: 18px; margin: 8px 0 0; font-size: 12px; color: var(--warn); }
-.injeong-msg.ok { color: var(--good); }
-.injeong-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.injeong-list li {
+.custom-form input:focus { border-color: rgba(94,234,212,.55); }
+.custom-form .btn { padding: 0 14px; font-size: 13px; border: 0; background: linear-gradient(120deg,#4fe3cd,#6f8cff); color: #05121a; font-weight: 900; }
+.custom-msg { min-height: 18px; margin: 8px 0 0; font-size: 12px; color: var(--warn); }
+.custom-msg.ok { color: var(--good); }
+.custom-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.custom-list li {
   display: flex; align-items: center; gap: 8px;
   background: rgba(255,255,255,.04); border: 1px solid var(--line);
   border-radius: 10px; padding: 9px 10px;
   font-size: 13.5px; font-weight: 700;
 }
-.injeong-list li span { color: var(--dim-2); font-weight: 500; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.injeong-list li button {
+.custom-list li span { color: var(--dim-2); font-weight: 500; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.custom-list li button {
   margin-left: auto; flex: 0 0 auto;
   border: 0; background: transparent; color: var(--dim-2);
   font-size: 15px; padding: 2px 4px; border-radius: 6px;
 }
-.injeong-list li button:hover { color: var(--bad); background: rgba(255,77,109,.12); }
-.injeong-empty { color: var(--dim-2); font-size: 12.5px; text-align: center; padding: 14px 0; }
+.custom-list li button:hover { color: var(--bad); background: rgba(255,77,109,.12); }
+.custom-empty { color: var(--dim-2); font-size: 12.5px; text-align: center; padding: 14px 0; }
 
 /* ── responsive / short viewport (keyboard open) ──────────── */
 @media (max-width: 380px) {

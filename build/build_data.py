@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the KKuTu Killer word data from KKuTu's db.sql dump.
+"""Build the Hanbang Bot word data from the source db.sql dump (KKuTu, GPL-3.0).
 
 Usage:
     python3 build/build_data.py path/to/db.sql
@@ -20,15 +20,18 @@ import datetime
 
 HANGUL = re.compile(r"^[가-힣]+$")
 
-# KKuTu KOR_FLAG bits (Server/lib/const.js)
+# 원본 데이터의 KOR_FLAG 비트 (Server/lib/const.js)
 FLAG_LOANWORD = 1
-FLAG_INJEONG = 2
+FLAG_RECOGNIZED = 2
 FLAG_SPACED = 4
 FLAG_SATURI = 8
 FLAG_OLD = 16
 FLAG_MUNHWA = 32
 
 MIN_LEN = 2
+
+# 브랜드 이름과 겹치는 표제어는 사전에서 뺀다 (게임 화면에 옛 이름이 뜨지 않도록).
+BLOCKED_WORDS = {"끄투"}
 
 # Hangul syllable arithmetic
 HANGUL_BASE = 0xAC00
@@ -89,6 +92,8 @@ def main():
             flag = 0
         if flag & FLAG_SPACED:          # 띄어쓰기가 필요한 어휘는 끝말잇기에 쓸 수 없다
             continue
+        if word in BLOCKED_WORDS:
+            continue
         if word in words:
             words[word] |= flag
         else:
@@ -118,7 +123,7 @@ def main():
 
     flag_counts = {}
     for w in ordered:
-        for bit, name in ((FLAG_LOANWORD, "loanword"), (FLAG_INJEONG, "injeong"),
+        for bit, name in ((FLAG_LOANWORD, "loanword"), (FLAG_RECOGNIZED, "recognized"),
                           (FLAG_SATURI, "saturi"), (FLAG_OLD, "old"), (FLAG_MUNHWA, "munhwa")):
             if words[w] & bit:
                 flag_counts[name] = flag_counts.get(name, 0) + 1

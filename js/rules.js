@@ -67,6 +67,6 @@ export const ERR = {
   TOO_SHORT: { code: 'short', message: '두 글자 이상이어야 해요.' },
   NOT_HANGUL: { code: 'hangul', message: '한글로 된 단어만 쓸 수 있어요.' },
   WRONG_START: { code: 'start', message: '이어야 할 글자로 시작해야 해요.' },
-  NOT_FOUND: { code: 'notfound', message: '사전에 없는 단어예요. 내 어인정에 추가할 수 있어요.' },
+  NOT_FOUND: { code: 'notfound', message: '사전에 없는 단어예요. 내 단어장에 추가할 수 있어요.' },
   USED: { code: 'used', message: '이미 나온 단어예요.' },
 };

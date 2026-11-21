@@ -1,8 +1,8 @@
-/** localStorage에 남는 설정 · 내 어인정 · 전적. */
+/** localStorage에 남는 설정 · 내 단어장 · 전적. */
 
-const KEY_SETTINGS = 'kk.killer.settings.v1';
-const KEY_CUSTOM = 'kk.killer.custom.v1';
-const KEY_RECORD = 'kk.killer.record.v1';
+const KEY_SETTINGS = 'hanbang.settings.v1';
+const KEY_CUSTOM = 'hanbang.custom.v1';
+const KEY_RECORD = 'hanbang.record.v1';
 
 const DEFAULT_SETTINGS = {
   level: 2,
@@ -49,7 +49,7 @@ export function saveSettings(settings) {
   });
 }
 
-/** 내 어인정: { 단어: { mean, at } } */
+/** 내 단어장: { 단어: { mean, at } } */
 export function loadCustom() {
   const raw = readJSON(KEY_CUSTOM, {});
   const out = {};

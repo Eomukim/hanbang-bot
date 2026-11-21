@@ -33,7 +33,7 @@ async function boot() {
   app.show('setup');
 
   // 검증·자동화용 손잡이
-  window.__KK = {
+  window.__HB = {
     app,
     dict,
     get engine() { return app.engine; },

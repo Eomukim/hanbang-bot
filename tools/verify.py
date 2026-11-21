@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""끄투 킬러 검증 스크립트.
+"""끝말잇기 한방봇 검증 스크립트.
 
 로컬(파일 서버) 또는 라이브 URL을 headless Chromium으로 열어
  - 콘솔/페이지 에러, 가로 오버플로
- - 두음법칙 · 중복 차단 · 내 어인정 · 4단계 한방 승리 · 봇 난이도 규칙
+ - 두음법칙 · 중복 차단 · 내 단어장 · 4단계 한방 승리 · 봇 난이도 규칙
  - 모바일(390x844) 레이아웃과 스크린샷
 을 확인한다.
 
 usage:
     python3 tools/verify.py --local
-    python3 tools/verify.py --url https://kkutu-killer.onrender.com
-    python3 tools/verify.py --local --url https://kkutu-killer.onrender.com
+    python3 tools/verify.py --url https://hanbang-bot.onrender.com
+    python3 tools/verify.py --local --url https://hanbang-bot.onrender.com
 """
 import argparse
 import functools
@@ -26,7 +26,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHOT_DIR = os.path.join(ROOT, 'downloads')
-CHROME = os.environ.get('KK_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
+CHROME = os.environ.get('HB_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
 
 VIEWPORTS = {
     'desktop': {'width': 1280, 'height': 800},
@@ -84,12 +84,12 @@ def overflow(page):
 
 
 def wait_ready(page, timeout=90000):
-    page.wait_for_function('window.__KK && window.__KK.ready === true', timeout=timeout)
+    page.wait_for_function('window.__HB && window.__HB.ready === true', timeout=timeout)
     page.wait_for_selector('#scr-setup:not([hidden])', timeout=timeout)
 
 
 def state(page):
-    return page.evaluate('window.__KK.state()')
+    return page.evaluate('window.__HB.state()')
 
 
 def new_page(browser, vp_name):
@@ -129,7 +129,7 @@ def duplicate_test(page, tag):
         check(False, f'[{tag}] 중복 시험 턴 확보')
         return
     used = page.evaluate("""() => {
-        const st = window.__KK.state();
+        const st = window.__HB.state();
         const starts = [st.needChar, st.needAlt].filter(Boolean);
         return st.chain.map((c) => c.word).find((w) => starts.some((s) => w.startsWith(s))) || null;
     }""")
@@ -142,8 +142,8 @@ def duplicate_test(page, tag):
         shot(page, f'{tag}-03-duplicate')
         return
     res = page.evaluate("""() => {
-        const st = window.__KK.state();
-        const e = window.__KK.engine;
+        const st = window.__HB.state();
+        const e = window.__HB.engine;
         const last = st.chain[st.chain.length - 1].word;
         // 이어야 할 글자와 무관하게, 이미 나온 단어는 중복으로 걸리는지 (엔진 공용 경로)
         const dup = e.validate(last);
@@ -159,7 +159,7 @@ def ui_duplicate(page, tag):
     if not st or st['phase'] != 'me':
         return
     used = page.evaluate("""() => {
-        const st = window.__KK.state();
+        const st = window.__HB.state();
         const starts = [st.needChar, st.needAlt].filter(Boolean);
         return st.chain.map((c) => c.word).find((w) => starts.some((s) => w.startsWith(s))) || null;
     }""")
@@ -177,7 +177,7 @@ def ui_duplicate(page, tag):
 def scenario_twoeum(page, tag):
     """두음법칙·중복 차단: 첫 글자와 끝 글자가 같은 단어로 시작해 중복까지 확인."""
     info = page.evaluate("""() => {
-        const d = window.__KK.dict;
+        const d = window.__HB.dict;
         for (const [ch] of d.ranges) {
             const cands = d.candidatesFor(ch, new Set());
             const loop = cands.find((w) => w[0] === ch && w[w.length - 1] === ch && w.length >= 2);
@@ -188,11 +188,11 @@ def scenario_twoeum(page, tag):
     if not info:
         check(False, f'[{tag}] 순환 단어 탐색')
         return
-    page.evaluate(f"window.__KK.startGame({{level:2, first:'me', startChar:'{info['ch']}'}})")
+    page.evaluate(f"window.__HB.startGame({{level:2, first:'me', startChar:'{info['ch']}'}})")
     page.wait_for_timeout(500)
     play_word(page, info['loop'], wait=120)
     # 같은 단어를 바로 다시 판정: 필요 글자가 같으므로 '이미 나온 단어'로 걸려야 한다
-    res = page.evaluate("(w) => window.__KK.engine.validate(w)", info['loop'])
+    res = page.evaluate("(w) => window.__HB.engine.validate(w)", info['loop'])
     check(res.get('ok') is False and res['error']['code'] == 'used',
           f'[{tag}] 중복 단어 차단', json.dumps(res, ensure_ascii=False)[:120])
     page.wait_for_timeout(1700)
@@ -203,11 +203,11 @@ def scenario_twoeum(page, tag):
     ui_duplicate(page, tag)
 
     # 두음법칙: 시작 글자를 '력'으로 고정하고 '역'으로 시작하는 단어 입력
-    page.evaluate("window.__KK.app.engine.destroy()")
-    page.evaluate("window.__KK.startGame({level:2, first:'me', startChar:'력'})")
+    page.evaluate("window.__HB.app.engine.destroy()")
+    page.evaluate("window.__HB.startGame({level:2, first:'me', startChar:'력'})")
     page.wait_for_timeout(450)
     duo = page.evaluate("""() => {
-        const d = window.__KK.dict, st = window.__KK.state();
+        const d = window.__HB.dict, st = window.__HB.state();
         const alt = st.needAlt;
         if (!alt) return null;
         const cands = d.candidatesFor(st.needChar, new Set());
@@ -225,8 +225,8 @@ def scenario_twoeum(page, tag):
 def scenario_bot_levels(page, tag):
     """1단계는 한방 금지, 4단계는 즉시 한방."""
     # 1단계: 여러 턴을 두고 봇이 한방 단어를 쓰지 않는지
-    page.evaluate("window.__KK.app.engine.destroy()")
-    page.evaluate("window.__KK.startGame({level:1, first:'bot'})")
+    page.evaluate("window.__HB.app.engine.destroy()")
+    page.evaluate("window.__HB.startGame({level:1, first:'bot'})")
     page.wait_for_timeout(2600)
     used = []
     for _ in range(5):
@@ -234,7 +234,7 @@ def scenario_bot_levels(page, tag):
         if not st or st['phase'] != 'me':
             break
         w = page.evaluate("""() => {
-            const d = window.__KK.dict, st = window.__KK.state();
+            const d = window.__HB.dict, st = window.__HB.state();
             const cands = d.candidatesFor(st.needChar, new Set(st.chain.map((c) => c.word)));
             return cands.find((x) => d.countFrom(x[x.length - 1]) >= 40 && x.length <= 3) || cands[0] || null;
         }""")
@@ -244,7 +244,7 @@ def scenario_bot_levels(page, tag):
     st = state(page)
     bot_words = [c['word'] for c in st['chain'] if c['who'] == 'bot']
     one_shots = page.evaluate(
-        "(ws) => ws.map((w) => window.__KK.dict.isOneShot(w))", bot_words
+        "(ws) => ws.map((w) => window.__HB.dict.isOneShot(w))", bot_words
     ) if bot_words else []
     check(len(bot_words) >= 2, f'[{tag}] 1단계 봇 응답 정상', f'{len(bot_words)}턴')
     check(not any(one_shots), f'[{tag}] 1단계 봇 한방 금지', str(bot_words[-2:]))
@@ -252,7 +252,7 @@ def scenario_bot_levels(page, tag):
 
     # 4단계: 한방 시나리오
     pick = page.evaluate("""() => {
-        const d = window.__KK.dict;
+        const d = window.__HB.dict;
         for (const [ch] of d.ranges) {
             const mine = d.candidatesFor(ch, new Set());
             for (const w of mine.slice(0, 150)) {
@@ -266,14 +266,14 @@ def scenario_bot_levels(page, tag):
     check(pick is not None, f'[{tag}] 한방 시나리오 탐색', str(pick))
     if not pick:
         return
-    page.evaluate("window.__KK.app.engine.destroy()")
-    page.evaluate(f"window.__KK.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
+    page.evaluate("window.__HB.app.engine.destroy()")
+    page.evaluate(f"window.__HB.startGame({{level:4, first:'me', startChar:'{pick['start']}'}})")
     page.wait_for_timeout(450)
     play_word(page, pick['word'], wait=3500)
     st = state(page)
     bot_words = [c['word'] for c in st['chain'] if c['who'] == 'bot']
     last_bot = bot_words[-1] if bot_words else ''
-    is_oneshot = page.evaluate("([w]) => !!w && window.__KK.dict.isOneShot(w)", [last_bot])
+    is_oneshot = page.evaluate("([w]) => !!w && window.__HB.dict.isOneShot(w)", [last_bot])
     check(st['phase'] == 'over', f'[{tag}] 4단계 봇 즉시 종료', st['phase'])
     check(is_oneshot, f'[{tag}] 4단계 봇 한방 단어 사용', last_bot)
     check(page.is_visible('#ov-result'), f'[{tag}] 결과 화면 표시')
@@ -282,39 +282,39 @@ def scenario_bot_levels(page, tag):
 
 
 def scenario_custom(page, tag):
-    page.evaluate("window.__KK.app.engine.destroy()")
-    page.evaluate("window.__KK.app.hideResult(); window.__KK.app.show('setup')")
-    page.click('#btn-injeong')
-    page.fill('#injeong-word', '냥냥이')
-    page.fill('#injeong-mean', '고양이 애칭')
-    page.click('#injeong-form button[type=submit]')
+    page.evaluate("window.__HB.app.engine.destroy()")
+    page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+    page.click('#btn-custom')
+    page.fill('#custom-word', '냥냥이')
+    page.fill('#custom-mean', '고양이 애칭')
+    page.click('#custom-form button[type=submit]')
     page.wait_for_timeout(200)
-    check(page.evaluate("window.__KK.dict.custom.has('냥냥이')"), f'[{tag}] 내 어인정 추가')
-    shot(page, f'{tag}-06-injeong')
-    page.click('#btn-injeong-close')
-    page.evaluate("window.__KK.startGame({level:1, first:'me', startChar:'냥'})")
+    check(page.evaluate("window.__HB.dict.custom.has('냥냥이')"), f'[{tag}] 내 단어장 추가')
+    shot(page, f'{tag}-06-custom')
+    page.click('#btn-custom-close')
+    page.evaluate("window.__HB.startGame({level:1, first:'me', startChar:'냥'})")
     page.wait_for_timeout(450)
     play_word(page, '냥냥이', wait=400)
     st = state(page)
     check(bool(st['chain']) and st['chain'][0]['word'] == '냥냥이', f'[{tag}] 커스텀 단어 판정 반영')
     # 저장 확인
-    stored = page.evaluate("JSON.parse(localStorage.getItem('kk.killer.custom.v1') || '{}')")
-    check('냥냥이' in stored, f'[{tag}] 내 어인정 localStorage 저장')
+    stored = page.evaluate("JSON.parse(localStorage.getItem('hanbang.custom.v1') || '{}')")
+    check('냥냥이' in stored, f'[{tag}] 내 단어장 localStorage 저장')
     page.evaluate("""() => {
-        const raw = JSON.parse(localStorage.getItem('kk.killer.custom.v1') || '{}');
+        const raw = JSON.parse(localStorage.getItem('hanbang.custom.v1') || '{}');
         delete raw['냥냥이'];
-        localStorage.setItem('kk.killer.custom.v1', JSON.stringify(raw));
-        window.__KK.dict.removeCustom('냥냥이');
-        window.__KK.app.custom = raw;
-        window.__KK.app.renderInjeongCount();
+        localStorage.setItem('hanbang.custom.v1', JSON.stringify(raw));
+        window.__HB.dict.removeCustom('냥냥이');
+        window.__HB.app.custom = raw;
+        window.__HB.app.renderCustomCount();
     }""")
 
     # 내가 한방 단어로 이기는 경로: 후속 단어가 없는 글자(늄)로 끝나는 커스텀 단어
     page.evaluate("""() => {
-        window.__KK.app.custom['냥늄'] = { mean: '검사용', at: Date.now() };
-        window.__KK.dict.addCustom('냥늄', '검사용');
-        window.__KK.app.hideResult();
-        window.__KK.startGame({ level: 1, first: 'me', startChar: '냥' });
+        window.__HB.app.custom['냥늄'] = { mean: '검사용', at: Date.now() };
+        window.__HB.dict.addCustom('냥늄', '검사용');
+        window.__HB.app.hideResult();
+        window.__HB.startGame({ level: 1, first: 'me', startChar: '냥' });
     }""")
     page.wait_for_timeout(450)
     play_word(page, '냥늄', wait=1800)
@@ -323,19 +323,19 @@ def scenario_custom(page, tag):
     check(st['phase'] == 'over' and title == '승리', f'[{tag}] 한방 단어로 승리', f"{st['phase']} / {title}")
     shot(page, f'{tag}-08-player-win')
     page.evaluate("""() => {
-        delete window.__KK.app.custom['냥늄'];
-        window.__KK.dict.removeCustom('냥늄');
-        window.__KK.app.hideResult();
+        delete window.__HB.app.custom['냥늄'];
+        window.__HB.dict.removeCustom('냥늄');
+        window.__HB.app.hideResult();
     }""")
 
     # 시간 초과 패배
-    page.evaluate("window.__KK.startGame({level:1, first:'me', timeLimit:1})")
+    page.evaluate("window.__HB.startGame({level:1, first:'me', timeLimit:1})")
     page.wait_for_timeout(2200)
     st = state(page)
     reason = page.evaluate("document.getElementById('result-reason').textContent")
     check(st['phase'] == 'over' and '시간' in reason, f'[{tag}] 제한 시간 초과 패배', reason)
     shot(page, f'{tag}-09-timeout')
-    page.evaluate("window.__KK.app.hideResult()")
+    page.evaluate("window.__HB.app.hideResult()")
 
 
 def run_local(base_url, browser):
@@ -348,7 +348,7 @@ def run_local(base_url, browser):
         t0 = time.time()
         wait_ready(page)
         load_s = time.time() - t0
-        size = page.evaluate('window.__KK.dict.size')
+        size = page.evaluate('window.__HB.dict.size')
         check(size > 300000, f'[{vp_name}] 사전 로드', f'{size}단어 / {load_s:.1f}s')
         check(page.is_visible('#scr-setup'), f'[{vp_name}] 설정 화면')
         check(sum(overflow(page).values()) <= 0, f'[{vp_name}] 설정 가로 오버플로 없음', str(overflow(page)))
@@ -390,15 +390,15 @@ def run_local(base_url, browser):
         scenario_custom(page, 'local-' + vp_name)
 
         # 대전 중 스크린샷 (여러 단어가 쌓인 화면)
-        page.evaluate("window.__KK.app.hideResult(); window.__KK.app.show('setup')")
-        page.evaluate("window.__KK.startGame({level:1, first:'bot'})")
+        page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
+        page.evaluate("window.__HB.startGame({level:1, first:'bot'})")
         page.wait_for_timeout(1800)
         for _ in range(4):
             st = wait_my_turn(page, 6000)
             if not st or st['phase'] != 'me':
                 break
             w = page.evaluate("""() => {
-                const d = window.__KK.dict, st = window.__KK.state();
+                const d = window.__HB.dict, st = window.__HB.state();
                 const used = new Set(st.chain.map((c) => c.word));
                 const cands = d.candidatesFor(st.needChar, used).filter((x) => x.length >= 2);
                 return cands[Math.min(3, cands.length - 1)] || null;
@@ -427,7 +427,7 @@ def run_live(url, browser):
         t0 = time.time()
         wait_ready(page)
         load_s = time.time() - t0
-        size = page.evaluate('window.__KK.dict.size')
+        size = page.evaluate('window.__HB.dict.size')
         check(size > 300000, f'[{vp_name}] 사전 로드', f'{size}단어 / {load_s:.1f}s')
         check(page.is_visible('#scr-setup'), f'[{vp_name}] 설정 화면')
         check(sum(overflow(page).values()) <= 0, f'[{vp_name}] 설정 가로 오버플로 없음', str(overflow(page)))

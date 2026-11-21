@@ -7,7 +7,7 @@ export const LEVELS = [
     face: '🙂',
     label: 'Lv.1 순한 봇',
     desc: '한방 단어는 절대 안 씀 · 쉬운 2~3글자',
-    botName: '킬러봇 주니어',
+    botName: '한방봇 주니어',
   },
   {
     id: 2,
@@ -15,7 +15,7 @@ export const LEVELS = [
     face: '😐',
     label: 'Lv.2 보통',
     desc: '가끔 긴 단어 · 초반엔 한방 금지',
-    botName: '킬러봇',
+    botName: '한방봇',
   },
   {
     id: 3,
@@ -23,7 +23,7 @@ export const LEVELS = [
     face: '😏',
     label: 'Lv.3 어려움',
     desc: '외통수로 몰아넣고 결정타',
-    botName: '킬러봇 X',
+    botName: '한방봇 X',
   },
   {
     id: 4,
@@ -31,7 +31,7 @@ export const LEVELS = [
     face: '😈',
     label: 'Lv.4 즉사',
     desc: '한방 단어가 있으면 100% 즉사',
-    botName: '한방 킬러',
+    botName: '한방봇 지옥',
   },
 ];
 

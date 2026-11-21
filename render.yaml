@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: kkutu-killer
+    name: hanbang-bot
     runtime: static
     staticPublishPath: ./
     headers:
