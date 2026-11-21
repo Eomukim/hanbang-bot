@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: kkeutmalbot
+    name: itda
     runtime: static
     staticPublishPath: ./
     headers:

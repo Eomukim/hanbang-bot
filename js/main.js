@@ -32,7 +32,7 @@ async function boot() {
   app.show('setup');
 
   // 검증·자동화용 손잡이
-  window.__KKEUTMALBOT = {
+  window.__ITDA = {
     app,
     dict,
     Bot,

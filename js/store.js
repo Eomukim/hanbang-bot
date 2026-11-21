@@ -1,7 +1,7 @@
 /** localStorage에 남는 설정 · 전적.
  *
- * 설정은 `kkeutmalbot.settings.v1`, 전적은 `kkeutmalbot.record.v1` 에 쌓는다.
- * 이전 이름으로 배포하던 시절의 키는 아래 LEGACY에 한 번만 옮겨 와서,
+ * 설정은 `itda.settings.v1`, 전적은 `itda.record.v1` 에 쌓는다.
+ * 이전 이름(끝말봇·한방봇)으로 배포하던 시절의 키는 아래 LEGACY에 한 번만 옮겨 와서,
  * 그때 쌓인 설정·전적을 잃지 않는다(옮긴 뒤에도 예전 키는 건드리지 않는다).
  *
  * 내 단어장 기능은 없앴다. 아주 예전 버전이 이 기기에 남긴 커스텀 키는
@@ -11,16 +11,11 @@
  * 구분된 키에 따로 쌓는다. 그래서 예전 4단계 시절 기록도 그대로 읽힌다.
  */
 
-const KEY_SETTINGS = 'kkeutmalbot.settings.v1';
-const KEY_RECORD = 'kkeutmalbot.record.v1';
+const KEY_SETTINGS = 'itda.settings.v1';
+const KEY_RECORD = 'itda.record.v1';
 
-/** 리브랜딩 전 이름으로 저장된 키 → 지금 키. 값이 있으면 한 번 복사한다. */
-const LEGACY = [
-  ['itda.settings.v1', KEY_SETTINGS],
-  ['itda.record.v1', KEY_RECORD],
-  ['hanbang.settings.v1', KEY_SETTINGS],
-  ['hanbang.record.v1', KEY_RECORD],
-];
+/** 리브랜딩 전 이름들. 최근 이름이 앞이다(잇다 → 끝말봇 → 한방봇). */
+const LEGACY_NAMES = ['kkeutmalbot', 'hanbang'];
 
 const DEFAULT_SETTINGS = {
   level: 2,
@@ -49,15 +44,39 @@ function writeJSON(key, value) {
   }
 }
 
-/** 예전 키에만 남아 있는 값이 있으면 지금 키로 복사한다(이미 있으면 그대로). */
+/** 예전 이름으로 쌓인 설정·전적을 지금 키로 한 번 옮겨 온다. */
 export function migrateLegacy() {
   try {
-    for (const [oldKey, newKey] of LEGACY) {
-      const oldRaw = localStorage.getItem(oldKey);
-      if (!oldRaw) continue;
-      if (localStorage.getItem(newKey) != null) continue;
-      localStorage.setItem(newKey, oldRaw);
+    // 설정: 지금 키가 비어 있으면 최근 이름부터 그대로 가져온다.
+    if (localStorage.getItem(KEY_SETTINGS) == null) {
+      for (const name of LEGACY_NAMES) {
+        const oldRaw = localStorage.getItem(`${name}.settings.v1`);
+        if (oldRaw != null) {
+          localStorage.setItem(KEY_SETTINGS, oldRaw);
+          break;
+        }
+      }
     }
+
+    // 전적: 행마다 판수(plays)가 더 많은 쪽을 쓴다. 예전 키를 옮겨 와 이어 둔
+    // 값과 겹쳐도 같은 대국을 두 번 세지 않고, 하드코어(`3:hc`) 행도 같이 넘어온다.
+    const legacyRecords = LEGACY_NAMES
+      .map((name) => readJSON(`${name}.record.v1`, null))
+      .filter(Boolean);
+    if (!legacyRecords.length) return;
+    const record = readJSON(KEY_RECORD, {});
+    let changed = false;
+    for (const legacy of legacyRecords) {
+      for (const [key, row] of Object.entries(legacy)) {
+        if (!row || typeof row !== 'object') continue;
+        const mine = record[key];
+        if (!mine || (row.plays || 0) > (mine.plays || 0)) {
+          record[key] = { ...row };
+          changed = true;
+        }
+      }
+    }
+    if (changed) writeJSON(KEY_RECORD, record);
   } catch {
     /* 저장 공간이 막혀 있으면 새 키로 시작한다 */
   }
@@ -106,7 +125,7 @@ export function recordResult(record, level, outcome, { hardcore = false } = {}) 
   if (outcome.win) row.wins += 1;
   else row.losses += 1;
   row.bestCombo = Math.max(row.bestCombo || 0, outcome.bestCombo || 0);
-  row.bestScore = Math.max(row.bestScore || 0, outcome.score || 0);
+  row.bestScore = Math.max(row.bestScore || 0, outcome.bestScore || 0);
   record[key] = row;
   saveRecord(record);
   return record;
