@@ -4,8 +4,13 @@
 로컬(파일 서버) 또는 라이브 URL을 headless Chromium으로 열어
  - 콘솔/페이지 에러, 가로 오버플로
  - 두음법칙 · 중복 차단 · 내 단어장 · 4단계 한방 승리 · 봇 난이도 규칙
+ - 미션 규칙(14종 후보 · 미달성 시 유지 · 중첩 보너스 · 성공 시 다음 글자)
  - 모바일(390x844) 레이아웃과 스크린샷
 을 확인한다.
+
+env:
+    HB_SHOT_DIR     스크린샷 폴더(기본: 저장소 downloads/)
+    HB_REPORT_DIR   미션 보고용 스크린샷(mission-keep/stack/success.png)을 따로 저장할 폴더
 
 usage:
     python3 tools/verify.py --local
@@ -25,7 +30,9 @@ import time
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHOT_DIR = os.path.join(ROOT, 'downloads')
+SHOT_DIR = os.environ.get('HB_SHOT_DIR') or os.path.join(ROOT, 'downloads')
+REPORT_DIR = os.environ.get('HB_REPORT_DIR')
+MISSION_CHARS = ['가', '나', '다', '라', '마', '바', '사', '아', '자', '차', '카', '타', '파', '하']
 CHROME = os.environ.get('HB_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
 
 VIEWPORTS = {
@@ -74,6 +81,22 @@ def shot(page, name):
     page.screenshot(path=path)
     print(f'  shot  {path}')
     return path
+
+
+def shot_to(page, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    page.screenshot(path=path)
+    print(f'  shot  {path}')
+    return path
+
+
+def report_shot(page, tag, report_dir, name):
+    """보고용 스크린샷: 보기 이름(tag 포함) + 데스크톱이면 대표 이름도 함께."""
+    if not report_dir:
+        return
+    shot_to(page, os.path.join(report_dir, f'{tag}-{name}.png'))
+    if tag.endswith('desktop'):
+        shot_to(page, os.path.join(report_dir, f'{name}.png'))
 
 
 def overflow(page):
@@ -338,6 +361,133 @@ def scenario_custom(page, tag):
     page.evaluate("window.__HB.app.hideResult()")
 
 
+def scenario_mission(page, tag, report_dir=None):
+    """미션: 14종 후보 · 미달성 시 유지 · 중첩 보너스 · 성공 시 다음 글자."""
+    print(f'  · 미션 규칙 [{tag}]')
+
+    # 1) 후보 14종 중에서만 나오고, 골고루 섞이는지
+    seen = page.evaluate("""() => {
+        const app = window.__HB.app, out = [];
+        for (let i = 0; i < 60; i += 1) {
+            if (app.engine) app.engine.destroy();
+            app.startGame({ level: 1, first: 'me', timeLimit: 20 });
+            out.push(window.__HB.state().missionChar);
+        }
+        if (app.engine) app.engine.destroy();
+        app.show('setup');
+        return out;
+    }""")
+    check(all(c in MISSION_CHARS for c in seen), f'[{tag}] 미션 후보 14종 밖 없음', ''.join(sorted(set(seen))))
+    check(len(set(seen)) >= 10, f'[{tag}] 미션 글자 랜덤 출제', f'{len(set(seen))}/14종')
+
+    # 시험용 단어: 한 시작 글자에서 미션 글자가 0회·1회·2회 든 단어를 모두 찾는다
+    plan = page.evaluate("""(missions) => {
+        const d = window.__HB.dict;
+        const hitsOf = (w, ch) => { let n = 0; for (const c of w) if (c === ch) n += 1; return n; };
+        for (const ch of missions) {
+            const slots = new Map();
+            for (const w of d.words) {
+                if (w.length < 2 || w.length > 6) continue;
+                const s = w[0];
+                if (s === ch) continue;
+                let slot = slots.get(s);
+                if (!slot) { slot = {}; slots.set(s, slot); }
+                const n = hitsOf(w, ch);
+                if (n > 2) continue;
+                const key = ['zero', 'one', 'two'][n];
+                if (!slot[key]) slot[key] = w;
+                if (slot.zero && slot.one && slot.two) {
+                    return { ch, start: s, zero: slot.zero, one: slot.one, two: slot.two };
+                }
+            }
+        }
+        return null;
+    }""", MISSION_CHARS)
+    if not check(plan, f'[{tag}] 미션 시험 단어 탐색', str(plan)):
+        return
+
+    def fixed_game(start, mission):
+        page.evaluate("window.__HB.app.engine.destroy()")
+        page.evaluate("([s, m]) => window.__HB.startGame({ level: 1, first: 'me', startChar: s, mission: m, timeLimit: 20 })",
+                      [start, mission])
+        page.wait_for_timeout(250)
+
+    # 2) 미션 글자가 없는 단어 → 글자 유지
+    fixed_game(plan['start'], plan['ch'])
+    res = page.evaluate("(w) => window.__HB.submit(w)", plan['zero'])
+    st = state(page)
+    check(res.get('ok') is True and res.get('missionHits') == 0 and res.get('nextMission') is None
+          and st['missionChar'] == plan['ch'],
+          f'[{tag}] 미션 미달성 → 글자 유지', f"'{plan['zero']}' 입력 후 미션 '{st['missionChar']}'")
+    if report_dir:
+        page.wait_for_timeout(120)
+        report_shot(page, tag, report_dir, 'mission-keep')
+
+    # 3) 미션 글자 2회 → 중첩 보너스 ×2, 곧바로 다음 글자
+    fixed_game(plan['start'], plan['ch'])
+    base = page.evaluate("(w) => window.__HB.engine.scoreFor(w, 0, 0)", plan['two'])
+    expect2 = page.evaluate("(w) => window.__HB.engine.scoreFor(w, 0, 2)", plan['two'])
+    page.fill('#word-input', plan['two'])
+    page.click('#btn-submit')
+    page.wait_for_timeout(140)
+    st = state(page)
+    last = st['chain'][0] if st['chain'] else {}
+    tag_text = page.evaluate("document.querySelector('#stage .tag.mission')?.textContent || ''")
+    chip_text = page.evaluate("document.getElementById('chip-mission').textContent || ''")
+    splash = page.evaluate("document.querySelector('.ko-splash b')?.textContent || ''")
+    check(last.get('missionHits') == 2, f'[{tag}] 미션 글자 2개 인식', str(last.get('missionHits')))
+    check(last.get('score') == expect2 and expect2 == base * 2,
+          f'[{tag}] 2중첩 점수 ×2', f"{base} → {last.get('score')} (기대 {expect2})")
+    check('×2' in tag_text, f'[{tag}] 단어 카드에 미션 ×2 표시', tag_text)
+    check(st['missionChar'] != plan['ch'] and st['missionChar'] in MISSION_CHARS,
+          f'[{tag}] 성공 즉시 다음 미션 글자', f"{plan['ch']} → {st['missionChar']}")
+    check(st['missionChar'] in chip_text, f'[{tag}] 미션 칩 갱신', chip_text)
+    check('미션' in splash, f'[{tag}] 미션 성공 알림', splash)
+    report_shot(page, tag, report_dir, 'mission-success')
+
+    # 봇 응답을 잠시 멈추고 중첩 카드·칩을 제대로 담는다
+    page.evaluate("clearTimeout(window.__HB.engine.botTimer)")
+    page.wait_for_timeout(1250)
+    tag_after = page.evaluate("document.querySelector('#stage .tag.mission')?.textContent || ''")
+    chip_after = page.evaluate("document.getElementById('chip-mission').textContent || ''")
+    check('×2' in tag_after and st['missionChar'] in chip_after,
+          f'[{tag}] 미션 ×2 카드·칩 유지', f'{tag_after} / {chip_after}')
+    report_shot(page, tag, report_dir, 'mission-stack')
+
+    # 4) 미션 글자 1회 → +50%
+    fixed_game(plan['start'], plan['ch'])
+    page.evaluate("(w) => window.__HB.submit(w)", plan['one'])
+    st = state(page)
+    last = st['chain'][0] if st['chain'] else {}
+    base1 = page.evaluate("(w) => window.__HB.engine.scoreFor(w, 0, 0)", plan['one'])
+    check(last.get('missionHits') == 1 and last.get('score') == round(base1 * 1.5),
+          f'[{tag}] 1개 +50%', f"{base1} → {last.get('score')} (기대 {round(base1 * 1.5)})")
+
+    # 5) 중첩 배수 표(0/1/2/3회)
+    table = page.evaluate("""() => {
+        const e = window.__HB.engine;
+        return [0, 1, 2, 3].map((h) => e.scoreFor('가나다라마', 0, h));
+    }""")
+    check(table[1] == round(table[0] * 1.5) and table[2] == table[0] * 2 and table[3] == table[0] * 3,
+          f'[{tag}] 중첩 배수 0/1/2/3회', str(table))
+
+    # 6) 봇이 성공해도 다음 글자로 (봇 응답 경로 직접 호출)
+    fixed_game(plan['start'], plan['ch'])
+    swap = page.evaluate("""(w) => {
+        const e = window.__HB.engine;
+        const before = e.missionChar;
+        e.phase = 'bot';
+        e.applyBotMove({ word: w, kind: 'normal', delay: 0 });
+        return { before, after: e.missionChar, chip: document.getElementById('chip-mission').textContent };
+    }""", plan['two'])
+    check(swap['after'] != swap['before'] and swap['after'] in MISSION_CHARS,
+          f'[{tag}] 봇 미션 성공 → 다음 글자', f"{swap['before']} → {swap['after']}")
+    check(swap['after'] in swap['chip'], f'[{tag}] 봇 성공 후 미션 칩 갱신', swap['chip'])
+    page.evaluate("window.__HB.app.engine.destroy()")
+    page.wait_for_timeout(900)
+    page.evaluate("window.__HB.app.hideResult()")
+
+
 def run_local(base_url, browser):
     print(f'\n=== LOCAL {base_url} ===')
     for vp_name in VIEWPORTS:
@@ -388,6 +538,7 @@ def run_local(base_url, browser):
         scenario_twoeum(page, 'local-' + vp_name)
         scenario_bot_levels(page, 'local-' + vp_name)
         scenario_custom(page, 'local-' + vp_name)
+        scenario_mission(page, 'local-' + vp_name, REPORT_DIR)
 
         # 대전 중 스크린샷 (여러 단어가 쌓인 화면)
         page.evaluate("window.__HB.app.hideResult(); window.__HB.app.show('setup')")
@@ -443,6 +594,7 @@ def run_live(url, browser):
 
         scenario_twoeum(page, 'live-' + vp_name)
         scenario_bot_levels(page, 'live-' + vp_name)
+        scenario_mission(page, 'live-' + vp_name, REPORT_DIR)
 
         check(not col.errors, f'[{vp_name}] 페이지 에러 0', json.dumps(col.errors, ensure_ascii=False)[:400])
         errs = [c for c in col.console if c['type'] == 'error']

@@ -297,6 +297,7 @@ button { cursor: pointer; }
 }
 .stage-word.me h2 { text-shadow: 0 0 30px rgba(94,234,212,.32); }
 .stage-word.bot h2 { text-shadow: 0 0 30px rgba(255,122,182,.30); }
+.stage-word h2 em.mis { font-style: normal; color: var(--warn); text-shadow: 0 0 24px rgba(255,193,77,.6); }
 .stage-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 7px; }
 .stage-sub .gain { font-size: 12.5px; font-weight: 800; color: var(--good); font-variant-numeric: tabular-nums; }
 .stage-sub .tag { font-size: 10.5px; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
@@ -369,6 +370,12 @@ button { cursor: pointer; }
 }
 .mini.mission { color: #ffe0a8; border-color: rgba(255,193,77,.4); background: rgba(255,193,77,.08); }
 .mini.mission b { color: var(--warn); }
+.mini.mission.pop { animation: chipPop .32s ease-out; }
+@keyframes chipPop {
+  0%   { transform: scale(.82); filter: brightness(1.9); }
+  60%  { transform: scale(1.08); }
+  100% { transform: none; filter: none; }
+}
 .mini.combo { color: #d7ffe9; border-color: rgba(99,245,163,.4); background: rgba(99,245,163,.1); }
 .mini.combo b { color: var(--good); }
 

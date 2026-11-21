@@ -62,6 +62,23 @@ export function normalizeWord(raw) {
     .trim();
 }
 
+/** 미션 글자 후보: 실제 끝말잇기 미션과 같은 14종. */
+export const MISSION_CHARS = ['가', '나', '다', '라', '마', '바', '사', '아', '자', '차', '카', '타', '파', '하'];
+
+/** 단어 안에 미션 글자가 몇 번 들어 있는지. */
+export function missionHits(word, ch) {
+  if (!ch) return 0;
+  let n = 0;
+  for (const c of String(word || '')) if (c === ch) n += 1;
+  return n;
+}
+
+/** 중첩 배수: 0회 1 · 1회 1.5(+50%) · 2회 ×2 · 3회 ×3 … 겹친 만큼 커진다. */
+export function missionMultiplier(hits) {
+  if (hits <= 0) return 1;
+  return hits === 1 ? 1.5 : hits;
+}
+
 export const ERR = {
   EMPTY: { code: 'empty', message: '단어를 입력해 주세요.' },
   TOO_SHORT: { code: 'short', message: '두 글자 이상이어야 해요.' },

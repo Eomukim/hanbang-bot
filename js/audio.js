@@ -104,6 +104,13 @@ export class Sfx {
         this.tone({ freq: 880, type: 'sine', dur: 0.07, gain: 0.07 });
         this.tone({ freq: 1174, type: 'sine', dur: 0.09, gain: 0.06, delay: 0.05 });
         break;
+      case 'mission': {
+        // 미션이 겹친 만큼 음을 더 쌓아 올린다
+        const stack = Math.min(opts.stack || 1, 4);
+        const notes = [660, 880, 1100, 1320, 1760].slice(0, 2 + stack);
+        notes.forEach((f, i) => this.tone({ freq: f, type: 'triangle', dur: 0.14, gain: 0.13, delay: i * 0.055 }));
+        break;
+      }
       default:
         break;
     }

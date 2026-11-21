@@ -1,6 +1,8 @@
 /** 게임 진행. 규칙 판정 · 점수 · 타이머 · 봇 턴을 맡는다. */
 
-import { normalizeWord, HANGUL_ONLY, twoeumOf, ERR } from './rules.js';
+import {
+  normalizeWord, HANGUL_ONLY, twoeumOf, ERR, MISSION_CHARS, missionHits, missionMultiplier,
+} from './rules.js';
 import { Bot, botLine } from './bot.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -26,7 +28,7 @@ export class Engine {
 
     const starts = dict.goodStartChars(60);
     this.startChar = startChar || starts[Math.floor(rng() * starts.length)] || '가';
-    this.missionChar = mission || this.pickMission();
+    this.missionChar = mission || this.pickMission(this.startChar);
     this.needChar = this.startChar;
 
     this.deadline = 0;
@@ -36,10 +38,18 @@ export class Engine {
     this.finished = false;
   }
 
-  pickMission() {
-    const pool = this.dict.goodStartChars(40).filter((ch) => ch !== this.startChar);
-    if (!pool.length) return null;
-    return pool[Math.floor(this.rng() * pool.length)];
+  /** 미션 글자 14종 중 하나를 고른다. exclude 와는 다른 글자를 고른다. */
+  pickMission(exclude = null) {
+    const pool = MISSION_CHARS.filter((ch) => ch !== exclude);
+    const list = pool.length ? pool : MISSION_CHARS.slice();
+    return list[Math.floor(this.rng() * list.length)];
+  }
+
+  /** 미션 성공: 직전 글자와 다른 다음 미션 글자로 즉시 넘긴다. */
+  rotateMission() {
+    const prev = this.missionChar;
+    this.missionChar = this.pickMission(prev);
+    return { prev, next: this.missionChar };
   }
 
   snapshot() {
@@ -111,17 +121,21 @@ export class Engine {
   applyBotMove(move) {
     if (this.finished) return;
     const word = move.word;
-    const score = this.scoreFor(word, 0, this.missionChar && word.includes(this.missionChar));
+    const missionChar = this.missionChar;
+    const hits = missionHits(word, missionChar);
+    const score = this.scoreFor(word, 0, hits);
     this.scores.bot += score;
     this.used.add(word);
     this.wordsPlayed.bot += 1;
-    this.chain.push({ who: 'bot', word, score, kind: move.kind, at: Date.now() });
+    this.chain.push({ who: 'bot', word, score, kind: move.kind, missionHits: hits, at: Date.now() });
     this.needChar = word.charAt(word.length - 1);
+    const rotated = hits > 0 ? this.rotateMission() : null;
 
     this.on.botWord?.({
       word,
       score,
       kind: move.kind,
+      mission: { char: missionChar, hits, mul: missionMultiplier(hits), next: rotated?.next ?? null },
       oneShot: this.dict.isOneShot(word),
       line: this.lineFor(move.kind, 'bot'),
       state: this.snapshot(),
@@ -174,31 +188,39 @@ export class Engine {
     clearTimeout(this.turnTimer);
     this.combo += 1;
     this.bestCombo = Math.max(this.bestCombo, this.combo);
-    const mission = Boolean(this.missionChar && word.includes(this.missionChar));
-    const score = this.scoreFor(word, this.combo - 1, mission);
+    const missionChar = this.missionChar;
+    const hits = missionHits(word, missionChar);
+    const missionMul = missionMultiplier(hits);
+    const mission = hits > 0;
+    const score = this.scoreFor(word, this.combo - 1, hits);
 
     this.scores.me += score;
     this.used.add(word);
     this.wordsPlayed.me += 1;
-    this.chain.push({ who: 'me', word, score, kind: 'normal', at: Date.now() });
+    this.chain.push({ who: 'me', word, score, kind: 'normal', missionHits: hits, at: Date.now() });
     this.needChar = word.charAt(word.length - 1);
     this.phase = 'bot';
+    // 미션 성공 → 곧바로 다음 미션 글자로. 실패했으면 그대로 유지된다.
+    const rotated = mission ? this.rotateMission() : null;
 
     const state = this.snapshot();
-    this.on.meWord?.({ word, score, combo: this.combo, mission, state });
+    this.on.meWord?.({
+      word, score, combo: this.combo, mission, missionHits: hits, missionChar, missionMul, nextMission: rotated?.next ?? null, state,
+    });
     this.on.turn?.(state);
     // 4단계는 즉사 봇이라 텀을 거의 두지 않는다
     const pause = this.level === 4 ? 40 + this.rng() * 60 : 180 + this.rng() * 160;
     this.botTimer = setTimeout(() => this.botTurn(), pause);
-    return { ok: true, word, score, combo: this.combo, mission };
+    return {
+      ok: true, word, score, combo: this.combo, mission, missionHits: hits, missionMul, missionChar, nextMission: rotated?.next ?? null,
+    };
   }
 
-  scoreFor(word, combo, mission) {
+  scoreFor(word, combo, hits = 0) {
     const len = word.length;
     const base = len * len + 4 * len;
     const comboMul = Math.min(2.5, 1 + 0.1 * combo);
-    const missionMul = mission ? 1.5 : 1;
-    return Math.round(base * comboMul * missionMul);
+    return Math.round(base * comboMul * missionMultiplier(hits));
   }
 
   /* ── 힌트 ───────────────────────────────────────────────── */

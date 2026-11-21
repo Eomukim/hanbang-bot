@@ -313,8 +313,6 @@ export class App {
 
   onStart(state) {
     this.sfx.play('start');
-    this.el['chip-mission'].hidden = !state.missionChar;
-    if (state.missionChar) this.el['chip-mission'].innerHTML = `미션 <b>${esc(state.missionChar)}</b>`;
     this.el['stage-hint'].textContent = state.first === 'bot' ? '봇이 첫 단어를 고르는 중…' : '첫 단어를 입력하세요';
     this.setNeed(state);
     this.say(botLine(state.level, 'start', Math.random));
@@ -369,22 +367,44 @@ export class App {
     } else {
       this.el['chip-combo'].hidden = true;
     }
+    this.setMissionChip(state.missionChar);
   }
 
-  onMeWord({ word, score, combo, mission, state }) {
+  /** 미션 칩: 글자가 바뀌면 짧게 튀어오른다. */
+  setMissionChip(ch) {
+    const chip = this.el['chip-mission'];
+    if (!ch) {
+      chip.hidden = true;
+      delete chip.dataset.char;
+      return;
+    }
+    const changed = Boolean(chip.dataset.char) && chip.dataset.char !== ch;
+    chip.hidden = false;
+    chip.innerHTML = `미션 <b>${esc(ch)}</b>`;
+    chip.dataset.char = ch;
+    if (!changed) return;
+    chip.classList.remove('pop');
+    void chip.offsetWidth;
+    chip.classList.add('pop');
+  }
+
+  onMeWord({ word, score, combo, missionHits: hits, missionChar, missionMul, nextMission, state }) {
     this.sfx.play('ok', { combo });
-    this.renderStage({ who: 'me', word, score }, mission);
+    this.renderStage({ who: 'me', word, score }, { char: missionChar, hits });
     this.addChain({ who: 'me', word });
     this.el['score-me'].textContent = state.scoreMe.toLocaleString('ko-KR');
     this.floatScore(`+${score}`, 'me');
+    if (hits > 0) this.missionHit({ char: missionChar, hits, mul: missionMul, next: nextMission });
     if (combo >= 3) this.say(botLine(state.level, 'combo'));
     else if (word.length >= 4 && state.level >= 2) this.say(botLine(state.level, 'long'));
     else if (Math.random() < 0.35) this.say(botLine(state.level, 'good'));
     this.setNeed(state);
   }
 
-  onBotWord({ word, score, kind, oneShot, line, state }) {
-    this.renderStage({ who: 'bot', word, score }, false, kind);
+  onBotWord({ word, score, kind, oneShot, line, mission, state }) {
+    const hits = mission?.hits ?? 0;
+    if (hits > 0 && !oneShot) this.missionHit({ char: mission.char, hits, mul: mission.mul, next: mission.next, who: 'bot' });
+    this.renderStage({ who: 'bot', word, score }, mission, kind);
     this.addChain({ who: 'bot', word });
     this.el['score-bot'].textContent = state.scoreBot.toLocaleString('ko-KR');
     this.sfx.play('bot');
@@ -394,6 +414,16 @@ export class App {
       this.koSplash('한방!', '후속 단어가 없는 글자로 끝났습니다');
     }
     this.setNeed(state);
+  }
+
+  /** 미션 성공 알림: 겹친 횟수와 다음 미션 글자를 함께 보여 준다. */
+  missionHit({ char, hits, mul, next, who = 'me' }) {
+    this.sfx.play('mission', { stack: hits });
+    const main = hits === 1 ? '미션 성공!' : `미션 ${hits}중첩!`;
+    const sub = next
+      ? `‘${char}’ ${hits === 1 ? '+50%' : `×${mul}`} · 다음 미션 ‘${next}’`
+      : `‘${char}’ ${hits === 1 ? '+50%' : `×${mul}`}`;
+    this.koSplash(who === 'bot' ? `봇 ${main}` : main, sub);
   }
 
   onError({ message }) {
@@ -443,8 +473,15 @@ export class App {
     const tags = this.dict.tagsOf(entry.word);
     const mean = this.dict.meanOf(entry.word);
     const who = entry.who === 'me' ? '나' : '봇';
+    const hits = mission && mission.hits > 0 ? mission.hits : 0;
+    const missionTag = hits
+      ? `<span class="tag mission">${hits === 1 ? '미션 +50%' : `미션 ×${hits}`}</span>`
+      : '';
+    const wordHtml = hits && mission.char
+      ? esc(entry.word).split(esc(mission.char)).join(`<em class="mis">${esc(mission.char)}</em>`)
+      : esc(entry.word);
     const tagHtml = [
-      mission ? '<span class="tag mission">미션 +50%</span>' : '',
+      missionTag,
       ...tags.map((t) => `<span class="tag">${esc(t)}</span>`),
     ].join('');
     const kindHtml = kind === 'outer'
@@ -453,7 +490,7 @@ export class App {
     this.el.stage.innerHTML = `
       <div class="stage-word ${entry.who}">
         <div class="stage-who ${entry.who}"><i class="dot"></i>${who} · ${entry.word.length}글자</div>
-        <h2>${esc(entry.word)}</h2>
+        <h2>${wordHtml}</h2>
         <div class="stage-sub">
           <span class="gain">+${entry.score}</span>
           ${kindHtml}${tagHtml}
