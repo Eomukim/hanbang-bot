@@ -609,6 +609,7 @@ body[data-level="4"] .stage-word.bot h2 { text-shadow: 0 0 34px rgba(255,94,125,
   transition: opacity .18s ease, transform .18s ease;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast.mission { color: #ffe8c4; border-color: rgba(255,193,77,.5); background: rgba(38, 28, 10, .96); font-weight: 700; }
 
 .confetti {
   position: fixed; top: -12px; z-index: 55;

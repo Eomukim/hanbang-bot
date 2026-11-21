@@ -419,11 +419,10 @@ export class App {
   /** 미션 성공 알림: 겹친 횟수와 다음 미션 글자를 함께 보여 준다. */
   missionHit({ char, hits, mul, next, who = 'me' }) {
     this.sfx.play('mission', { stack: hits });
-    const main = hits === 1 ? '미션 성공!' : `미션 ${hits}중첩!`;
-    const sub = next
-      ? `‘${char}’ ${hits === 1 ? '+50%' : `×${mul}`} · 다음 미션 ‘${next}’`
-      : `‘${char}’ ${hits === 1 ? '+50%' : `×${mul}`}`;
-    this.koSplash(who === 'bot' ? `봇 ${main}` : main, sub);
+    const head = hits === 1 ? '미션 성공!' : `미션 ${hits}중첩!`;
+    const gain = hits === 1 ? '+50%' : `×${mul}`;
+    const tail = next ? ` · 다음 미션 ‘${next}’` : '';
+    this.toast(`${who === 'bot' ? '봇 ' : ''}${head} ‘${char}’ ${gain}${tail}`, 'mission');
   }
 
   onError({ message }) {
@@ -521,13 +520,14 @@ export class App {
     }, 4200);
   }
 
-  toast(message) {
+  toast(message, variant = '') {
     let el = document.querySelector('.toast');
     if (!el) {
       el = document.createElement('div');
       el.className = 'toast';
       document.body.appendChild(el);
     }
+    el.className = variant ? `toast ${variant}` : 'toast';
     el.textContent = message;
     el.classList.add('show');
     clearTimeout(this.toastTimer);

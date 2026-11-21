@@ -434,7 +434,7 @@ def scenario_mission(page, tag, report_dir=None):
     last = st['chain'][0] if st['chain'] else {}
     tag_text = page.evaluate("document.querySelector('#stage .tag.mission')?.textContent || ''")
     chip_text = page.evaluate("document.getElementById('chip-mission').textContent || ''")
-    splash = page.evaluate("document.querySelector('.ko-splash b')?.textContent || ''")
+    notice = page.evaluate("document.querySelector('.toast.mission')?.textContent || ''")
     check(last.get('missionHits') == 2, f'[{tag}] 미션 글자 2개 인식', str(last.get('missionHits')))
     check(last.get('score') == expect2 and expect2 == base * 2,
           f'[{tag}] 2중첩 점수 ×2', f"{base} → {last.get('score')} (기대 {expect2})")
@@ -442,7 +442,7 @@ def scenario_mission(page, tag, report_dir=None):
     check(st['missionChar'] != plan['ch'] and st['missionChar'] in MISSION_CHARS,
           f'[{tag}] 성공 즉시 다음 미션 글자', f"{plan['ch']} → {st['missionChar']}")
     check(st['missionChar'] in chip_text, f'[{tag}] 미션 칩 갱신', chip_text)
-    check('미션' in splash, f'[{tag}] 미션 성공 알림', splash)
+    check('중첩' in notice and plan['ch'] in notice, f'[{tag}] 미션 성공 알림', notice)
     report_shot(page, tag, report_dir, 'mission-success')
 
     # 봇 응답을 잠시 멈추고 중첩 카드·칩을 제대로 담는다
