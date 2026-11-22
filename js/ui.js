@@ -56,14 +56,14 @@ export class App {
   mount() {
     const ids = [
       'scr-loading', 'scr-setup', 'scr-dict', 'scr-game', 'load-fill', 'load-meta', 'load-error',
-      'levels', 'lv-desc', 'time-opts', 'first-opts', 'time-locked', 'first-locked',
-      'btn-hardcore', 'hardcore-desc', 'btn-mercy', 'mercy-desc',
+      'levels', 'lv-desc', 'time-opts', 'first-opts',
+      'btn-mercy', 'mercy-desc',
       'btn-sound', 'sound-icon', 'sound-value', 'btn-start', 'btn-dict',
-      'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit', 'game-hardcore', 'game-mercy',
+      'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit', 'game-mercy',
       'arena', 'stage', 'stage-hint', 'bot-bubble', 'chain',
       'need-char', 'need-alt', 'cand-count', 'chip-mission', 'chip-combo',
       'countdown', 'time-left', 'timer-fill', 'turn-panel', 'composer', 'word-input', 'btn-submit',
-      'ov-result', 'result-badge', 'result-title', 'result-hardcore', 'result-mercy', 'result-level', 'result-level-face',
+      'ov-result', 'result-badge', 'result-title', 'result-mercy', 'result-level', 'result-level-face',
       'result-level-label', 'result-reason', 'result-me', 'result-bot',
       'result-stats', 'btn-again', 'btn-tosetup',
       'battle-log-btn', 'battle-log-label', 'battle-log', 'battle-log-list',
@@ -80,7 +80,6 @@ export class App {
 
     this.renderLevels();
     this.renderSegments();
-    this.renderHardcore();
     this.renderMercy();
     this.renderSoundButton();
 
@@ -96,7 +95,6 @@ export class App {
     for (const key of ['scr-loading', 'scr-setup', 'scr-dict', 'scr-game']) {
       this.el[key].hidden = key !== `scr-${name}`;
     }
-    if (name !== 'game') document.body.dataset.hardcore = '0';
   }
 
   setProgress(ratio, words) {
@@ -184,23 +182,6 @@ export class App {
     });
   }
 
-  /* ── 하드코어 ────────────────────────────────────────── */
-
-  /** 설정 화면의 하드코어 스위치: 켜면 시간·선공을 잠그고 5초 고정·봇 선공을 보여 준다. */
-  renderHardcore() {
-    const on = Boolean(this.settings.hardcore);
-    const btn = this.el['btn-hardcore'];
-    btn.setAttribute('aria-checked', String(on));
-    btn.setAttribute('aria-label', `하드코어 ${on ? '켬' : '끔'}`);
-    this.el['hardcore-desc'].textContent = on
-      ? '5초 고정 · 봇 선공 고정 · 난이도는 위에서 그대로'
-      : '끄면 일반 모드 · 켜면 5초 고정 · 봇 선공';
-    this.el['time-locked'].hidden = !on;
-    this.el['first-locked'].hidden = !on;
-    this.el['time-opts'].hidden = on;
-    this.el['first-opts'].hidden = on;
-  }
-
   /* ── 배려모드 ────────────────────────────────────────── */
 
   /** 설정 화면의 배려모드 스위치: 켜면 첫 5수 동안 나도 봇도 한방 단어를 쓰지 않는다. */
@@ -272,12 +253,6 @@ export class App {
     this.el['btn-quit'].addEventListener('click', () => this.armQuit());
     this.el['battle-log-btn'].addEventListener('click', () => this.toggleBattleLog());
     this.el['battle-log'].addEventListener('scroll', () => this.updateBattleLogFade(), { passive: true });
-    this.el['btn-hardcore'].addEventListener('click', () => {
-      this.settings.hardcore = !this.settings.hardcore;
-      this.persist();
-      this.renderHardcore();
-      this.sfx.play('tap');
-    });
     this.el['btn-mercy'].addEventListener('click', () => {
       this.settings.mercy = !this.settings.mercy;
       this.persist();
@@ -334,11 +309,9 @@ export class App {
     this.sfx.unlock();
     const level = overrides.level ?? this.settings.level;
     const info = levelInfo(level);
-    // 하드코어: 5초 고정 · 봇 선공 고정 (실제 대국도 반드시)
-    const hardcore = overrides.hardcore ?? Boolean(this.settings.hardcore);
     const mercy = overrides.mercy ?? Boolean(this.settings.mercy);
-    const timeLimit = hardcore ? 5 : (overrides.timeLimit ?? this.settings.timeLimit);
-    const first = hardcore ? 'bot' : (overrides.first ?? this.settings.first);
+    const timeLimit = overrides.timeLimit ?? this.settings.timeLimit;
+    const first = overrides.first ?? this.settings.first;
 
     this.hideResult();
     this.engine?.destroy();
@@ -358,10 +331,8 @@ export class App {
     this.el['bot-face'].textContent = info.face;
     this.el['bot-name'].textContent = info.botName;
     this.el['bot-lv'].textContent = info.label;
-    this.el['game-hardcore'].hidden = !hardcore;
     this.el['game-mercy'].hidden = !mercy;
     document.body.dataset.level = String(level);
-    document.body.dataset.hardcore = hardcore ? '1' : '0';
     this.show('game');
     this.el.arena.scrollTop = 0;
 
@@ -373,7 +344,6 @@ export class App {
     const engine = new Engine({
       dict: this.dict,
       level,
-      hardcore,
       mercy,
       timeLimit,
       first,
@@ -544,7 +514,7 @@ export class App {
       win: payload.win,
       bestCombo: payload.bestCombo,
       score: payload.scoreMe,
-    }, { hardcore: Boolean(payload.hardcore ?? this.engine.hardcore) });
+    });
 
     if (payload.win) this.sfx.play('win');
     else this.sfx.play('lose');
@@ -769,7 +739,6 @@ export class App {
     sheet.classList.toggle('lose', !payload.win);
     this.el['result-badge'].textContent = payload.win ? '🏆' : '💀';
     this.el['result-title'].textContent = payload.win ? '승리' : '패배';
-    this.el['result-hardcore'].hidden = !payload.hardcore;
     this.el['result-mercy'].hidden = !payload.mercy;
     this.renderResultLevel(payload.state?.level);
     this.el['result-reason'].textContent = reasonLine || '';

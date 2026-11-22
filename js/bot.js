@@ -2,13 +2,16 @@
  * 5단계 봇. 난이도마다 단어를 고르는 방식과 반응이 다르다.
  *
  * Lv.5 지옥은 페널티 없이 순수하게 세게 둔다.
- *  - 빌드 타임(`build/build_data.py`)에 796,750단어 음절 그래프를 역방향 분석해 둔
+ *  - 빌드 타임(`build/build_data.py`)에 715,715단어 음절 그래프를 역방향 분석해 둔
  *    승리/패배/무승부 상태(`dict.graphStatus`)와 한방 단어 목록(`dict.shotWords`)을 읽고,
  *  - 실제로 이미 나온 단어(`used`)를 반영해 수를 검증한 뒤
  *    한방 즉사 → 강제 필승 → 위험한 수 배제 → 압박·미션·장문 순으로 고른다.
  */
 
-import { allowedStarts, missionHits as countMission, missionMultiplier } from './rules.js';
+import {
+  allowedStarts, missionHits as countMission, missionMultiplier,
+  decompose, compose, twoeumOf,
+} from './rules.js';
 
 export const LEVELS = [
   {
@@ -205,20 +208,52 @@ const pressureTier = (n) => (n <= 1 ? 0 : n <= 3 ? 1 : n <= 10 ? 2 : n <= 40 ? 3
 /**
  * Lv.5 지옥의 수읽기 예산.
  * 노드 수(budget)와 시간(deadline)을 함께 두어, 모바일에서도 응답 텀이 끊기지 않게 한다.
+ *
+ * 안전(상대 한방) 판정은 표본 없이 전수로 한다 — `killAt` 이 그 자리의 단어를 끝까지 훑어
+ * 상대가 낼 수 있는 한방이 하나라도 있는지 본다. `replyLimit` 은 위험 수를 '점수로 매기는'
+ * 독배 평가에서만 쓰는 표본 수다(전수로 늘리면 넓은 자리의 점수가 모두 바닥에 붙어
+ * 후보 구분이 사라지고, 400판 맞대결에서 승률이 떨어졌다).
  */
 const HELL = {
-  budget: 200_000,      // 한 수에 허용하는 탐색 노드 수
-  deadlineMs: 220,      // 시간 상한(모바일 포함 안전선)
-  winCandidates: 56,    // 강제 필승 후보 검증 상한 (14 → 56)
+  budget: 900_000,      // 한 수에 허용하는 탐색 노드 수
+  deadlineMs: 700,      // 시간 상한(모바일 포함 안전선)
+  winCandidates: 140,   // 강제 필승 후보 검증 상한
   winPlies: 5,          // 강제 필승 탐색 깊이
-  winPliesDeep: 7,      // 상대 응수가 적은 분기는 더 깊게
+  winPliesDeep: 9,      // 상대 응수가 적은 분기는 더 깊게
   deepLive: 14,         // 이 수 이하로 좁아진 자리는 깊게 본다
-  safeCandidates: 240,  // 안전 후보 전수 평가 상한
+  safeCandidates: 320,  // 안전 후보 전수 평가 상한
   replyLimit: 96,       // 독배 평가에서 뜯어보는 상대 응수 수
 };
 
 /** 응수가 적을수록 숨통이 조여진다. */
 const squeezeBonus = (n) => (n <= 1 ? 30 : n <= 3 ? 24 : n <= 10 ? 14 : n <= 40 ? 6 : 0);
+
+/** 초성 인덱스(한글 음절 분해). */
+const IEUNG = 11;
+const RIEUL = 5;
+const NIEUN = 2;
+
+/**
+ * 이 글자로 시작하는 단어를 낼 수 있는 '이어야 할 글자'들(두음법칙 포함, 최대 3개).
+ *  예: '이'로 시작하는 단어는 '이'·'리'·'니' 뒤에서 모두 낼 수 있다.
+ *  거꾸로 '리'가 소진되면 '이'·'니'로 끝난 자리도 함께 막힌다.
+ */
+function acceptingNodes(ch) {
+  const out = [ch];
+  const parts = decompose(ch);
+  if (!parts) return out;
+  const [cho, jung, jong] = parts;
+  if (cho === IEUNG) {
+    for (const c of [RIEUL, NIEUN]) {
+      const y = compose(c, jung, jong);
+      if (twoeumOf(y) === ch) out.push(y);
+    }
+  } else if (cho === NIEUN) {
+    const y = compose(RIEUL, jung, jong);
+    if (twoeumOf(y) === ch) out.push(y);
+  }
+  return out;
+}
 
 /**
  * Lv.5 지옥의 수읽기.
@@ -229,18 +264,42 @@ class Duel {
     this.dict = dict;
     this.used = new Set(used);
     this.starts = new Map();
+    this.exhausted = new Set();
     for (const w of this.used) this.bump(w.charAt(0), 1);
     this.visits = 0;
     this.budget = 0;
     this.deadline = 0;
     this.version = 0;
     this.killCache = new Map();
+    this.deadSet = new Set();
+    this.deadVersion = -1;
   }
 
   bump(ch, d) {
     const n = (this.starts.get(ch) || 0) + d;
     if (n > 0) this.starts.set(ch, n);
     else this.starts.delete(ch);
+    // 그 글자로 시작하는 단어를 이번 판에서 다 썼는가
+    if (n >= this.dict.dictStartCount(ch)) this.exhausted.add(ch);
+    else this.exhausted.delete(ch);
+  }
+
+  /**
+   * 판에서 단어가 다 나가 새로 막힌 글자(후속 단어 0).
+   * 시작 글자 하나가 통째로 소진되면 그 글자로 시작해야 하는 자리도 함께 죽는다.
+   * (두음법칙으로 받아 주는 글자까지 본다)
+   */
+  liveDead() {
+    if (this.deadVersion === this.version) return this.deadSet;
+    const out = this.deadSet;
+    out.clear();
+    for (const s of this.exhausted) {
+      for (const y of acceptingNodes(s)) {
+        if (this.liveCount(y) === 0) out.add(y);
+      }
+    }
+    this.deadVersion = this.version;
+    return out;
   }
 
   add(word) {
@@ -271,7 +330,7 @@ class Duel {
     return n > 0 ? n : 0;
   }
 
-  /** 이 글자에서 바로 낼 수 있는 한방 단어(상대 후보 0). */
+  /** 이 글자에서 둘 차례인 쪽이 낼 수 있는 한방 단어(없으면 null) — 전수 확인. */
   killAt(ch) {
     const hit = this.killCache.get(ch);
     if (hit && hit.v === this.version) {
@@ -284,25 +343,25 @@ class Duel {
   }
 
   killAtSlow(ch) {
-    const shots = this.dict.shotWords(ch);
+    const dict = this.dict;
+    const shots = dict.shotWords(ch);
     if (shots) {
       for (const w of shots) {
         this.visits += 1;
-        if (!this.used.has(w) && this.dict.countFrom(lastOf(w)) === 0) return w;
+        if (!this.used.has(w)) return w;
       }
     }
-    // 한방 목록에 없는 경우(후속 단어가 모두 소진된 자리)는 후보가 적을 때만 직접 확인
-    if (this.liveCount(ch) <= 40) {
-      for (const w of this.dict.candidatesFor(ch, this.used)) {
+    // 판에서 새로 막힌 글자로 끝나는 단어는 목록에 없다 → 그 자리의 단어를 전수로 훑는다
+    const dead = this.liveDead();
+    if (!dead.size) return null;
+    for (const s of allowedStarts(ch)) {
+      const r = dict.rangeOf(s);
+      if (!r) continue;
+      for (let i = r[0]; i < r[1]; i += 1) {
+        const w = dict.words[i];
         this.visits += 1;
-        const end = lastOf(w);
-        if (this.dict.countFrom(end) === 0) return w;
-        if (this.dict.countFrom(end) <= 4) {
-          this.add(w);
-          const left = this.liveCount(end);
-          this.remove(w);
-          if (!left) return w;
-        }
+        if (this.used.has(w)) continue;
+        if (dead.has(lastOf(w))) return w;
       }
     }
     return null;
@@ -834,8 +893,9 @@ export class Bot {
       const live = duel.liveCount(end);
       let exact = 0;
       if (duel.killAt(end)) exact = 3;
-      else if (live <= 60 && duel.winIn(end, 3)) exact = 2;
-      else if (live <= HELL.deepLive && duel.winIn(end, HELL.winPlies)) exact = 2;
+      else if (live <= 400 && duel.winIn(end, 3)) exact = 2;
+      else if (live <= 120 && duel.winIn(end, HELL.winPlies)) exact = 2;
+      else if (live <= 40 && duel.winIn(end, HELL.winPliesDeep)) exact = 2;
       let devious = null;
       if (exact === 0 && live && live <= HELL.replyLimit) {
         devious = duel.worstReplyScore(end);

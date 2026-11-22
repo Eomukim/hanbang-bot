@@ -9,3 +9,4 @@ build/kkuko-raw.jsonl
 build/kkuko-words.txt
 build/tmp/
 build/cache/
+build/nonwords.txt

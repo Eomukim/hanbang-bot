@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""잇다 화면 순회 점검: 설정 → 대전(5단계) → 결과/배틀 내역 → 하드코어+배려모드.
+"""잇다 화면 순회 점검: 설정 → 대전(5단계) → 결과/배틀 내역 → 배려모드.
 
 verify.py 가 규칙·난이도를 보는 것과 달리, 이 스크립트는 **화면을 눈으로 보는** 용도다.
 데스크톱(1280x800) · 모바일(390x844) · 작은 모바일(360x640)에서 화면마다
@@ -70,7 +70,7 @@ MEASURE = """
   const ov = document.getElementById('ov-result');
   const scope = ov && !ov.hidden ? ov : document.getElementById('app');
   const targets = [...scope.querySelectorAll(
-    'button, input, .stage-char, .need-char, .countdown, .chip, .mini, .bot-bubble, .level, .toggle-card, .result-level, .result-stats, .battle-log-btn, .battle-log, .toast, .mercy-badge, .hardcore-badge, h1, h2, .logo-mark, .scoreboard, .chain li'
+    'button, input, .stage-char, .need-char, .countdown, .chip, .mini, .bot-bubble, .level, .toggle-card, .result-level, .result-stats, .battle-log-btn, .battle-log, .toast, .mercy-badge, h1, h2, .logo-mark, .scoreboard, .chain li'
   )].filter(visible);
   for (const el of targets) {
     const r = el.getBoundingClientRect();
@@ -155,13 +155,11 @@ def tour_setup(page, tag):
     page.wait_for_timeout(250)
     shot(page, f'{tag}-01-setup')
     measure(page, tag, 'setup')
-    # 하드코어+배려모드 둘 다 켠 상태(배지 두 개가 같이 뜨는지)
-    page.click('#btn-hardcore')
+    # 배려모드 켠 상태
     page.click('#btn-mercy')
     page.wait_for_timeout(200)
-    shot(page, f'{tag}-02-setup-hardcore-mercy')
-    measure(page, tag, 'setup-hardcore-mercy')
-    page.click('#btn-hardcore')
+    shot(page, f'{tag}-02-setup-mercy')
+    measure(page, tag, 'setup-mercy')
     page.click('#btn-mercy')
     page.wait_for_timeout(150)
 
@@ -193,7 +191,6 @@ def tour_level(page, tag, level, words=3):
           phase: st.phase, need: st.needChar, mission: st.missionChar,
           chain: st.chain.map((c) => ({ who: c.who, word: c.word, kind: c.kind })),
           badge: document.getElementById('game-mercy').hidden ? null : document.getElementById('game-mercy').textContent,
-          hc: document.getElementById('game-hardcore').hidden ? null : document.getElementById('game-hardcore').textContent,
         };
     }""")
     print(f"    Lv.{level} played={' '.join(played)} → phase={info['phase']} "
@@ -242,19 +239,18 @@ def tour_result(page, tag, level=3):
     page.wait_for_timeout(150)
 
 
-def tour_hardcore(page, tag):
+def tour_mercy(game_page, tag):
+    page = game_page
     page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
     page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-    page.click('#btn-hardcore')
     page.click('#btn-mercy')
     page.wait_for_timeout(150)
     page.evaluate("window.__ITDA.startGame({level:4, timeLimit:20})")
     page.wait_for_timeout(700)
-    shot(page, f'{tag}-hc-mercy-game')
-    measure(page, tag, 'hc+mercy-game')
+    shot(page, f'{tag}-mercy-game')
+    measure(page, tag, 'mercy-game')
     page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
     page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-    page.click('#btn-hardcore')
     page.click('#btn-mercy')
     page.wait_for_timeout(150)
 
@@ -293,7 +289,7 @@ def main():
             for lv in (1, 2, 3, 4, 5):
                 tour_level(page, tag, lv, words=3 if lv <= 3 else 1)
             tour_result(page, tag, level=3)
-            tour_hardcore(page, tag)
+            tour_mercy(page, tag)
             if errors:
                 PROBLEMS.append((tag, 'errors', errors[:4]))
                 print(f'  FAIL {tag} 페이지/콘솔 에러 {errors[:4]}')

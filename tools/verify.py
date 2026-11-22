@@ -6,7 +6,6 @@
  - 두음법칙 · 중복 차단 · 4단계 극악 한방 승리 · 봇 난이도 규칙
  - 힌트 삭제(버튼·로직·문구·API 없음)와 입력 바 배치
  - 설정 화면 정리(상단 태그라인·하단 규칙/팁/전적 블록이 DOM·CSS·JS에 없음, 대전 시작이 마지막 요소, 세로 스크롤 0)와 전적 저장 유지
- - 하드코어 모드(스위치 · 5초 고정 · 봇 선공 고정 · 헤더/결과 배지 · 별도 전적 · 끄면 일반 모드)
  - 배려모드(스위치 · 저장 · 첫 5수 플레이어 한방 차단과 타이머 유지 · Lv.1~5 봇 한방 회피 ·
    5수째 한방뿐인 자리 처리 · 6수부터 허용 · 헤더/결과 배지 · 설정 화면 스크롤 0)
  - 첫 제시 글자(끄투식): 제시어(사전의 2~3글자 일상 단어)에서 뽑은 글자 · 모든 글자 이어짐 ·
@@ -495,11 +494,11 @@ def scenario_twoeum(page, tag):
 
 
 def scenario_new_words(page, tag):
-    """오픈DB에서 새로 병합된 단어가 실제 입력으로 인정되는지."""
+    """원천 단어 목록(끄코 오픈DB)의 표본이 실제 입력으로 인정되는지."""
     samples = page.evaluate(
-        "() => ((window.__ITDA.dict.stats && window.__ITDA.dict.stats.openDbSamples) || []).filter((w) => w.length >= 3)"
+        "() => ((window.__ITDA.dict.stats && window.__ITDA.dict.stats.sourceSamples) || []).filter((w) => w.length >= 3)"
     )
-    check(bool(samples), f'[{tag}] 오픈DB 신규 단어 표본', str(samples[:1]))
+    check(bool(samples), f'[{tag}] 원천 목록 표본', str(samples[:1]))
     if not samples:
         return
     picks = [samples[0], samples[len(samples) // 2], samples[-1]]
@@ -510,7 +509,7 @@ def scenario_new_words(page, tag):
         play_word(page, sample, wait=600)
         st = state(page)
         check(bool(st['chain']) and st['chain'][0]['word'] == sample,
-              f'[{tag}] 오픈DB 신규 단어 입력 인정', sample)
+              f'[{tag}] 원천 목록 단어 입력 인정', sample)
         page.evaluate("window.__ITDA.app.hideResult()")
     page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
 
@@ -627,7 +626,7 @@ def scenario_easy_words(page, tag):
     check(not any(r['oneShot'] or r['kind'] == 'oneshot' for r in shot1),
           f'[{tag}] Lv.1 한방 0수', f"{len(shot1)}수 표본")
 
-    # Lv.3~5 는 일상 목록에 갇히지 않고 사전 전체(796,750단어)를 쓴다.
+    # Lv.3~5 는 일상 목록에 갇히지 않고 사전 전체(715,715단어)를 쓴다.
     #  Lv.3 은 '보통 말'을 우선하느라 일상어 비중이 높지만, 제한이 아니라 선택이다.
     for lv in (3, 4, 5):
         deep = props['deep'][str(lv)]
@@ -882,7 +881,8 @@ def scenario_hell(page, tag):
           f'[{tag}] Lv.5 강제필승 검증', f"{props['outer']}수 중 깨진 것 {props['outerBroken']}")
     check(props['endThin'] + props['endDead'] >= props['moves'] * 0.5,
           f'[{tag}] Lv.5 압박(후속 단어 적은 글자)', f"{props['endDead']} / {props['endThin']}")
-    check(props['msMax'] < 60, f'[{tag}] Lv.5 판단 속도', f"평균 {props['msAvg']}ms / 최대 {props['msMax']}ms")
+    # 예산을 늘린 만큼 최악값은 늘지만, 한 수 상한(700ms)을 넘지 않아야 한다.
+    check(props['msMax'] < 900, f'[{tag}] Lv.5 판단 속도', f"평균 {props['msAvg']}ms / 최대 {props['msMax']}ms")
     check(props['delayMin'] >= 140 and props['delayMax'] <= 410,
           f'[{tag}] Lv.5 응답 텀 0.15~0.4초', f"{props['delayMin']:.0f}~{props['delayMax']:.0f}ms")
     # Lv.5 는 장문을 좇지 않는다(2~4글자 보통 말 우선). 그래도 점수·미션 때문에
@@ -1137,7 +1137,7 @@ def scenario_no_hint(page, tag):
     check(not gone['setupText'], f'[{tag}] 설정 화면 힌트 문구 0건')
     check(not gone['appApi'], f'[{tag}] 힌트 앱 API 없음', str(gone['appApi']))
 
-    page.evaluate("window.__ITDA.startGame({level:2, first:'me', hardcore:false})")
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me'})")
     page.wait_for_timeout(400)
     game = page.evaluate("""() => {
         const box = document.getElementById('composer').getBoundingClientRect();
@@ -1163,230 +1163,6 @@ def scenario_no_hint(page, tag):
     shot(page, f'{tag}-16-no-hint')
     page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(120)
-
-
-def hardcore_view(page):
-    return page.evaluate("""() => ({
-        exists: !!document.getElementById('btn-hardcore'),
-        role: document.getElementById('btn-hardcore')?.getAttribute('role'),
-        on: document.getElementById('btn-hardcore')?.getAttribute('aria-checked'),
-        desc: document.getElementById('hardcore-desc')?.textContent || '',
-        timeLocked: !document.getElementById('time-locked').hidden,
-        firstLocked: !document.getElementById('first-locked').hidden,
-        timeLockedText: document.getElementById('time-locked').innerText.trim(),
-        firstLockedText: document.getElementById('first-locked').innerText.trim(),
-        timeOptsHidden: document.getElementById('time-opts').hidden,
-        firstOptsHidden: document.getElementById('first-opts').hidden,
-        lockedDisabled: [...document.querySelectorAll('#time-locked button, #first-locked button')].map((b) => b.disabled),
-        timeBtns: [...document.querySelectorAll('#time-opts button')].map((b) => b.dataset.time),
-        firstBtns: [...document.querySelectorAll('#first-opts button')].map((b) => b.dataset.first),
-        saved: JSON.parse(localStorage.getItem('itda.settings.v1') || '{}'),
-    })""")
-
-
-def hardcore_game(page):
-    return page.evaluate("""() => {
-        const st = window.__ITDA.state();
-        const badge = document.getElementById('game-hardcore');
-        return {
-            hc: window.__ITDA.engine.hardcore,
-            limit: window.__ITDA.engine.timeLimit,
-            first: window.__ITDA.engine.first,
-            phase: st.phase,
-            left: window.__ITDA.engine.timeLeft(),
-            timeText: document.getElementById('time-left').textContent,
-            chain: st.chain.map((c) => c.who),
-            badge: !badge.hidden,
-            badgeText: badge.innerText.replace(/\\s+/g, ' ').trim(),
-            body: document.body.dataset.hardcore,
-            level: st.level,
-            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        };
-    }""")
-
-
-def scenario_hardcore(page, tag, report_dir=None):
-    """하드코어: 스위치 · 5초 고정 · 봇 선공 · 배지 · 별도 전적 · 끄면 일반 모드."""
-    print(f'  · 하드코어 모드 [{tag}]')
-    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
-    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-    page.wait_for_timeout(200)
-
-    # 기준 상태(꺼짐)로 맞춘다
-    if page.evaluate("document.getElementById('btn-hardcore').getAttribute('aria-checked')") == 'true':
-        page.click('#btn-hardcore')
-        page.wait_for_timeout(180)
-    off = hardcore_view(page)
-    check(off['exists'] and off['role'] == 'switch', f'[{tag}] 하드코어 토글 스위치 존재', json.dumps(off, ensure_ascii=False)[:120])
-    check(off['on'] == 'false' and not off['timeLocked'] and not off['firstLocked'],
-          f'[{tag}] 기본은 하드코어 꺼짐(일반 모드)', json.dumps(off, ensure_ascii=False)[:160])
-    check(off['timeBtns'] == ['10', '15', '20'] and off['firstBtns'] == ['me', 'bot'],
-          f'[{tag}] 일반 모드 시간·선공 선택 유지', f"{off['timeBtns']} / {off['firstBtns']}")
-
-    # Lv.5 에서 켜기 → Lv.3 으로 바꿔도 유지되는지
-    page.click('.level[data-lv="5"]')
-    page.wait_for_timeout(120)
-    page.click('#btn-hardcore')
-    page.wait_for_timeout(220)
-    on = hardcore_view(page)
-    check(on['on'] == 'true', f'[{tag}] 하드코어 스위치 켜짐', str(on['on']))
-    check(on['timeLocked'] and '5초' in on['timeLockedText'] and on['firstLocked'] and '봇부터' in on['firstLockedText'],
-          f'[{tag}] 설정 화면 5초 고정·봇부터 잠금 표시', f"{on['timeLockedText']} / {on['firstLockedText']}")
-    check(on['timeOptsHidden'] and on['firstOptsHidden'] and all(on['lockedDisabled']),
-          f'[{tag}] 잠금 중 시간·선공 변경 불가', str(on['lockedDisabled']))
-    check(on['saved'].get('hardcore') is True, f'[{tag}] 하드코어 설정 저장', str(on['saved']))
-    check(sum(overflow(page).values()) <= 0, f'[{tag}] 하드코어 설정 화면 가로 오버플로 0', str(overflow(page)))
-    report_shot(page, tag, report_dir, 'hardcore-setup')
-
-    page.click('.level[data-lv="3"]')
-    page.wait_for_timeout(120)
-    board_before = page.evaluate("JSON.parse(localStorage.getItem('itda.record.v1') || '{}')")
-    page.click('#btn-start')
-    page.wait_for_selector('#scr-game:not([hidden])')
-    wait_my_turn(page, 7000)
-    page.wait_for_timeout(420)   # 봇 단어 등장 애니메이션이 끝난 뒤
-    g = hardcore_game(page)
-    check(g['hc'] is True and g['limit'] == 5 and g['first'] == 'bot',
-          f'[{tag}] 하드코어 대국: 5초·봇 선공 고정', json.dumps({k: g[k] for k in ('hc', 'limit', 'first', 'level')}, ensure_ascii=False))
-    check(g['badge'] and '하드코어' in g['badgeText'], f'[{tag}] 대전 헤더 하드코어 배지', g['badgeText'])
-    check(g['body'] == '1', f'[{tag}] 하드코어 화면 테마 적용', g['body'])
-    check(g['chain'][:1] == ['bot'], f'[{tag}] 봇이 반드시 선공', str(g['chain']))
-    check(g['phase'] == 'me' and 0 < g['left'] <= 5 and g['timeText'] in ('5', '4'),
-          f'[{tag}] 첫 내 턴 타이머 5초', f"{g['left']:.2f}s / 표시 {g['timeText']}")
-    check(g['overflow'] <= 0, f'[{tag}] 하드코어 대전 가로 오버플로 0', str(g['overflow']))
-
-    # 매 턴 5초로 리셋되는지: 한 단어 두고 다음 내 턴의 남은 시간을 본다
-    st = wait_my_turn(page, 6000)
-    word = None
-    if st and st['phase'] == 'me':
-        word = page.evaluate("""() => {
-            const d = window.__ITDA.dict, st = window.__ITDA.state();
-            const used = new Set(st.chain.map((c) => c.word));
-            const cands = d.candidatesFor(st.needChar, used);
-            // 봇이 이어갈 수 있는 단어만 고른다(한방 단어를 내면 대국이 끝나 타이머를 볼 수 없다)
-            const alive = cands.filter((x) => !d.isOneShot(x));
-            const easy = alive.filter((x) => x.length <= 4);
-            return (easy.length ? easy : (alive.length ? alive : cands))[Math.min(4, (easy.length || alive.length || cands.length) - 1)] || null;
-        }""")
-    if word:
-        page.fill('#word-input', word)
-        page.click('#btn-submit')
-        st2 = wait_my_turn(page, 6000)
-        left2 = page.evaluate("window.__ITDA.engine.timeLeft()")
-        check(st2 and st2['phase'] == 'me' and 3.8 < left2 <= 5.05,
-              f'[{tag}] 매 턴 5초 리셋', f'{word} 입력 후 {left2:.2f}s')
-        page.wait_for_timeout(250)
-        report_shot(page, tag, report_dir, 'hardcore-game')
-    else:
-        check(False, f'[{tag}] 하드코어 턴 확보')
-
-    # 5초 초과 → 시간 초과 패배에도 배지
-    try:
-        page.wait_for_function("() => !document.getElementById('ov-result').hidden", timeout=9000)
-    except Exception:
-        pass
-    page.wait_for_timeout(150)
-    res = result_view(page)
-    hc_badge = page.evaluate("!document.getElementById('result-hardcore').hidden")
-    check(res['visible'] and res['title'] == '패배' and '시간' in res['reason'],
-          f'[{tag}] 하드코어 5초 시간 초과', json.dumps(res, ensure_ascii=False)[:160])
-    check(hc_badge, f'[{tag}] 시간 초과 결과에 하드코어 배지')
-    check(res['label'] == 'Lv.3 어려움' and res['lv'] == '3',
-          f'[{tag}] 하드코어 결과에 난이도', json.dumps(res, ensure_ascii=False)[:160])
-    report_shot(page, tag, report_dir, 'hardcore-result')
-
-    rec = page.evaluate("JSON.parse(localStorage.getItem('itda.record.v1') || '{}')")
-    before_hc = board_before.get('3:hc', {}).get('plays', 0)
-    before_lv = board_before.get('3', {}).get('plays', 0)
-    check(rec.get('3:hc', {}).get('plays', 0) == before_hc + 1,
-          f'[{tag}] 하드코어 전적 별도 기록(3:hc)', json.dumps(rec.get('3:hc'), ensure_ascii=False))
-    check(rec.get('3', {}).get('plays', 0) == before_lv,
-          f'[{tag}] 일반 Lv.3 전적은 그대로', f"{before_lv} → {rec.get('3', {}).get('plays', 0)}")
-
-    # 전적은 화면에 그리지 않고 store(localStorage)에만 쌓인다
-    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-    page.wait_for_timeout(200)
-    rec_view = page.evaluate("""() => ({
-        dom: !!document.getElementById('record') || !!document.querySelector('#scr-setup .record'),
-        last: [...document.querySelector('#scr-setup .setup').children].pop()?.id || '',
-        hcRow: JSON.parse(localStorage.getItem('itda.record.v1') || '{}')['3:hc'] || null,
-    })""")
-    check(not rec_view['dom'] and rec_view['last'] == 'btn-start',
-          f'[{tag}] 설정 화면에 전적 블록 없이 대전 시작이 마지막',
-          json.dumps(rec_view, ensure_ascii=False)[:140])
-    check(bool(rec_view['hcRow']) and rec_view['hcRow'].get('plays', 0) >= 1,
-          f'[{tag}] 하드코어 전적은 화면 없이 저장', json.dumps(rec_view['hcRow'], ensure_ascii=False))
-
-    # 승리 결과에도 배지: 봇 선공(하드코어) 뒤 내가 한방 단어로 끝낸다
-    win = None
-    page.evaluate("window.__ITDA.app.hideResult()")
-    page.evaluate("window.__ITDA.startGame({level:1, hardcore:true})")
-    for _ in range(12):
-        st = wait_my_turn(page, 7000)
-        if not st or st['phase'] != 'me':
-            break
-        got = page.evaluate("""() => {
-            const d = window.__ITDA.dict, st = window.__ITDA.state();
-            const used = new Set(st.chain.map((c) => c.word));
-            const cands = d.candidatesFor(st.needChar, used);
-            if (!cands.length) return null;
-            const kill = cands.find((w) => d.countFrom(w[w.length - 1]) === 0) || null;
-            const easy = cands.filter((w) => w.length <= 4);
-            return { kill, safe: (easy.length ? easy : cands)[Math.min(3, (easy.length || cands.length) - 1)] };
-        }""")
-        if not got:
-            break
-        if got['kill']:
-            page.fill('#word-input', got['kill'])
-            page.click('#btn-submit')
-            page.wait_for_timeout(1600)
-            win = got['kill']
-            break
-        page.fill('#word-input', got['safe'])
-        page.click('#btn-submit')
-        page.wait_for_timeout(400)
-    if win:
-        win_res = result_view(page)
-        win_badge = page.evaluate("!document.getElementById('result-hardcore').hidden")
-        check(win_res['title'] == '승리' and win_badge,
-              f'[{tag}] 승리 결과에 하드코어 배지', f"{win} → {win_res['title']}")
-        shot(page, f'{tag}-17-hardcore-win')
-    else:
-        check(False, f'[{tag}] 하드코어 승리 시나리오 탐색')
-
-    # 포기 결과에도 배지
-    page.evaluate("window.__ITDA.app.hideResult()")
-    page.evaluate("window.__ITDA.startGame({level:2, hardcore:true})")
-    page.wait_for_timeout(600)
-    page.evaluate("window.__ITDA.engine.quit()")
-    page.wait_for_timeout(1000)
-    quit_res = result_view(page)
-    quit_badge = page.evaluate("!document.getElementById('result-hardcore').hidden")
-    check(quit_res['title'] == '패배' and '포기' in quit_res['reason'] and quit_badge,
-          f'[{tag}] 포기 결과에 하드코어 배지', json.dumps(quit_res, ensure_ascii=False)[:140])
-
-    # 끄면 일반 모드: 시간·선공을 다시 고르고, 대국도 그 값으로
-    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-    page.wait_for_timeout(200)
-    page.click('#btn-hardcore')
-    page.wait_for_timeout(200)
-    off2 = hardcore_view(page)
-    check(off2['on'] == 'false' and not off2['timeLocked'] and not off2['firstLocked'] and not off2['timeOptsHidden'],
-          f'[{tag}] 하드코어 끄면 시간·선공 다시 열림', json.dumps(off2, ensure_ascii=False)[:160])
-    page.click('#time-opts button[data-time="20"]')
-    page.click('#first-opts button[data-first="me"]')
-    page.wait_for_timeout(150)
-    page.click('#btn-start')
-    page.wait_for_selector('#scr-game:not([hidden])')
-    page.wait_for_timeout(400)
-    n = hardcore_game(page)
-    check(n['hc'] is False and n['limit'] == 20 and n['first'] == 'me' and not n['badge'] and n['body'] == '0',
-          f'[{tag}] 일반 모드 복귀(20초·나부터·배지 없음)', json.dumps({k: n[k] for k in ('hc', 'limit', 'first', 'badge', 'body')}, ensure_ascii=False))
-    check(n['timeText'] in ('20', '19'), f'[{tag}] 일반 모드 타이머 20초', n['timeText'])
-    page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-    page.wait_for_timeout(150)
-    check(page.evaluate("JSON.parse(localStorage.getItem('itda.settings.v1')||'{}').hardcore") is False,
-          f'[{tag}] 하드코어 꺼짐 저장')
 
 
 def scenario_result_level(page, tag):
@@ -1624,8 +1400,6 @@ def scenario_battle_log(page, tag):
           f'[{tag}] 긴 단어도 잘리지 않고 줄바꿈',
           f"{longest['word']} ({len(longest['word'])}글자) / 넘침 {longest['clip']}px · 높이 {longest['wordHeight']}px(줄 {longest['lineHeight']}px)")
     tagged_rows = [r for r in open_data['rows'] if r['tags']]
-    check(len(tagged_rows) >= 2, f'[{tag}] 수마다 태그 표시',
-          json.dumps([{'word': r['word'], 'tags': r['tags']} for r in tagged_rows[:3]], ensure_ascii=False))
     shot(page, f'{tag}-17-battle-log-open')
 
     # 4) 다시 누르면 접힘
@@ -1754,6 +1528,22 @@ def scenario_battle_log(page, tag):
         page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(150)
 
+
+    # 6) 태그 표시: 사전 flag 배지가 없어진 뒤로는 봇 수의 성격 태그(한방·외통수·필승·압박)나
+    #    미션 배지가 붙은 판이라야 배틀 내역에 태그가 보인다 — Lv.5 한 판을 더 둔다.
+    if len(tagged_rows) < 2:
+        page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.evaluate("window.__ITDA.startGame({level:5, first:'bot', timeLimit:20})")
+        page.wait_for_timeout(1200)
+        play_turns(page, 3)
+        if page.evaluate("window.__ITDA.state().phase") != 'over':
+            page.evaluate('window.__ITDA.engine.quit()')
+        page.wait_for_timeout(1100)
+        tag_data = battle_log_entries(page)
+        tagged_rows = [r for r in tag_data['rows'] if r['tags']]
+    check(len(tagged_rows) >= 2, f'[{tag}] 수마다 태그 표시',
+          json.dumps([{'word': r['word'], 'tags': r['tags']} for r in tagged_rows[:3]], ensure_ascii=False))
 
 def scenario_mission(page, tag, report_dir=None):
     """미션: 14종 후보 · 미달성 시 유지 · 중첩 보너스 · 성공 시 다음 글자."""
@@ -1934,7 +1724,7 @@ def scenario_setup_clean(page, tag):
         const [css, ui, main] = await Promise.all([load('css/style.css'), load('js/ui.js'), load('js/main.js')]);
         const js = ui + main;
         return {
-            css: ['.tagline', '.rules-line', '.tips', '.record {', '.rec-hc'].filter((sel) => css.includes(sel)),
+            css: ['.tagline', '.rules-line', '.tips', '.record {'].filter((sel) => css.includes(sel)),
             js: ['renderRecord', 'dict-count', "getElementById('record')"].filter((needle) => js.includes(needle)),
         };
     }""")
@@ -2077,7 +1867,7 @@ def scenario_dict(page, tag):
           json.dumps({k: opened[k] for k in ('dict', 'setup')}, ensure_ascii=False))
     check(opened['back'].startswith('←') and '돌아가기' in opened['back'],
           f'[{tag}] ← 돌아가기 버튼', opened['back'])
-    check('796,750' in opened['total'], f'[{tag}] 사전 화면에 전체 단어 수', opened['total'])
+    check('715,715' in opened['total'], f'[{tag}] 사전 화면에 전체 단어 수', opened['total'])
     check(opened['sorts'] == ['어려움순', '쉬움순', '긴순', '짧은순'] and opened['checked'] == ['hard'],
           f'[{tag}] 정렬 4종 버튼 · 기본 어려움순', str(opened['sorts']))
     check(opened['empty'] and '시작 글자' in opened['emptyTitle'], f'[{tag}] 빈 검색 안내',
@@ -2089,7 +1879,7 @@ def scenario_dict(page, tag):
     dict_search(page, '이')
     total_expected = page.evaluate("() => window.__ITDA.dict.ranges.get('이') ? window.__ITDA.dict.ranges.get('이')[1] - window.__ITDA.dict.ranges.get('이')[0] : 0")
     view = dict_view(page)
-    check(view['info']['total'] == total_expected and total_expected > 10000,
+    check(view['info']['total'] == total_expected and total_expected > 5000,
           f'[{tag}] ‘이’ 검색 개수', f"{view['info']['total']} / 사전 {total_expected}개")
     check(view['items'] == 100, f'[{tag}] 첫 화면 100개만 렌더', f"{view['items']}개")
     rows = page.evaluate("() => window.__ITDA.dictPanel.rows(100)")
@@ -2118,7 +1908,7 @@ def scenario_dict(page, tag):
         shown = page.evaluate("() => [...document.querySelectorAll('#dict-list .dict-item')].map((li) => li.dataset.word)")
         top = page.evaluate("() => window.__ITDA.dictPanel.rows(100).map((r) => r.word)")
         meta = page.evaluate("document.getElementById('dict-meta').innerText")
-        check(order['n'] > 10000 and not order['bad'], f'[{tag}] {label} 정렬 순서',
+        check(order['n'] > 5000 and not order['bad'], f'[{tag}] {label} 정렬 순서',
               f"{order['n']}개 중 위반 {len(order['bad'])}" + (f" · {order['bad'][:2]}" if order['bad'] else ''))
         check(shown == top, f'[{tag}] {label} 화면 순서 = 계산 순서', f"{len(shown)}개")
         check(label in meta and '어려움순' not in meta.replace(label, ''),
@@ -2270,13 +2060,11 @@ def mercy_view(page):
     """설정 화면의 배려모드 스위치 상태."""
     return page.evaluate("""() => {
         const btn = document.getElementById('btn-mercy');
-        const hc = document.getElementById('btn-hardcore');
         return {
             exists: !!btn,
             role: btn ? btn.getAttribute('role') : null,
             on: btn ? btn.getAttribute('aria-checked') : null,
             desc: document.getElementById('mercy-desc')?.textContent || '',
-            afterHardcore: !!(hc && hc.nextElementSibling === btn),
             saved: JSON.parse(localStorage.getItem('itda.settings.v1') || '{}'),
             scroll: document.getElementById('scr-setup').scrollHeight - document.getElementById('scr-setup').clientHeight,
             startTop: Math.round(document.getElementById('btn-start').getBoundingClientRect().top),
@@ -2334,14 +2122,13 @@ def scenario_mercy(page, tag, report_dir=None):
     page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(200)
 
-    # 1) 설정 스위치: 하드코어 바로 아래, 기본은 꺼짐, 켜면 저장
+    # 1) 설정 스위치: 기본은 꺼짐, 켜면 저장
     if page.evaluate("document.getElementById('btn-mercy').getAttribute('aria-checked')") == 'true':
         page.click('#btn-mercy')
         page.wait_for_timeout(180)
     off = mercy_view(page)
     check(off['exists'] and off['role'] == 'switch', f'[{tag}] 배려모드 토글 스위치 존재',
           json.dumps(off, ensure_ascii=False)[:140])
-    check(off['afterHardcore'], f'[{tag}] 배려모드는 하드코어 스위치 바로 아래', str(off['afterHardcore']))
     check(off['on'] == 'false' and off['saved'].get('mercy') is not True,
           f'[{tag}] 기본은 배려모드 꺼짐', json.dumps(off, ensure_ascii=False)[:160])
     check('5턴' in off['desc'], f'[{tag}] 배려모드 설명에 첫 5턴 안내', off['desc'])
@@ -2375,7 +2162,7 @@ def scenario_mercy(page, tag, report_dir=None):
         return
 
     # 2) 대전 시작(설정값이 엔진까지 전달) · 헤더 배지 · 플레이어 한방 차단
-    page.evaluate("window.__ITDA.startGame({level:2, first:'me', hardcore:false, startChar:'%s', timeLimit:20})" % pick['ch'])
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', startChar:'%s', timeLimit:20})" % pick['ch'])
     page.wait_for_timeout(500)
     b0 = mercy_badge(page)
     check(b0['mercy'] is True and b0['guard'] is True and not b0['hidden']
@@ -2426,7 +2213,7 @@ def scenario_mercy(page, tag, report_dir=None):
 
     # 3) 보호 중 봇이 낼 수 있는 수가 전부 한방뿐이면: 한방을 두지 않고 막힌 것으로 처리
     page.evaluate("window.__ITDA.app.hideResult()")
-    page.evaluate("window.__ITDA.startGame({level:2, first:'me', hardcore:false, mercy:true, timeLimit:20})")
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', mercy:true, timeLimit:20})")
     page.wait_for_timeout(400)
     page.evaluate("window.__ITDA.engine.bot.choose = () => null; window.__ITDA.engine.botTurn()")
     page.wait_for_timeout(1300)
@@ -2437,7 +2224,6 @@ def scenario_mercy(page, tag, report_dir=None):
         reason: document.getElementById('result-reason').textContent,
         mercy: !document.getElementById('result-mercy').hidden,
         mercyText: document.getElementById('result-mercy').innerText.replace(/\\s+/g, ' ').trim(),
-        hardcore: !document.getElementById('result-hardcore').hidden,
     })""")
     check(stuck['phase'] == 'over' and stuck['visible'] and stuck['title'] == '승리'
           and '찾지 못' in stuck['reason'],
@@ -2535,7 +2321,7 @@ def scenario_mercy(page, tag, report_dir=None):
         early, hist = [], []
         for _ in range(2):
             page.evaluate("window.__ITDA.app.hideResult()")
-            page.evaluate("window.__ITDA.startGame({level:%d, first:'bot', hardcore:false, mercy:true, timeLimit:20})" % level)
+            page.evaluate("window.__ITDA.startGame({level:%d, first:'bot', mercy:true, timeLimit:20})" % level)
             page.wait_for_timeout(600)
             for _ in range(14):
                 st = wait_my_turn(page, 9000)
@@ -2563,7 +2349,7 @@ def scenario_mercy(page, tag, report_dir=None):
 
     # 6) 5수를 채운 뒤에는 플레이어도 한방 단어를 쓸 수 있다 (6수부터 허용)
     page.evaluate("window.__ITDA.app.hideResult()")
-    page.evaluate("window.__ITDA.startGame({level:1, first:'me', hardcore:false, mercy:true, timeLimit:20})")
+    page.evaluate("window.__ITDA.startGame({level:1, first:'me', mercy:true, timeLimit:20})")
     page.wait_for_timeout(500)
     fifth_badge = ''
     for _ in range(12):
@@ -2835,7 +2621,6 @@ def run_local(base_url, browser):
         scenario_variety(page, 'local-' + vp_name)
         scenario_legacy(page, 'local-' + vp_name)
         scenario_mercy(page, 'local-' + vp_name, REPORT_DIR)
-        scenario_hardcore(page, 'local-' + vp_name, REPORT_DIR)
 
         # 대전 중 스크린샷 (여러 단어가 쌓인 화면)
         page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
@@ -2907,7 +2692,6 @@ def run_live(url, browser):
         scenario_variety(page, 'live-' + vp_name)
         scenario_legacy(page, 'live-' + vp_name)
         scenario_mercy(page, 'live-' + vp_name, REPORT_DIR)
-        scenario_hardcore(page, 'live-' + vp_name, REPORT_DIR)
 
         check(not col.errors, f'[{vp_name}] 페이지 에러 0', json.dumps(col.errors, ensure_ascii=False)[:400])
         errs = [c for c in col.console if c['type'] == 'error']

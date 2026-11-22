@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Build the ITDA word data from word sources.
+"""Build the ITDA word data from the Kkuko Utils open DB.
 
 Usage:
-    python3 build/build_data.py path/to/db.sql [path/to/kkuko-words.txt]
-    python3 build/build_data.py --easy-only   # easy_words.txt만 바뀌었을 때 stats.json의 easy만 갱신
+    python3 build/build_data.py                    # build/kkuko-words.txt 로 새로 빌드
+    python3 build/build_data.py path/to/words.txt  # 다른 목록으로 빌드
+    python3 build/build_data.py --easy-only        # easy_words.txt만 바뀌었을 때 stats.json의 easy만 갱신
 
-The first source is the KKuTu `db.sql` dump (GPL-3.0); the optional second source
-is the Kkuko Utils open DB word list collected with `build/collect_kkuko.py`
-(CC BY-NC-SA 4.0, attribution in NOTICE.md). Both are merged, de-duplicated and
-re-indexed together.
+사전의 원천은 끄코 유틸리티 오픈DB 목록(`build/collect_kkuko.py` 가 모으는
+`build/kkuko-words.txt`, CC BY-NC-SA 4.0, 출처 표기는 NOTICE.md) 하나다.
+예전에 쓰던 KKuTu `db.sql` 덤프는 더 이상 읽지 않는다(2026-11 지시).
+
+이 목록에는 동사·형용사의 사전형과 활용형, 문장형 표제어가 섮여 있다
+(`가다`, `가로질러간다`, `가만히사랑을바라보다` …). 끝말잇기에서 이어 쓰는 것은
+명사이므로, 형태소 분석기(kiwipiepy)로 품사를 보고 용언·서술형을 걷어낸다.
+`endswith('다')` 로 지우면 `바다`·`사이다`·`판다`·`캐나다`·`아나콘다`·`파고다`
+같은 진짜 명사까지 날아가므로, 형태소 태그로 판정하고 명사 예외 목록을 둔다.
 
 Out of ./data:
     words.txt   one word per line: "word" or "word<TAB>flag" when flag != 0.
@@ -24,7 +30,11 @@ Out of ./data:
                 어휘 A/B/C 단계 표준어, 5~7 = 같은 목록의 외래어. Lv.1·Lv.2 가
                 낯선 방언·옛말·어인정 대신 일상 단어를 고를 때 쓴다.
                 (목록 원본은 build/easy_words.txt, 만드는 법은 build/build_easy.py)
+
+`build/nonwords.txt` 에는 이번 빌드에서 걷어낸 용언·서술형과 그 형태소 분석을
+남긴다(무엇이 왜 빠졌는지 눈으로 확인할 수 있게).
 """
+import argparse
 import json
 import os
 import re
@@ -35,7 +45,7 @@ from collections import deque
 
 HANGUL = re.compile(r"^[가-힣]+$")
 
-# 원본 데이터의 KOR_FLAG 비트 (Server/lib/const.js)
+# 원본 데이터의 KOR_FLAG 비트 (지금 원천에는 flag 가 없다 — 호환용으로만 남긴다)
 FLAG_LOANWORD = 1
 FLAG_RECOGNIZED = 2
 FLAG_SPACED = 4
@@ -48,12 +58,61 @@ MIN_LEN = 2
 # 브랜드 이름과 겹치는 표제어는 사전에서 뺀다 (게임 화면에 옛 이름이 뜨지 않도록).
 BLOCKED_WORDS = {"끄투"}
 
+BUILD_DIR = os.path.dirname(os.path.abspath(__file__))
+KKUKO_PATH = os.path.join(BUILD_DIR, "kkuko-words.txt")
+NONWORDS_PATH = os.path.join(BUILD_DIR, "nonwords.txt")
+
 # 일상 어휘 목록(build/build_easy.py 가 만드는 파일). 없으면 easy 정보 없이 빌드한다.
-EASY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "easy_words.txt")
+EASY_PATH = os.path.join(BUILD_DIR, "easy_words.txt")
 # 이 비트가 붙은 표제어는 일상어로 치지 않는다: 어인정 2 · 방언 8 · 옛말 16 · 문화어 32
 EASY_EXCLUDE = FLAG_RECOGNIZED | FLAG_SATURI | FLAG_OLD | FLAG_MUNHWA
 # 외래어(flag 1) 일상어는 단계에 4를 더해 뒤 순위로 둔다 (예: 컴퓨터·커피)
 EASY_LOANWORD_SHIFT = 4
+
+# ── 용언·서술형 필터 ────────────────────────────────────────
+# 형태소 태그(kiwipiepy)로 판정한다. '-' 뒤 접미사(VV-I 등)는 떼고 본다.
+PREDICATE_TAGS = {"VV", "VA", "VX", "XSV", "XSA", "VCP", "VCN"}   # 용언·서술격
+ENDING_TAGS = {"EF", "EC", "EP", "ETM", "ETN"}                    # 어미
+NOUN_TAGS = {"NNG", "NNP", "NNB", "NNBC", "NNM", "NR", "NP", "UN", "SL", "SN"}
+# 명사 예외: 형태소 분석이 용언으로 읽어도 끝말잇기에서는 명사로 쓰는 말.
+# (사용자 확인 목록 + 표준국어대사전에 명사로 올라 있는 -다 표제어)
+NOUN_KEEP = {
+    "바다", "사이다", "판다", "캐나다", "우간다", "아나콘다", "가나다", "가루다", "파고다",
+    "큰판다", "수다", "소다", "과다", "카렌다", "골고다", "날란다", "네비다", "아난다",
+    "아만다", "벨린다", "미린다", "보만다", "로톤다", "샤로다", "클로다", "카우다",
+    "아레다", "페레다", "엘레다", "브리다", "스피다", "누아다", "부란다", "우란다",
+    "타게다", "아일다", "이베다", "사비다", "자모다", "다후다", "히시다", "루코다",
+}
+PREDICATE_SAMPLE = ["가다", "가끔가다", "가로질러간다", "가만히사랑을바라보다", "먹는다", "예쁘다"]
+NOUN_SAMPLE = ["바다", "사이다", "판다", "캐나다", "우간다", "아나콘다", "가나다", "가루다", "파고다"]
+
+
+def morpheme_tags(kiwi, word):
+    """형태소 태그 집합('-I' 같은 접미사는 뗀다)."""
+    return {t.tag.split("-")[0] for t in kiwi.tokenize(word)}
+
+
+def is_predicate(kiwi, word):
+    """동사·형용사·서술형 표제어인가.
+
+    끝말잇기는 명사만 잇는 게임이라 용언(사전형 -다)·활용형·문장형(~니다·~겠다·
+    ~한다)은 사전에서 뺀다. 다만 `바다`·`판다`처럼 진짜 명사는 남긴다.
+     - -다 로 끝나지 않으면(용언의 사전형·활용형은 모두 -다) 손대지 않는다.
+     - 명사 예외 목록에 있으면 남긴다.
+     - 마지막 형태소가 명사면 남긴다(`먼바다`·`옛수다` 같은 명사 합성어).
+     - 형태소에 용언·서술격 또는 어미가 있으면 용언/문장형으로 본다.
+    """
+    if not word.endswith("다"):
+        return False
+    if word in NOUN_KEEP:
+        return False
+    tokens = kiwi.tokenize(word)
+    if not tokens:
+        return False
+    if tokens[-1].tag.split("-")[0] in NOUN_TAGS:
+        return False
+    tags = {t.tag.split("-")[0] for t in tokens}
+    return bool(tags & (PREDICATE_TAGS | ENDING_TAGS))
 
 # Hangul syllable arithmetic
 HANGUL_BASE = 0xAC00
@@ -67,17 +126,6 @@ IEUNG = 11
 #             ㅛ12 ㅜ13 ㅝ14 ㅞ15 ㅟ16 ㅠ17 ㅡ18 ㅢ19 ㅣ20
 # ㄹ·ㄴ 뒤에서 ㅇ으로 바뀌는 모음
 I_VOWELS = {2, 3, 6, 7, 12, 17, 20}
-
-
-def parse_copy_block(text):
-    marker = "COPY kkutu_ko (_id, type, mean, hit, flag, theme) FROM stdin;\n"
-    start = text.index(marker) + len(marker)
-    end = text.index("\n" + chr(92) + ".\n", start)
-    for line in text[start:end].split("\n"):
-        fields = line.split("\t")
-        if len(fields) < 6:
-            continue
-        yield fields[0], fields[4], fields[5]
 
 
 def twoeum(ch):
@@ -257,9 +305,10 @@ def easy_bands(words, easy):
     return bands, dropped
 
 
-def read_open_db(path):
-    """오픈DB 단어 목록. 한 줄에 단어 하나, 뒤에 탭+flag가 붙어도 읽는다."""
+def read_wordlist(path):
+    """단어 목록(한 줄에 단어 하나, 뒤에 탭+flag가 붙어도 읽는다) → {단어: flag}."""
     rows = 0
+    words = {}
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.rstrip("\n").rstrip("\r")
@@ -267,12 +316,45 @@ def read_open_db(path):
                 continue
             rows += 1
             word, _, flag = line.partition("\t")
+            word = word.strip()
             try:
                 flag = int(flag or 0)
             except ValueError:
                 flag = 0
-            yield word.strip(), flag
-    print("open db rows  :", rows)
+            if not HANGUL.match(word) or len(word) < MIN_LEN:
+                continue
+            if word in BLOCKED_WORDS:
+                continue
+            words[word] = words.get(word, 0) | flag
+    print("word rows     :", rows)
+    return words
+
+
+def filter_predicates(words):
+    """용언·서술형 표제어를 걷어낸다(형태소 분석). 걷어낸 목록도 돌려준다."""
+    try:
+        from kiwipiepy import Kiwi
+    except ImportError:
+        sys.exit("kiwipiepy 가 필요합니다: python3 -m pip install kiwipiepy\n"
+                 "(동사·형용사·활용형을 형태소로 판별해 걷어냅니다)")
+    kiwi = Kiwi(num_workers=-1)
+    kept = {}
+    removed = {}
+    for word, flag in words.items():
+        if is_predicate(kiwi, word):
+            removed[word] = "/".join(f"{t.form}:{t.tag}" for t in kiwi.tokenize(word))
+        else:
+            kept[word] = flag
+    with open(NONWORDS_PATH, "w", encoding="utf-8") as f:
+        f.write("# 이번 빌드에서 걷어낸 용언·서술형 표제어 — 단어<TAB>형태소 분석\n")
+        for word in sorted(removed):
+            f.write("%s\t%s\n" % (word, removed[word]))
+    print("filtered      :", len(removed), "용언/서술형 제거 →", NONWORDS_PATH)
+    for word in PREDICATE_SAMPLE:
+        print("  removed?", word, "->", "제거" if word in removed else ("남음" if word in kept else "없음"))
+    for word in NOUN_SAMPLE:
+        print("  kept?   ", word, "->", "남음" if word in kept else "없음")
+    return kept, removed
 
 
 def read_words_txt(path):
@@ -322,58 +404,30 @@ def rebuild_easy_only():
 
 
 def main():
-    if len(sys.argv) == 2 and sys.argv[1] == "--easy-only":
+    ap = argparse.ArgumentParser(
+        description="끄코 오픈DB 단어 목록으로 잇다 사전(words.txt·stats.json)을 빌드한다.")
+    ap.add_argument("source", nargs="?", default=KKUKO_PATH,
+                    help="단어 목록(기본: build/kkuko-words.txt)")
+    ap.add_argument("--easy-only", action="store_true",
+                    help="easy_words.txt만 바뀌었을 때 stats.json의 easy만 다시 계산")
+    args = ap.parse_args()
+
+    if args.easy_only:
         rebuild_easy_only()
         return
-    if len(sys.argv) < 2:
-        sys.exit("usage: build_data.py <db.sql> [kkuko-words.txt]\n       build_data.py --easy-only")
-    src = sys.argv[1]
-    open_db = sys.argv[2] if len(sys.argv) > 2 else None
-    out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+
+    out_dir = os.path.join(os.path.dirname(BUILD_DIR), "data")
     os.makedirs(out_dir, exist_ok=True)
 
-    text = open(src, encoding="utf-8").read().replace("\r\n", "\n")
-    words = {}
-    raw = 0
-    for word, flag, theme in parse_copy_block(text):
-        raw += 1
-        if len(word) < MIN_LEN or not HANGUL.match(word):
-            continue
-        try:
-            flag = int(flag or 0)
-        except ValueError:
-            flag = 0
-        if flag & FLAG_SPACED:          # 띄어쓰기가 필요한 어휘는 끝말잇기에 쓸 수 없다
-            continue
-        if word in BLOCKED_WORDS:
-            continue
-        if word in words:
-            words[word] |= flag
-        else:
-            words[word] = flag
+    # 원천은 오픈DB 목록 하나뿐이다(옛 db.sql 덤프는 더 이상 읽지 않는다).
+    words = read_wordlist(args.source)
+    raw_count = len(words)
+    words, removed = filter_predicates(words)
 
-    base_count = len(words)
-    open_rows = 0
-    added = 0
-    added_words = []
-    if open_db:
-        for word, flag in read_open_db(open_db):
-            open_rows += 1
-            if len(word) < MIN_LEN or not HANGUL.match(word):
-                continue
-            if word in BLOCKED_WORDS:
-                continue
-            if word in words:
-                words[word] |= flag
-            else:
-                words[word] = flag
-                added += 1
-                added_words.append(word)
-
-    # 오픈DB에서 새로 들어온 단어 중 검증용 표본 (3~10글자, 고르게 뽑기)
-    pool = [w for w in added_words if 3 <= len(w) <= 10]
+    # 원천 목록 표본(검증용): 3~10글자 단어를 고르게 30개
+    pool = sorted(w for w in words if 3 <= len(w) <= 10)
     step = max(1, len(pool) // 30)
-    added_samples = pool[::step][:30]
+    source_samples = pool[::step][:30]
 
     ordered = sorted(words)
     starts = {}
@@ -409,14 +463,13 @@ def main():
                 flag_counts[name] = flag_counts.get(name, 0) + 1
 
     stats = {
-        "version": 3,
-        "source": "공개 사전 덤프 + 오픈DB — 출처 표기는 NOTICE.md",
+        "version": 4,
+        "source": "끄코 유틸리티 오픈DB 단어 목록(CC BY-NC-SA 4.0) — 출처 표기는 NOTICE.md",
         "generatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "rawRows": raw,
-        "baseWords": base_count,
-        "openDbRows": open_rows,
-        "addedFromOpenDb": added,
-        "openDbSamples": added_samples,
+        "rawRows": raw_count,
+        "sourceSamples": source_samples,
+        "removedPredicates": len(removed),
+        "removedSamples": sorted(removed)[:40],
         "total": len(ordered),
         "maxLen": max(len(w) for w in ordered),
         "starts": len(starts),
@@ -427,7 +480,7 @@ def main():
         "inducedSamples": induced[:40],
         "flagCounts": flag_counts,
         "easy": {
-            "version": 1,
+            "version": 2,
             "source": "국립국어원 한국어 학습용 어휘 목록 + TOPIK 어휘 목록 — 출처 표기는 NOTICE.md",
             "total": sum(len(v) for v in bands.values()),
             "bands": {str(k): " ".join(v) for k, v in sorted(bands.items())},
@@ -438,9 +491,9 @@ def main():
         json.dump(stats, f, ensure_ascii=False, separators=(",", ":"))
 
     size = os.path.getsize(words_path)
-    print("rows          :", raw)
-    print("base words    :", base_count)
-    print("open db added :", added)
+    print("source        :", args.source)
+    print("word rows     :", raw_count)
+    print("removed verbs :", len(removed), sorted(removed)[:8])
     print("valid words   :", len(ordered))
     print("start syll.   :", len(starts))
     print("one-shot words:", len(one_shot), one_shot[:8])

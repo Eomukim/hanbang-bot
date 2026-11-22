@@ -11,15 +11,13 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const MERCY_TURNS = 5;
 
 export class Engine {
-  constructor({ dict, level = 2, timeLimit = 15, first = 'me', hardcore = false, mercy = false, startChar = null, mission = null, rng = Math.random, on = {} }) {
+  constructor({ dict, level = 2, timeLimit = 15, first = 'me', mercy = false, startChar = null, mission = null, rng = Math.random, on = {} }) {
     this.dict = dict;
     this.level = level;
-    // 하드코어: 제한 시간 5초 고정 · 봇 선공 고정
-    this.hardcore = Boolean(hardcore);
     // 배려모드: 대국 시작 후 첫 5수(chain.length 0~4)는 나도 봇도 한방 단어를 쓰지 않는다.
     this.mercy = Boolean(mercy);
-    this.timeLimit = this.hardcore ? 5 : timeLimit;
-    this.first = this.hardcore ? 'bot' : first;
+    this.timeLimit = timeLimit;
+    this.first = first;
     this.rng = rng;
     this.on = on;
     this.bot = new Bot({ level, dict, rng });
@@ -71,7 +69,6 @@ export class Engine {
     return {
       phase: this.phase,
       level: this.level,
-      hardcore: this.hardcore,
       mercy: this.mercy,
       mercyGuard: this.mercyGuard(),
       mercyTurn: Math.min(this.chain.length + 1, MERCY_TURNS),
@@ -270,7 +267,6 @@ export class Engine {
     this.on.end?.({
       winner,
       reason,
-      hardcore: this.hardcore,
       mercy: this.mercy,
       win: winner === 'me',
       scoreMe: this.scores.me,

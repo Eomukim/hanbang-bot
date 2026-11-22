@@ -7,8 +7,8 @@
  * 내 단어장 기능은 없앴다. 아주 예전 버전이 이 기기에 남긴 커스텀 키는
  * 읽지도 지우지도 않고 그냥 둔다(값이 무엇이든 앱 동작에 영향이 없다).
  *
- * 전적은 난이도 번호(1~5)로 쌓고, 하드코어 대국은 같은 객체 안의 `3:hc` 처럼
- * 구분된 키에 따로 쌓는다. 그래서 예전 4단계 시절 기록도 그대로 읽힌다.
+ * 전적은 난이도 번호(1~5)로 쌓는다. 그사이 없어진 하드코어 모드가 남긴 `3:hc` 행이
+ * localStorage에 있어도 읽지 않고 그대로 둔다(값이 무엇이든 앱 동작에 영향이 없다).
  */
 
 const KEY_SETTINGS = 'itda.settings.v1';
@@ -22,7 +22,6 @@ const DEFAULT_SETTINGS = {
   timeLimit: 15,
   first: 'me',      // 'me' | 'bot'
   sound: true,
-  hardcore: false,
   mercy: false,     // 배려모드: 첫 5수 한방 금지
 };
 
@@ -60,7 +59,7 @@ export function migrateLegacy() {
     }
 
     // 전적: 행마다 판수(plays)가 더 많은 쪽을 쓴다. 예전 키를 옮겨 와 이어 둔
-    // 값과 겹쳐도 같은 대국을 두 번 세지 않고, 하드코어(`3:hc`) 행도 같이 넘어온다.
+    // 값과 겹쳐도 같은 대국을 두 번 세지 않는다.
     const legacyRecords = LEGACY_NAMES
       .map((name) => readJSON(`${name}.record.v1`, null))
       .filter(Boolean);
@@ -91,7 +90,6 @@ export function loadSettings() {
   if ([10, 15, 20].includes(saved.timeLimit)) settings.timeLimit = saved.timeLimit;
   if (saved.first === 'me' || saved.first === 'bot') settings.first = saved.first;
   if (typeof saved.sound === 'boolean') settings.sound = saved.sound;
-  if (typeof saved.hardcore === 'boolean') settings.hardcore = saved.hardcore;
   if (typeof saved.mercy === 'boolean') settings.mercy = saved.mercy;
   return settings;
 }
@@ -102,17 +100,16 @@ export function saveSettings(settings) {
     timeLimit: settings.timeLimit,
     first: settings.first,
     sound: settings.sound,
-    hardcore: Boolean(settings.hardcore),
     mercy: Boolean(settings.mercy),
   });
 }
 
-/** 전적 키: 일반 대국은 난이도 번호, 하드코어 대국은 `3:hc`. */
-export function recordKey(level, hardcore = false) {
-  return hardcore ? `${level}:hc` : String(level);
+/** 전적 키: 난이도 번호. */
+export function recordKey(level) {
+  return String(level);
 }
 
-/** 전적: { [level | '3:hc']: { wins, losses, bestCombo, bestScore, plays } } */
+/** 전적: { [level]: { wins, losses, bestCombo, bestScore, plays } } */
 export function loadRecord() {
   return readJSON(KEY_RECORD, {});
 }
@@ -121,8 +118,8 @@ export function saveRecord(record) {
   writeJSON(KEY_RECORD, record);
 }
 
-export function recordResult(record, level, outcome, { hardcore = false } = {}) {
-  const key = recordKey(level, hardcore);
+export function recordResult(record, level, outcome) {
+  const key = recordKey(level);
   const row = record[key] || { wins: 0, losses: 0, bestCombo: 0, bestScore: 0, plays: 0 };
   row.plays = (row.plays || 0) + 1;
   if (outcome.win) row.wins += 1;
