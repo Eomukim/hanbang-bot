@@ -55,6 +55,18 @@ Lv.1(쉬움)·Lv.2(보통) 봇이 낯선 방언·옛말·어인정 대신 일상
   `build_data.py` 는 이 중 796,750단어 사전에 실제로 남은 단어만, 방언(8)·옛말(16)·문화어(32)·
   어인정(2) 표제어는 빼고 싣습니다. 외래어(1)는 단계에 4를 더해 뒤 순위로 둡니다.
 
+## 폰트
+
+`fonts/` 에 함께 넣은 두 폰트는 화면을 시안과 같은 모양으로 그리기 위한 것입니다.
+
+- **Jua** (주아체) — Copyright (c) 2018, Woowahan Brothers. SIL Open Font License 1.1.
+  https://fonts.google.com/specimen/Jua
+- **Pretendard** — Copyright (c) 2021, Kil Hyung-jin. SIL Open Font License 1.1.
+  https://github.com/orioncactus/pretendard
+
+두 폰트 모두 OFL 1.1 에 따라 원본 파일 그대로 배포하며, 파일 안에 저작권·라이선스 정보가 들어 있습니다.
+앱은 `css/style.css` 의 `@font-face` 로 이 파일만 직접 불러옵니다(외부 CDN 없음).
+
 ## 라이선스
 
 - 이 저장소의 **코드**: **GPL-3.0** (`LICENSE` 참고)

@@ -13,3 +13,6 @@ services:
       - path: /css/*
         name: Cache-Control
         value: public, max-age=600
+      - path: /fonts/*
+        name: Cache-Control
+        value: public, max-age=604800

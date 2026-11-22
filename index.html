@@ -6,20 +6,16 @@
 <title>잇다 — 끝말잇기 5단계 대전</title>
 <meta name="description" content="796,750 단어 사전과 두음법칙, 5단계 봇과 말을 이어가는 1:1 끝말잇기. 잇다.">
 <meta name="application-name" content="잇다">
-<meta name="theme-color" content="#08090f">
+<meta name="theme-color" content="#F2EFE9">
 <meta property="og:title" content="잇다 — 끝말잇기 5단계 대전">
 <meta property="og:description" content="말을 잇는 5단계 봇과의 1:1 끝말잇기. 796,750 단어 · 두음법칙 · 5단계 난이도.">
 <meta property="og:site_name" content="잇다">
 <meta property="og:type" content="website">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e1a'/%3E%3Ctext x='32' y='45' font-size='34' font-family='sans-serif' font-weight='800' text-anchor='middle' fill='%235eead4'%3E%EC%9E%87%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='2' y='2' width='60' height='60' rx='14' fill='%23E05A47'/%3E%3Ctext x='32' y='45' font-size='34' font-family='sans-serif' font-weight='800' text-anchor='middle' fill='%23FFFDF8'%3E%EC%9E%87%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div class="bg" aria-hidden="true">
-  <div class="bg-glow bg-glow-a"></div>
-  <div class="bg-glow bg-glow-b"></div>
-  <div class="bg-grid"></div>
-</div>
+<div class="bg" aria-hidden="true"></div>
 
 <main id="app">
 
@@ -27,7 +23,7 @@
   <section class="screen screen-loading" id="scr-loading" data-screen="loading">
     <div class="load-inner">
       <p class="brand-kicker">끝말잇기</p>
-      <div class="logo-mark">잇<span>다</span></div>
+      <div class="logo-mark" aria-label="잇다"><span class="lt">잇</span><span class="lt">다</span></div>
       <p class="load-title">사전을 펼치는 중…</p>
       <div class="load-bar"><i id="load-fill"></i></div>
       <p class="load-meta" id="load-meta">0 단어</p>
@@ -39,12 +35,14 @@
   <section class="screen screen-setup" id="scr-setup" data-screen="setup" hidden>
     <div class="setup">
       <button class="dict-open" id="btn-dict" type="button" aria-haspopup="true" aria-controls="scr-dict">
-        <span aria-hidden="true">📖</span> 사전
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.6 2.1h3c.7 0 1.3.6 1.3 1.3v6.5c0-.6-.6-1.1-1.3-1.1h-3zM10.4 2.1h-3c-.7 0-1.3.6-1.3 1.3v6.5c0-.6.6-1.1 1.3-1.1h3z"/></svg>
+        <span>사전</span>
       </button>
 
       <header class="brand">
         <p class="brand-kicker">끝말잇기</p>
-        <div class="logo-mark">잇<span>다</span></div>
+        <div class="logo-mark" aria-label="잇다"><span class="lt">잇</span><span class="lt">다</span></div>
+        <p class="brand-sub">말을 타일처럼 이어 붙이는 1:1 대전</p>
       </header>
 
       <div class="field">
@@ -54,7 +52,7 @@
 
       <button class="toggle-card hardcore-card" id="btn-hardcore" type="button" role="switch" aria-checked="false">
         <span class="toggle-text">
-          <b>🔥 하드코어</b>
+          <b><i>🔥</i>하드코어</b>
           <small id="hardcore-desc">끄면 일반 모드 · 켜면 5초 고정 · 봇 선공</small>
         </span>
         <span class="switch" aria-hidden="true"><i></i></span>
@@ -62,21 +60,21 @@
 
       <button class="toggle-card mercy-card" id="btn-mercy" type="button" role="switch" aria-checked="false">
         <span class="toggle-text">
-          <b>🛡️ 배려모드</b>
+          <b><i>🛡️</i>배려모드</b>
           <small id="mercy-desc">끄면 일반 · 켜면 첫 5턴 한방 금지</small>
         </span>
         <span class="switch" aria-hidden="true"><i></i></span>
       </button>
 
       <div class="field field-split">
-        <div>
+        <div class="opt">
           <div class="field-head"><span>제한 시간</span></div>
           <div class="segmented" id="time-opts" role="radiogroup" aria-label="제한 시간"></div>
           <div class="segmented locked" id="time-locked" hidden>
             <button type="button" disabled aria-disabled="true">🔒 5초 고정</button>
           </div>
         </div>
-        <div>
+        <div class="opt">
           <div class="field-head"><span>선공</span></div>
           <div class="segmented" id="first-opts" role="radiogroup" aria-label="선공"></div>
           <div class="segmented locked" id="first-locked" hidden>
@@ -93,7 +91,7 @@
       </div>
 
       <button class="btn primary big" id="btn-start" type="button">
-        <span>대전 시작</span><kbd>Enter</kbd>
+        <span>대전 시작</span><kbd>ENTER</kbd>
       </button>
     </div>
   </section>
@@ -163,20 +161,19 @@
           <div class="bot-text"><b id="bot-name">잇다 루키</b><small id="bot-lv">Lv.2 보통</small></div>
         </div>
         <div class="scoreboard" aria-label="점수">
-          <span class="side me"><i>나</i><b id="score-me">0</b></span>
-          <span class="vs">:</span>
-          <span class="side bot"><b id="score-bot">0</b><i>봇</i></span>
+          <span class="sc me"><i>나</i><b id="score-me">0</b></span>
+          <span class="sc bot"><i>봇</i><b id="score-bot">0</b></span>
         </div>
         <button class="icon-btn" id="btn-quit" type="button" aria-label="대전 포기">✕</button>
       </div>
     </header>
 
     <div class="arena" id="arena">
+      <ol class="chain" id="chain" aria-label="지난 단어"></ol>
       <div class="stage" id="stage">
         <p class="stage-hint" id="stage-hint">첫 단어를 입력하세요</p>
       </div>
       <div class="bot-bubble" id="bot-bubble" hidden></div>
-      <ol class="chain" id="chain" aria-label="지난 단어"></ol>
     </div>
 
     <div class="turn-panel" id="turn-panel">
@@ -217,9 +214,9 @@
     </div>
     <p class="result-reason" id="result-reason"></p>
     <div class="result-score">
-      <div><i>나</i><b id="result-me">0</b></div>
-      <span>:</span>
-      <div><i>봇</i><b id="result-bot">0</b></div>
+      <div class="rs me"><i>나</i><b id="result-me">0</b></div>
+      <span class="vs">:</span>
+      <div class="rs bot"><i>봇</i><b id="result-bot">0</b></div>
     </div>
     <dl class="result-stats" id="result-stats"></dl>
     <button class="battle-log-btn" id="battle-log-btn" type="button" aria-expanded="false" aria-controls="battle-log">

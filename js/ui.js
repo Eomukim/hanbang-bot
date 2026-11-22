@@ -39,6 +39,11 @@ export class App {
     this.quitTimer = null;
     this.rafId = null;
     this.dictPanel = null;
+    /** 방금 놓인 단어 타일(이어지는 글자 표시용) */
+    this.chainPrev = null;
+    /** 보드로 올라간 마지막 수(다음 수가 오면 말풍선으로 내려간다) */
+    this.chainPending = null;
+    this.stagePrev = null;
 
     this.el = {};
   }
@@ -115,9 +120,11 @@ export class App {
 
   renderLevels() {
     const box = this.el.levels;
+    // 난이도는 점(pip) 5개로 단계를 표시한다(초안 B 보드게임 타일).
+    const pips = (n) => Array.from({ length: 5 }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
     box.innerHTML = LEVELS.map((l) => `
       <button class="level" type="button" role="radio" data-lv="${l.id}" aria-checked="false" title="${esc(l.desc)}">
-        <i>${l.face}</i><b>${l.name}</b><small>Lv.${l.id}</small>
+        <span class="pips" aria-hidden="true">${pips(l.id)}</span><b>${l.name}</b><small>Lv.${l.id}</small>
       </button>`).join('');
     box.querySelectorAll('.level').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -334,6 +341,10 @@ export class App {
     // innerHTML 로 새로 만든 노드라 mount()에서 잡아 둔 참조는 이미 떨어졌다.
     this.el['stage-hint'] = $('stage-hint');
     this.el.chain.innerHTML = '';
+    this.el.chain.classList.remove('more-top');
+    this.chainPrev = null;
+    this.chainPending = null;
+    this.stagePrev = null;
     this.el['bot-bubble'].hidden = true;
     this.el.arena.classList.remove('has-bubble');
     this.el['score-me'].textContent = '0';
@@ -559,9 +570,17 @@ export class App {
     const missionTag = hits
       ? `<span class="tag mission">${hits === 1 ? '미션 +50%' : `미션 ×${hits}`}</span>`
       : '';
-    const wordHtml = hits && mission.char
-      ? esc(entry.word).split(esc(mission.char)).join(`<em class="mis">${esc(mission.char)}</em>`)
-      : esc(entry.word);
+    // 이어지는 글자(앞 단어의 끝 = 이 단어의 첫 글자)는 테라코타, 미션 글자는 세이지로 표시한다.
+    const prevWord = this.stagePrev?.word || '';
+    const linkAt = prevWord && prevWord[prevWord.length - 1] === entry.word.charAt(0) ? 0 : -1;
+    const misChar = hits && mission && mission.char ? mission.char : '';
+    const wordHtml = [...entry.word].map((ch, i) => {
+      const isLink = i === linkAt;
+      const isMis = Boolean(misChar) && ch === misChar;
+      if (!isLink && !isMis) return esc(ch);
+      const cls = [isLink ? 'lk' : '', isMis ? 'mis' : ''].filter(Boolean).join(' ');
+      return `<em class="${cls}">${esc(ch)}</em>`;
+    }).join('');
     const tagHtml = [
       missionTag,
       ...tags.map((t) => `<span class="tag">${esc(t)}</span>`),
@@ -581,14 +600,46 @@ export class App {
         </div>
       </div>`;
     this.el.arena.scrollTop = 0;
+    this.stagePrev = entry;
   }
 
+  /**
+   * 주고받은 단어를 타일 말풍선으로 쌓는다. 방금 놓인 단어는 보드(#stage)에 크게 남기고,
+   * 그 앞의 단어부터 말풍선으로 옮긴다. 앞 단어의 끝 글자와 이어지는 첫 글자는 양쪽 타일에서
+   * 같은 색으로 표시해 말이 이어진 자리를 눈으로 보이게 한다.
+   */
   addChain(entry) {
+    const prev = this.chainPending;
+    this.chainPending = entry;
+    if (!prev) return;              // 첫 수는 보드에만 남긴다
+    const word = String(prev.word);
+    const before = this.chainPrev;
+    const linked = Boolean(before && before.word && before.word[before.word.length - 1] === word.charAt(0));
     const li = document.createElement('li');
-    li.className = entry.who;
-    li.textContent = entry.word;
+    li.className = prev.who;
+    li.innerHTML = `<span class="chain-who">${prev.who === 'me' ? '나' : '봇'}</span>`
+      + `<span class="chain-word">${linked ? this.linkHtml(word, 0) : esc(word)}</span>`;
     this.el.chain.appendChild(li);
-    this.el.chain.scrollTop = this.el.chain.scrollHeight;
+    // 앞 타일의 끝 글자도 같은 자리로 표시(이미 표시돼 있으면 그대로 둔다)
+    if (linked && before.li && !before.li.dataset.linked) {
+      const prevWord = before.word;
+      const box = before.li.querySelector('.chain-word');
+      if (box) box.innerHTML = this.linkHtml(prevWord, prevWord.length - 1);
+      before.li.dataset.linked = '1';
+    }
+    li.dataset.linked = linked ? '1' : '';
+    this.chainPrev = { word, li };
+    const box = this.el.chain;
+    box.scrollTop = box.scrollHeight;
+    // 위로 더 남아 있으면 위쪽을 부드럽게 지운다
+    box.classList.toggle('more-top', box.scrollTop > 6);
+  }
+
+  /** word 의 index 글자만 이어진 글자(.lk)로 감싼 HTML. */
+  linkHtml(word, index) {
+    return esc(word.slice(0, index))
+      + `<span class="lk">${esc(word.slice(index, index + 1))}</span>`
+      + esc(word.slice(index + 1));
   }
 
   say(text) {
@@ -817,7 +868,7 @@ export class App {
   }
 
   confetti() {
-    const colors = ['#5eead4', '#7c9dff', '#ffc14d', '#ff7ab6', '#63f5a3'];
+    const colors = ['#2D8A68', '#E05A47', '#C98A2E', '#7A5A9E', '#E3DBCB'];
     for (let i = 0; i < 26; i += 1) {
       const piece = document.createElement('i');
       piece.className = 'confetti';
