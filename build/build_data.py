@@ -10,11 +10,9 @@ Usage:
 `build/kkuko-words.txt`, CC BY-NC-SA 4.0, 출처 표기는 NOTICE.md) 하나다.
 예전에 쓰던 KKuTu `db.sql` 덤프는 더 이상 읽지 않는다(2026-11 지시).
 
-이 목록에는 동사·형용사의 사전형과 활용형, 문장형 표제어가 섮여 있다
-(`가다`, `가로질러간다`, `가만히사랑을바라보다` …). 끝말잇기에서 이어 쓰는 것은
-명사이므로, 형태소 분석기(kiwipiepy)로 품사를 보고 용언·서술형을 걷어낸다.
-`endswith('다')` 로 지우면 `바다`·`사이다`·`판다`·`캐나다`·`아나콘다`·`파고다`
-같은 진짜 명사까지 날아가므로, 형태소 태그로 판정하고 명사 예외 목록을 둔다.
+실제 끄투코리아 일반·어인정 방의 기본 룰과 같게, 이 목록은 **손대지 않고 그대로** 쓴다
+(동사·형용사 사전형과 활용형, 작품명·어인정 표제어도 끝말잇기에서 쓸 수 있는 단어다).
+2글자 미만, 한글이 아닌 표제어만 뺀다.
 
 Out of ./data:
     words.txt   one word per line: "word" or "word<TAB>flag" when flag != 0.
@@ -30,9 +28,6 @@ Out of ./data:
                 어휘 A/B/C 단계 표준어, 5~7 = 같은 목록의 외래어. Lv.1·Lv.2 가
                 낯선 방언·옛말·어인정 대신 일상 단어를 고를 때 쓴다.
                 (목록 원본은 build/easy_words.txt, 만드는 법은 build/build_easy.py)
-
-`build/nonwords.txt` 에는 이번 빌드에서 걷어낸 용언·서술형과 그 형태소 분석을
-남긴다(무엇이 왜 빠졌는지 눈으로 확인할 수 있게).
 """
 import argparse
 import json
@@ -60,7 +55,6 @@ BLOCKED_WORDS = {"끄투"}
 
 BUILD_DIR = os.path.dirname(os.path.abspath(__file__))
 KKUKO_PATH = os.path.join(BUILD_DIR, "kkuko-words.txt")
-NONWORDS_PATH = os.path.join(BUILD_DIR, "nonwords.txt")
 
 # 일상 어휘 목록(build/build_easy.py 가 만드는 파일). 없으면 easy 정보 없이 빌드한다.
 EASY_PATH = os.path.join(BUILD_DIR, "easy_words.txt")
@@ -68,51 +62,6 @@ EASY_PATH = os.path.join(BUILD_DIR, "easy_words.txt")
 EASY_EXCLUDE = FLAG_RECOGNIZED | FLAG_SATURI | FLAG_OLD | FLAG_MUNHWA
 # 외래어(flag 1) 일상어는 단계에 4를 더해 뒤 순위로 둔다 (예: 컴퓨터·커피)
 EASY_LOANWORD_SHIFT = 4
-
-# ── 용언·서술형 필터 ────────────────────────────────────────
-# 형태소 태그(kiwipiepy)로 판정한다. '-' 뒤 접미사(VV-I 등)는 떼고 본다.
-PREDICATE_TAGS = {"VV", "VA", "VX", "XSV", "XSA", "VCP", "VCN"}   # 용언·서술격
-ENDING_TAGS = {"EF", "EC", "EP", "ETM", "ETN"}                    # 어미
-NOUN_TAGS = {"NNG", "NNP", "NNB", "NNBC", "NNM", "NR", "NP", "UN", "SL", "SN"}
-# 명사 예외: 형태소 분석이 용언으로 읽어도 끝말잇기에서는 명사로 쓰는 말.
-# (사용자 확인 목록 + 표준국어대사전에 명사로 올라 있는 -다 표제어)
-NOUN_KEEP = {
-    "바다", "사이다", "판다", "캐나다", "우간다", "아나콘다", "가나다", "가루다", "파고다",
-    "큰판다", "수다", "소다", "과다", "카렌다", "골고다", "날란다", "네비다", "아난다",
-    "아만다", "벨린다", "미린다", "보만다", "로톤다", "샤로다", "클로다", "카우다",
-    "아레다", "페레다", "엘레다", "브리다", "스피다", "누아다", "부란다", "우란다",
-    "타게다", "아일다", "이베다", "사비다", "자모다", "다후다", "히시다", "루코다",
-}
-PREDICATE_SAMPLE = ["가다", "가끔가다", "가로질러간다", "가만히사랑을바라보다", "먹는다", "예쁘다"]
-NOUN_SAMPLE = ["바다", "사이다", "판다", "캐나다", "우간다", "아나콘다", "가나다", "가루다", "파고다"]
-
-
-def morpheme_tags(kiwi, word):
-    """형태소 태그 집합('-I' 같은 접미사는 뗀다)."""
-    return {t.tag.split("-")[0] for t in kiwi.tokenize(word)}
-
-
-def is_predicate(kiwi, word):
-    """동사·형용사·서술형 표제어인가.
-
-    끝말잇기는 명사만 잇는 게임이라 용언(사전형 -다)·활용형·문장형(~니다·~겠다·
-    ~한다)은 사전에서 뺀다. 다만 `바다`·`판다`처럼 진짜 명사는 남긴다.
-     - -다 로 끝나지 않으면(용언의 사전형·활용형은 모두 -다) 손대지 않는다.
-     - 명사 예외 목록에 있으면 남긴다.
-     - 마지막 형태소가 명사면 남긴다(`먼바다`·`옛수다` 같은 명사 합성어).
-     - 형태소에 용언·서술격 또는 어미가 있으면 용언/문장형으로 본다.
-    """
-    if not word.endswith("다"):
-        return False
-    if word in NOUN_KEEP:
-        return False
-    tokens = kiwi.tokenize(word)
-    if not tokens:
-        return False
-    if tokens[-1].tag.split("-")[0] in NOUN_TAGS:
-        return False
-    tags = {t.tag.split("-")[0] for t in tokens}
-    return bool(tags & (PREDICATE_TAGS | ENDING_TAGS))
 
 # Hangul syllable arithmetic
 HANGUL_BASE = 0xAC00
@@ -330,33 +279,6 @@ def read_wordlist(path):
     return words
 
 
-def filter_predicates(words):
-    """용언·서술형 표제어를 걷어낸다(형태소 분석). 걷어낸 목록도 돌려준다."""
-    try:
-        from kiwipiepy import Kiwi
-    except ImportError:
-        sys.exit("kiwipiepy 가 필요합니다: python3 -m pip install kiwipiepy\n"
-                 "(동사·형용사·활용형을 형태소로 판별해 걷어냅니다)")
-    kiwi = Kiwi(num_workers=-1)
-    kept = {}
-    removed = {}
-    for word, flag in words.items():
-        if is_predicate(kiwi, word):
-            removed[word] = "/".join(f"{t.form}:{t.tag}" for t in kiwi.tokenize(word))
-        else:
-            kept[word] = flag
-    with open(NONWORDS_PATH, "w", encoding="utf-8") as f:
-        f.write("# 이번 빌드에서 걷어낸 용언·서술형 표제어 — 단어<TAB>형태소 분석\n")
-        for word in sorted(removed):
-            f.write("%s\t%s\n" % (word, removed[word]))
-    print("filtered      :", len(removed), "용언/서술형 제거 →", NONWORDS_PATH)
-    for word in PREDICATE_SAMPLE:
-        print("  removed?", word, "->", "제거" if word in removed else ("남음" if word in kept else "없음"))
-    for word in NOUN_SAMPLE:
-        print("  kept?   ", word, "->", "남음" if word in kept else "없음")
-    return kept, removed
-
-
 def read_words_txt(path):
     """data/words.txt(단어<TAB>flag) → {단어: flag}. 일상 어휘만 다시 계산할 때 쓴다."""
     words = {}
@@ -422,7 +344,6 @@ def main():
     # 원천은 오픈DB 목록 하나뿐이다(옛 db.sql 덤프는 더 이상 읽지 않는다).
     words = read_wordlist(args.source)
     raw_count = len(words)
-    words, removed = filter_predicates(words)
 
     # 원천 목록 표본(검증용): 3~10글자 단어를 고르게 30개
     pool = sorted(w for w in words if 3 <= len(w) <= 10)
@@ -468,8 +389,6 @@ def main():
         "generatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "rawRows": raw_count,
         "sourceSamples": source_samples,
-        "removedPredicates": len(removed),
-        "removedSamples": sorted(removed)[:40],
         "total": len(ordered),
         "maxLen": max(len(w) for w in ordered),
         "starts": len(starts),
@@ -493,7 +412,6 @@ def main():
     size = os.path.getsize(words_path)
     print("source        :", args.source)
     print("word rows     :", raw_count)
-    print("removed verbs :", len(removed), sorted(removed)[:8])
     print("valid words   :", len(ordered))
     print("start syll.   :", len(starts))
     print("one-shot words:", len(one_shot), one_shot[:8])

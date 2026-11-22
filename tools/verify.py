@@ -626,7 +626,7 @@ def scenario_easy_words(page, tag):
     check(not any(r['oneShot'] or r['kind'] == 'oneshot' for r in shot1),
           f'[{tag}] Lv.1 한방 0수', f"{len(shot1)}수 표본")
 
-    # Lv.3~5 는 일상 목록에 갇히지 않고 사전 전체(715,715단어)를 쓴다.
+    # Lv.3~5 는 일상 목록에 갇히지 않고 사전 전체를 쓴다.
     #  Lv.3 은 '보통 말'을 우선하느라 일상어 비중이 높지만, 제한이 아니라 선택이다.
     for lv in (3, 4, 5):
         deep = props['deep'][str(lv)]
@@ -1749,6 +1749,35 @@ def scenario_setup_clean(page, tag):
           f'[{tag}] 대국 뒤에도 설정 화면에 전적 블록 없음')
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 화면 가로 오버플로 0', str(overflow(page)))
 
+    # 작은 폰(360x640)에서도 카드 하나가 빠진 설정 화면이 한 화면에 들어오는지
+    orig = page.viewport_size
+    page.set_viewport_size({'width': 360, 'height': 640})
+    page.wait_for_timeout(300)
+    tiny = page.evaluate("""() => {
+        const setup = document.querySelector('#scr-setup .setup');
+        const sec = document.getElementById('scr-setup');
+        const kids = [...setup.children];
+        const last = kids[kids.length - 1];
+        const r = document.getElementById('btn-start').getBoundingClientRect();
+        const mercy = document.getElementById('btn-mercy').getBoundingClientRect();
+        const lv = document.getElementById('levels').getBoundingClientRect();
+        return {
+            lastId: last ? last.id : '', lastIsStart: !!(last && last.id === 'btn-start'),
+            scroll: sec.scrollHeight - sec.clientHeight,
+            startBottom: Math.round(r.bottom), vh: innerHeight,
+            mercyTop: Math.round(mercy.top), mercyBottom: Math.round(mercy.bottom),
+            levelsBottom: Math.round(lv.bottom),
+            mercyGap: Math.round(mercy.top - lv.bottom),
+        };
+    }""")
+    check(tiny['lastIsStart'] and tiny['scroll'] <= 1 and tiny['startBottom'] <= tiny['vh'],
+          f'[{tag}] 360x640 설정 화면 한 화면·대전 시작 마지막',
+          json.dumps(tiny, ensure_ascii=False))
+    check(tiny['mercyGap'] >= 8, f'[{tag}] 360x640 난이도와 배려모드 사이 여백 유지', str(tiny['mercyGap']))
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 360x640 설정 화면 가로 오버플로 0', str(overflow(page)))
+    page.set_viewport_size(orig)
+    page.wait_for_timeout(220)
+
 
 def dict_view(page):
     """사전 화면의 상태: 검색어·정렬·개수, 렌더된 항목, 더 보기 버튼."""
@@ -1867,7 +1896,8 @@ def scenario_dict(page, tag):
           json.dumps({k: opened[k] for k in ('dict', 'setup')}, ensure_ascii=False))
     check(opened['back'].startswith('←') and '돌아가기' in opened['back'],
           f'[{tag}] ← 돌아가기 버튼', opened['back'])
-    check('715,715' in opened['total'], f'[{tag}] 사전 화면에 전체 단어 수', opened['total'])
+    dict_total = page.evaluate("() => window.__ITDA.dict.size.toLocaleString('ko-KR')")
+    check(dict_total in opened['total'], f'[{tag}] 사전 화면에 전체 단어 수', opened['total'])
     check(opened['sorts'] == ['어려움순', '쉬움순', '긴순', '짧은순'] and opened['checked'] == ['hard'],
           f'[{tag}] 정렬 4종 버튼 · 기본 어려움순', str(opened['sorts']))
     check(opened['empty'] and '시작 글자' in opened['emptyTitle'], f'[{tag}] 빈 검색 안내',
