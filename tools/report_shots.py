@@ -67,6 +67,8 @@ def new_page(browser, vp):
 def wait_ready(page, timeout=90000):
     page.wait_for_function('window.__ITDA && window.__ITDA.ready === true', timeout=timeout)
     page.wait_for_selector('#scr-setup:not([hidden])', timeout=timeout)
+    # 화면이 들어오는 전환(0.28s)이 끝난 뒤에 재도록 기다린다(스크린샷이 반투명으로 잡히지 않게)
+    page.wait_for_timeout(420)
 
 
 def overflow(page):

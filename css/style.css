@@ -101,10 +101,11 @@ button { cursor: pointer; }
 /* ── 화면 ─────────────────────────────────────────────────── */
 .screen { height: var(--vvh, 100dvh); }
 .screen[hidden] { display: none; }
-.screen:not([hidden]) { animation: screenIn .28s cubic-bezier(.2,.9,.3,1) both; }
+/* 화면 전환: 자리만 살짝 올라와 앉는다(전체가 반투명해지지 않게) */
+.screen:not([hidden]) { animation: screenIn .26s cubic-bezier(.2,.9,.3,1) both; }
 @keyframes screenIn {
-  from { opacity: 0; transform: translateY(7px); }
-  to   { opacity: 1; transform: none; }
+  from { transform: translateY(7px); }
+  to   { transform: none; }
 }
 
 /* ── 로고 타일 ────────────────────────────────────────────── */
@@ -1192,7 +1193,7 @@ button { cursor: pointer; }
   background: var(--tile);
   box-shadow: 0 2px 0 var(--sh), inset 0 1px 0 #fff;
 }
-.dict-item.oneshot { background: #FFFCFA; border-color: #F3D3C9; box-shadow: 0 2px 0 #EFCFC4, inset 0 1px 0 #fff; }
+.dict-item.oneshot { background: var(--tile); border-color: #F0D0C6; }
 .dict-word {
   flex: 1 1 auto; min-width: 0;
   font-family: var(--display); font-weight: 400;
