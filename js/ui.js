@@ -9,6 +9,8 @@ import { DictPanel } from './dict.js';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/** 움직임 줄이기 설정이면 스크롤도 부드럽게 굴리지 않는다. */
+const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const TIME_OPTIONS = [10, 15, 20];
 const FIRST_OPTIONS = [
@@ -39,6 +41,8 @@ export class App {
     this.lastTick = -1;
     this.toastTimer = null;
     this.bubbleTimer = null;
+    this.bubbleOutTimer = null;
+    this.resultCloseTimer = null;
     this.botLineTimer = null;
     this.quitArmed = false;
     this.quitTimer = null;
@@ -242,7 +246,6 @@ export class App {
     this.el['btn-start'].addEventListener('click', () => this.startGame());
     this.el['btn-dict'].addEventListener('click', () => this.openDict());
     this.el['btn-again'].addEventListener('click', () => {
-      this.hideResult();
       this.startGame();
     });
     this.el['btn-tosetup'].addEventListener('click', () => {
@@ -253,6 +256,8 @@ export class App {
     this.el['btn-quit'].addEventListener('click', () => this.armQuit());
     this.el['battle-log-btn'].addEventListener('click', () => this.toggleBattleLog());
     this.el['battle-log'].addEventListener('scroll', () => this.updateBattleLogFade(), { passive: true });
+    // 위로 지난 단어가 남아 있을 때만 보드 위쪽을 흐리게 한다(스크롤 위치를 따라간다)
+    this.el.chain.addEventListener('scroll', () => this.updateChainFade(), { passive: true });
     this.el['btn-mercy'].addEventListener('click', () => {
       this.settings.mercy = !this.settings.mercy;
       this.persist();
@@ -313,7 +318,7 @@ export class App {
     const timeLimit = overrides.timeLimit ?? this.settings.timeLimit;
     const first = overrides.first ?? this.settings.first;
 
-    this.hideResult();
+    this.hideResult(true);
     this.engine?.destroy();
     this.el.stage.innerHTML = '<p class="stage-hint" id="stage-hint">첫 단어를 입력하세요</p>';
     // innerHTML 로 새로 만든 노드라 mount()에서 잡아 둔 참조는 이미 떨어졌다.
@@ -324,6 +329,7 @@ export class App {
     this.chainPending = null;
     this.stagePrev = null;
     this.el['bot-bubble'].hidden = true;
+    this.el['bot-bubble'].classList.remove('out');
     this.el.arena.classList.remove('has-bubble');
     this.el['score-me'].textContent = '0';
     this.el['score-bot'].textContent = '0';
@@ -405,7 +411,7 @@ export class App {
       this.el['countdown'].classList.add('waiting');
       const timerEl = document.querySelector('.timer');
       timerEl.classList.remove('warn', 'urgent');
-      this.el['timer-fill'].style.width = '100%';
+      this.el['timer-fill'].style.transform = 'scaleX(1)';
       this.el['time-left'].textContent = '···';
       this.el['cand-count'].textContent = '';
     }
@@ -604,9 +610,17 @@ export class App {
     }
     li.dataset.linked = linked ? '1' : '';
     this.chainPrev = { word, li };
+    // 새 타일이 앉은 뒤로 부드럽게 따라 내려간다(즉시 점프하면 위 기록이 뚝 끊긴다).
+    // more-top 판정은 실제 스크롤 위치를 따라가므로 스크롤 이벤트에서 갱신한다.
     const box = this.el.chain;
-    box.scrollTop = box.scrollHeight;
-    // 위로 더 남아 있으면 위쪽을 부드럽게 지운다
+    if (reduceMotion()) box.scrollTop = box.scrollHeight;
+    else box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
+    this.updateChainFade();
+  }
+
+  /** 위로 더 남아 있을 때만 위쪽 가장자리를 부드럽게 지운다. */
+  updateChainFade() {
+    const box = this.el.chain;
     box.classList.toggle('more-top', box.scrollTop > 6);
   }
 
@@ -620,13 +634,20 @@ export class App {
   say(text) {
     if (!text) return;
     const bubble = this.el['bot-bubble'];
+    clearTimeout(this.bubbleTimer);
+    clearTimeout(this.bubbleOutTimer);
     bubble.textContent = text;
+    bubble.classList.remove('out');
     bubble.hidden = false;
     this.el.arena.classList.add('has-bubble');
-    clearTimeout(this.bubbleTimer);
     this.bubbleTimer = setTimeout(() => {
-      bubble.hidden = true;
-      this.el.arena.classList.remove('has-bubble');
+      // 사라질 때도 끊지 않고 옅게 내려앉힌 뒤에 숨긴다.
+      bubble.classList.add('out');
+      this.bubbleOutTimer = setTimeout(() => {
+        bubble.hidden = true;
+        bubble.classList.remove('out');
+        this.el.arena.classList.remove('has-bubble');
+      }, reduceMotion() ? 0 : 200);
     }, 4200);
   }
 
@@ -653,7 +674,7 @@ export class App {
     el.style.left = `${panel.left + panel.width - 40}px`;
     el.style.top = `${panel.top - 26}px`;
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 1000);
+    setTimeout(() => el.remove(), 1150);
   }
 
   koSplash(main, sub) {
@@ -712,7 +733,7 @@ export class App {
       if (engine.phase === 'me') {
         const left = engine.timeLeft();
         const ratio = Math.max(0, Math.min(1, left / engine.timeLimit));
-        this.el['timer-fill'].style.width = `${(ratio * 100).toFixed(1)}%`;
+        this.el['timer-fill'].style.transform = `scaleX(${ratio.toFixed(4)})`;
         this.el['time-left'].textContent = String(Math.ceil(left));
         const timer = document.querySelector('.timer');
         const urgent = left <= 3.2;
@@ -749,6 +770,8 @@ export class App {
       <div><dt>최고 콤보</dt><dd>${payload.bestCombo}</dd></div>
       <div><dt>내 단어</dt><dd>${payload.words}</dd></div>`;
     this.renderBattleLog(payload.chain || []);
+    clearTimeout(this.resultCloseTimer);
+    this.el['ov-result'].classList.remove('ov-out');
     this.el['ov-result'].hidden = false;
     if (payload.win) this.confetti();
   }
@@ -837,8 +860,22 @@ export class App {
     this.el['result-level-label'].textContent = name;
   }
 
-  hideResult() {
-    this.el['ov-result'].hidden = true;
+  hideResult(instant = false) {
+    const ov = this.el['ov-result'];
+    clearTimeout(this.resultCloseTimer);
+    // 새 대전을 시작할 때는 곧바로 걷어 내고, 화면을 옮길 때만 짧게 옅어진다.
+    if (instant || reduceMotion()) {
+      ov.hidden = true;
+      ov.classList.remove('ov-out');
+      return;
+    }
+    if (ov.hidden) return;
+    // 결과 시트는 옅어지며 닫힌다(그 사이 화면은 눌러도 막지 않게 pointer-events 를 끈다).
+    ov.classList.add('ov-out');
+    this.resultCloseTimer = setTimeout(() => {
+      ov.hidden = true;
+      ov.classList.remove('ov-out');
+    }, 150);
   }
 
   confetti() {
