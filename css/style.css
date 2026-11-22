@@ -403,6 +403,7 @@ button { cursor: pointer; }
 
 .stage { min-height: 96px; display: flex; flex-direction: column; justify-content: flex-end; }
 .stage-hint { margin: 0; color: var(--dim-2); font-size: 13px; text-align: center; padding: 24px 0; }
+.stage-hint b { color: var(--me); font-weight: 800; font-size: 15px; }
 .stage-word { animation: wordIn .34s cubic-bezier(.2, 1.3, .4, 1); }
 .stage-who { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--dim-2); margin-bottom: 2px; }
 .stage-who .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }

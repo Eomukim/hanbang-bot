@@ -895,6 +895,73 @@ export class Bot {
   }
 }
 
+/** 한글 음절의 초성 자모 19개(쌍자음 포함). */
+const CHOSEONG = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+
+/** 끄투가 라운드 첫 초성을 고를 때 쓰는 기본 초성 14개(쌍자음 제외). */
+const BASIC_INITIALS = new Set(['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ']);
+
+/** 음절의 초성 자모. 한글이 아니면 null. */
+export function initialOf(ch) {
+  const k = ch.charCodeAt(0) - 0xac00;
+  if (k < 0 || k >= 11172) return null;
+  return CHOSEONG[Math.floor(k / 588)];
+}
+
+/**
+ * 끄투식 첫 제시 글자.
+ *
+ * 끄투는 라운드를 열 때 (1) 기본 초성 하나를 뽑고, (2) 그 초성으로 시작하는 라운드 길이(2~3글자)
+ * 단어를 사전에서 하나 고른 뒤, (3) 그 단어의 모든 글자가 다음 단어로 이어질 수 있는지(한방 글자
+ * 없음)를 확인하고, (4) 그 단어의 첫 글자를 첫 차례 참가자에게 넘긴다.
+ * 잇다도 같은 순서로 고른다 — 다만 대국이 한 라운드뿐이라 제시어 자체는 화면에 내보내지 않고
+ * 그 첫 글자만 '이어야 할 글자'로 쓴다.
+ *
+ * 지금까지처럼 시작 음절을 사전 구간에서 무작위로 뽑으면 '츱'처럼 사전에만 있는 희귀 글자가
+ * 나와 첫 수부터 막힌다. 그래서 기준 단어를 일상 명사 2~3글자에서만 고르고, 그 첫 글자가
+ * 일상 단어로 충분히 이어지는지까지 확인한다.
+ *
+ * @returns {{ title: string, char: string }|null} 기준 단어와 제시 글자
+ */
+export function pickStartTitle(dict, { level = 2, rng = Math.random } = {}) {
+  const easyFirst = level <= 2;                        // Lv.1·2는 일상 표준어(1~3단계)만
+  const minEasy = easyFirst ? 20 : 10;                 // 제시 글자로 이어갈 일상 단어 수
+  const minDict = easyFirst ? 120 : 200;               // 제시 글자로 이어갈 사전 단어 수
+
+  const collect = (tierLimit, easyLimit, dictLimit) => {
+    const pool = [];
+    for (const [word, tier] of dict.easy) {
+      if (!tier || tier > tierLimit) continue;
+      if (word.length < 2 || word.length > 3) continue;   // 끄투의 라운드 길이
+      if (!BASIC_INITIALS.has(initialOf(word.charAt(0)))) continue;
+      // 기준 단어의 모든 글자가 이어질 수 있어야 한다(한방 글자가 낀 단어는 제외)
+      let ok = true;
+      for (const ch of word) {
+        if (dict.countFrom(ch) <= 0) { ok = false; break; }
+      }
+      if (!ok) continue;
+      const first = word.charAt(0);
+      if (dict.countFrom(first) < dictLimit) continue;
+      if (dict.easyCountFrom(first) < easyLimit) continue;
+      pool.push(word);
+    }
+    return pool;
+  };
+
+  const tiers = easyFirst ? [3, 7] : [7];
+  let pool = [];
+  for (const tierLimit of tiers) {
+    pool = collect(tierLimit, minEasy, minDict);
+    if (pool.length) break;
+  }
+  if (!pool.length) pool = collect(7, 5, 60);   // 마지막 완화: 일상 단어 5개 이상
+  if (!pool.length) return null;
+
+  // 기준 단어를 고르면 초성도 그 단어 수만큼 자연스럽게 가중된다(끄투와 같은 방식).
+  const title = pool[Math.floor(rng() * pool.length)] || pool[0];
+  return { title, char: title.charAt(0) };
+}
+
 /**
  * Lv.5 지옥의 선공 오프닝.
  * 봇이 먼저 두는 판에서 아무 글자나 잡지 않고, 봇이 유리한 자리로 시작을 끊는다.

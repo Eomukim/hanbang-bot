@@ -9,10 +9,13 @@
 - 설정 화면 정리: 상단 태그라인·하단 규칙/팁/전적 블록 없음, 대전 시작이 마지막 요소, 세로 스크롤 0
 - 내 단어장 삭제(버튼·모달·사전 API 없음)와 효과음 설정 행 전체 폭
 - 힌트 삭제(버튼·문구·API 없음)
+- 첫 제시 글자: 플레이어 선공이 제시어(사전의 2~3글자 일상 단어)의 첫 글자를 받고,
+  안내 문구·`이어야 할 글자`가 그 글자를 보여 주는지(start-char.png, mobile-start-char.png)
 - 하드코어 모드: 스위치·5초 고정·봇 선공·헤더/결과 배지·별도 전적, 끄면 일반 모드
 - 배려모드: 스위치·첫 5수 한방 차단 안내·6수부터 해금·헤더/결과 배지, 설정 화면 스크롤 0
 - 결과 화면(승리·패배·포기)의 난이도 배지, 버튼으로 여는 배틀 내역(카드 안 스크롤)
 - downloads/itda/ 에 setup.png, lv5-setup.png, lv5-game.png, oneshot.png,
+  start-char.png, mobile-start-char.png,
   result-win.png, result-lv5.png, mobile-setup.png, mobile-game.png, mobile-lv5.png, mobile-result.png,
   hardcore-setup.png, hardcore-game.png, hardcore-result.png,
   mercy-setup.png, mercy-blocked.png, mercy-game.png, mercy-result.png,
@@ -69,6 +72,45 @@ def overflow(page):
         doc: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         body: document.body.scrollWidth - document.body.clientWidth,
     })""")
+
+
+def start_char_view(page):
+    """플레이어 선공 첫 화면의 제시 글자·제시어·안내 문구."""
+    return page.evaluate("""() => {
+        const d = window.__ITDA.dict;
+        const st = window.__ITDA.state();
+        const hint = document.getElementById('stage-hint');
+        return {
+            ch: st.startChar,
+            title: st.startTitle,
+            need: document.getElementById('need-char').textContent.trim(),
+            hint: hint ? hint.innerText.replace(/\\s+/g, ' ').trim() : null,
+            inDict: st.startTitle ? d.has(st.startTitle) : false,
+            tier: st.startTitle ? d.easyTier(st.startTitle) : 0,
+            allLive: st.startTitle ? [...st.startTitle].every((c) => d.countFrom(c) > 0) : false,
+            followEasy: d.easyCountFrom(st.startChar),
+            followDict: d.countFrom(st.startChar),
+        };
+    }""")
+
+
+def check_start_char(page, tag, shot_name=None):
+    """제시어에서 뽑은 첫 글자 · 안내 문구 · 이어야 할 글자 표시를 확인하고 화면을 남긴다."""
+    view = start_char_view(page)
+    check(view['title'] and 2 <= len(view['title']) <= 3 and view['inDict'] and view['tier'] > 0
+          and view['allLive'] and view['title'][0] == view['ch'],
+          f'[{tag}] 첫 제시 글자: 제시어(2~3글자 일상 단어)에서 뽑음',
+          f"{view['title']} → '{view['ch']}' (일상 후속 {view['followEasy']}개 · 사전 {view['followDict']}개)")
+    check(view['hint'] and view['ch'] in view['hint'] and '시작하는 단어를 입력하세요' in view['hint'],
+          f'[{tag}] 첫 안내 문구가 제시 글자를 요구', view['hint'])
+    check(view['need'] == view['ch'], f'[{tag}] 이어야 할 글자에 제시 글자 표시', view['need'])
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 제시 글자 화면 가로 오버플로 0', str(overflow(page)))
+    hits = brand_hits(page)
+    check(not hits, f'[{tag}] 제시 글자 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+    if shot_name:
+        page.screenshot(path=os.path.join(OUT, shot_name))
+        print(f'  shot  {os.path.join(OUT, shot_name)}')
+    return view
 
 
 def brand_hits(page):
@@ -379,6 +421,13 @@ def main():
             lv: el.dataset.lv, name: el.querySelector('b').textContent, label: el.querySelector('small').textContent }))""")
         check(len(cards) == 5 and [c['name'] for c in cards] == ['쉬움', '보통', '어려움', '극악', '지옥'],
               '난이도 5단계 카드', str([c['name'] for c in cards]))
+
+        # ── 데스크톱: 첫 제시 글자(플레이어 선공) ─────────────
+        page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:20})")
+        page.wait_for_timeout(450)
+        summary['start_char'] = check_start_char(page, 'desktop', 'start-char.png')
+        page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.wait_for_timeout(200)
 
         # ── 데스크톱: Lv.5 선택 ─────────────────────────────
         page.click('.level[data-lv="5"]')
@@ -806,6 +855,14 @@ def main():
               '모바일 설정 화면 정리·스크롤 없음', json.dumps(mobile_clean, ensure_ascii=False))
         summary['mobile_setup'] = mobile_clean
         page.screenshot(path=os.path.join(OUT, 'mobile-setup.png'))
+
+        # ── 모바일: 첫 제시 글자(플레이어 선공) ─────────────
+        page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:20})")
+        page.wait_for_timeout(450)
+        summary['mobile_start_char'] = check_start_char(page, 'mobile', 'mobile-start-char.png')
+        page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.wait_for_timeout(200)
+
         page.click('.level[data-lv="5"]')
         page.wait_for_timeout(200)
         check(sum(overflow(page).values()) <= 0, '모바일 Lv.5 카드 가로 오버플로 0', str(overflow(page)))

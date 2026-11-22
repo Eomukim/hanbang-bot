@@ -9,6 +9,9 @@
  - 하드코어 모드(스위치 · 5초 고정 · 봇 선공 고정 · 헤더/결과 배지 · 별도 전적 · 끄면 일반 모드)
  - 배려모드(스위치 · 저장 · 첫 5수 플레이어 한방 차단과 타이머 유지 · Lv.1~5 봇 한방 회피 ·
    5수째 한방뿐인 자리 처리 · 6수부터 허용 · 헤더/결과 배지 · 설정 화면 스크롤 0)
+ - 첫 제시 글자(끄투식): 제시어(사전의 2~3글자 일상 단어)에서 뽑은 글자 · 모든 글자 이어짐 ·
+   Lv.1·2는 일상 표준어로 20개 이상 이어지는 글자 · 안내 문구 · 다른 글자 거부 ·
+   봇 선공(Lv.1~4는 같은 제시 글자, Lv.5는 지옥 오프닝 유지) · 배려모드 1수째 한방 금지
  - 내 단어장 삭제(버튼·모달·사전 API 없음, 남은 localStorage 값 무시)
  - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
  - 결과 화면 배틀 내역: 버튼 열기/닫기 · 카드 안 세로 스크롤 · 턴·나/봇·단어·점수·태그 · 0수 종료(포기·시간 초과) · 아주 긴 단어 줄바꿈 · 모바일 오버플로
@@ -2317,6 +2320,151 @@ def scenario_mercy(page, tag, report_dir=None):
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 화면 가로 오버플로 0', str(overflow(page)))
 
 
+def start_title_rows(page, levels, count, first):
+    """여러 난이도에서 대국을 열어 첫 제시 글자·제시어·안내 문구를 모은다."""
+    return page.evaluate("""([levels, count, first]) => {
+        const d = window.__ITDA.dict;
+        const rows = [];
+        for (const lv of levels) {
+            for (let i = 0; i < count; i += 1) {
+                window.__ITDA.app.engine && window.__ITDA.app.engine.destroy();
+                window.__ITDA.app.hideResult();
+                window.__ITDA.startGame({ level: lv, first, timeLimit: 30 });
+                const st = window.__ITDA.state();
+                const hint = document.getElementById('stage-hint');
+                rows.push({
+                    lv, first,
+                    ch: st.startChar,
+                    title: st.startTitle,
+                    need: document.getElementById('need-char').textContent.trim(),
+                    hint: hint ? hint.innerText.replace(/\\s+/g, ' ').trim() : null,
+                    followDict: d.countFrom(st.startChar),
+                    followEasy: d.easyCountFrom(st.startChar),
+                    inDict: st.startTitle ? d.has(st.startTitle) : null,
+                    tier: st.startTitle ? d.easyTier(st.startTitle) : 0,
+                    allLive: st.startTitle ? [...st.startTitle].every((c) => d.countFrom(c) > 0) : null,
+                    status: d.graphStatus(st.startChar),
+                });
+            }
+        }
+        window.__ITDA.app.engine && window.__ITDA.app.engine.destroy();
+        return rows;
+    }""", [levels, count, first])
+
+
+def scenario_start_title(page, tag):
+    """끄투식 첫 제시 글자: 제시어 기반 글자 · 안내 문구 · 봇 선공 호환 · 배려모드 1수."""
+    print(f'  · 첫 제시 글자 [{tag}]')
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(200)
+
+    # 1) 플레이어 선공: 사전의 2~3글자 일상 단어(제시어)에서 첫 글자를 받고, 모든 글자가 이어진다
+    rows = start_title_rows(page, [1, 2, 3, 4, 5], 8, 'me')
+    missing = [r for r in rows if not r['title']]
+    check(not missing, f'[{tag}] 플레이어 선공은 모두 제시어에서 시작 글자를 받음',
+          json.dumps([(r['lv'], r['ch']) for r in missing], ensure_ascii=False))
+    rule = [r for r in rows if r['title'] and not (
+        2 <= len(r['title']) <= 3 and r['inDict'] and r['tier'] > 0 and r['allLive']
+        and r['title'][0] == r['ch'])]
+    check(not rule, f'[{tag}] 제시어 = 2~3글자 일상 단어 · 모든 글자 이어짐 · 첫 글자가 제시 글자',
+          json.dumps([(r['lv'], r['title'], r['ch'], r['inDict'], r['tier'], r['allLive']) for r in rule],
+                     ensure_ascii=False)[:300])
+    hard = [r for r in rows if r['lv'] <= 2 and (r['tier'] > 3 or r['followEasy'] < 20)]
+    check(not hard, f'[{tag}] Lv.1·2 제시 글자는 일상 표준어(1~3단계)로 20개 이상 이어짐',
+          json.dumps([(r['lv'], r['ch'], r['title'], r['tier'], r['followEasy']) for r in hard],
+                     ensure_ascii=False)[:300])
+    thin = [r for r in rows if r['followEasy'] < 10 or r['followDict'] < 120]
+    check(not thin, f'[{tag}] 제시 글자마다 후속 단어 충분(일상 10+ · 사전 120+)',
+          json.dumps([(r['lv'], r['ch'], r['followEasy'], r['followDict']) for r in thin],
+                     ensure_ascii=False)[:300])
+    hints = [r for r in rows if not r['hint'] or r['ch'] not in r['hint']
+             or '시작하는 단어를 입력하세요' not in r['hint'] or '첫 단어를 입력하세요' in r['hint']]
+    check(not hints, f'[{tag}] 첫 안내가 제시 글자를 그대로 요구',
+          json.dumps([(r['lv'], r['hint']) for r in hints], ensure_ascii=False)[:300])
+    need = [r for r in rows if r['need'] != r['ch']]
+    check(not need, f'[{tag}] 이어야 할 글자에 제시 글자 표시',
+          json.dumps([(r['ch'], r['need']) for r in need], ensure_ascii=False))
+    variety = len({r['ch'] for r in rows if r['lv'] == 2})
+    check(variety >= 5, f'[{tag}] 같은 난이도에서도 제시 글자가 매번 달라짐',
+          f'Lv.2 8판 중 {variety}가지: ' + ', '.join(sorted({r['ch'] for r in rows if r['lv'] == 2})))
+    shot(page, f'{tag}-start-char')
+
+    # 2) 제시 글자와 다른 글자로 시작하는 단어는 막히고, 제시 글자로 시작하면 통과
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:30})")
+    page.wait_for_timeout(300)
+    probe = page.evaluate("""() => {
+        const d = window.__ITDA.dict;
+        const st = window.__ITDA.state();
+        const ch = st.startChar;
+        const banned = [ch, st.needAlt].filter(Boolean);
+        const otherStart = ['가', '나', '다', '라'].find((c) => !banned.includes(c));
+        const other = d.candidatesFor(otherStart, new Set())[0];
+        const good = d.candidatesFor(ch, new Set())[0];
+        const wrong = window.__ITDA.submit(other);
+        const right = window.__ITDA.submit(good);
+        return {
+            ch, other, good, wrong: wrong.ok, wrongCode: wrong.error && wrong.error.code,
+            right: right.ok, phase: window.__ITDA.state().phase,
+        };
+    }""")
+    check(probe['wrong'] is False and probe['wrongCode'] == 'start',
+          f'[{tag}] 제시 글자로 시작하지 않는 단어는 거부', json.dumps(probe, ensure_ascii=False)[:200])
+    check(probe['right'] is True, f'[{tag}] 제시 글자로 시작하는 단어는 통과',
+          f"{probe['ch']} → {probe['good']}")
+
+    # 3) 봇 선공: Lv.1~4도 같은 제시 글자에서 봇이 먼저 두고, Lv.5는 지옥 오프닝을 그대로 쓴다
+    bots = start_title_rows(page, [1, 2, 3, 4], 4, 'bot')
+    check(all(r['title'] for r in bots), f'[{tag}] 봇 선공(Lv.1~4)도 제시어에서 글자를 받음',
+          json.dumps([(r['lv'], r['ch'], r['title']) for r in bots if not r['title']], ensure_ascii=False))
+    botHints = [r for r in bots if not r['hint'] or '봇이' not in r['hint'] or r['ch'] not in r['hint']]
+    check(not botHints, f'[{tag}] 봇 선공 안내도 제시 글자를 보여 줌',
+          json.dumps([(r['lv'], r['hint']) for r in botHints], ensure_ascii=False)[:300])
+    page.evaluate("window.__ITDA.startGame({level:2, first:'bot', timeLimit:30})")
+    st = wait_my_turn(page, 9000)
+    first = next((c for c in st['chain'] if c['who'] == 'bot'), None)
+    opens = page.evaluate("""(w) => {
+        const d = window.__ITDA.dict, st = window.__ITDA.state();
+        return { starts: d.candidatesFor(st.startChar, new Set()).includes(w), word: w, ch: st.startChar };
+    }""", first['word'] if first else '')
+    check(bool(first) and opens['starts'], f'[{tag}] 봇 첫 단어가 제시 글자로 시작',
+          json.dumps(opens, ensure_ascii=False))
+
+    hell = start_title_rows(page, [5], 6, 'bot')
+    check(all(r['title'] is None for r in hell), f'[{tag}] Lv.5 봇 선공은 제시어 대신 지옥 오프닝',
+          json.dumps([(r['ch'], r['title']) for r in hell], ensure_ascii=False))
+    check(all(r['status'] == 'W' for r in hell), f'[{tag}] Lv.5 오프닝은 봇이 이기는 자리',
+          ', '.join(f"{r['ch']}:{r['status']}" for r in hell))
+
+    # 4) 배려모드: 플레이어 1수째부터 바로 한방 금지
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', mercy:true, timeLimit:30})")
+    page.wait_for_timeout(300)
+    m = page.evaluate("""() => {
+        const d = window.__ITDA.dict, st = window.__ITDA.state();
+        const cands = d.candidatesFor(st.needChar, new Set());
+        const shotWord = cands.find((w) => d.countFrom(w[w.length - 1]) === 0);
+        let blot = null;
+        if (shotWord) blot = window.__ITDA.submit(shotWord);
+        return {
+            ch: st.startChar, guard: st.mercyGuard, turn: st.mercyTurn, guardTurns: st.mercyTurns,
+            shotWord, blocked: blot ? blot.ok : null, code: blot && blot.error && blot.error.code,
+            chain: window.__ITDA.state().chain.length,
+        };
+    }""")
+    check(m['guard'] is True and m['turn'] == 1 and m['guardTurns'] == 5,
+          f'[{tag}] 새 제시 글자로 시작해도 배려모드 1/5턴 보호', json.dumps(m, ensure_ascii=False)[:220])
+    if m['shotWord']:
+        check(m['blocked'] is False and m['code'] == 'mercy' and m['chain'] == 0,
+              f'[{tag}] 배려모드 1수째 한방 단어 차단', f"{m['shotWord']} → {m['code']}")
+    else:
+        print(f'  skip  [{tag}] 제시 글자 {m["ch"]}에 한방 단어가 없어 1수째 차단은 배려모드 시나리오에서 확인')
+
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(150)
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 제시 글자 화면 가로 오버플로 0', str(overflow(page)))
+
+
 def run_local(base_url, browser):
     print(f'\n=== LOCAL {base_url} ===')
     for vp_name in VIEWPORTS:
@@ -2365,6 +2513,7 @@ def run_local(base_url, browser):
         scenario_bot_levels(page, 'local-' + vp_name)
         scenario_easy_words(page, 'local-' + vp_name)
         scenario_easy_game(page, 'local-' + vp_name)
+        scenario_start_title(page, 'local-' + vp_name)
         scenario_no_custom(page, 'local-' + vp_name)
         scenario_no_hint(page, 'local-' + vp_name)
         scenario_setup_clean(page, 'local-' + vp_name)
@@ -2435,6 +2584,7 @@ def run_live(url, browser):
         scenario_bot_levels(page, 'live-' + vp_name)
         scenario_easy_words(page, 'live-' + vp_name)
         scenario_easy_game(page, 'live-' + vp_name)
+        scenario_start_title(page, 'live-' + vp_name)
         scenario_no_custom(page, 'live-' + vp_name)
         scenario_no_hint(page, 'live-' + vp_name)
         scenario_setup_clean(page, 'live-' + vp_name)

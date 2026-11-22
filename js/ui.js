@@ -306,6 +306,8 @@ export class App {
     this.hideResult();
     this.engine?.destroy();
     this.el.stage.innerHTML = '<p class="stage-hint" id="stage-hint">첫 단어를 입력하세요</p>';
+    // innerHTML 로 새로 만든 노드라 mount()에서 잡아 둔 참조는 이미 떨어졌다.
+    this.el['stage-hint'] = $('stage-hint');
     this.el.chain.innerHTML = '';
     this.el['bot-bubble'].hidden = true;
     this.el.arena.classList.remove('has-bubble');
@@ -353,9 +355,24 @@ export class App {
 
   onStart(state) {
     this.sfx.play('start');
-    this.el['stage-hint'].textContent = state.first === 'bot' ? '봇이 첫 단어를 고르는 중…' : '첫 단어를 입력하세요';
+    this.renderStartHint(state);
     this.setNeed(state);
     this.say(botLine(state.level, 'start', Math.random));
+  }
+
+  /**
+   * 첫 수 안내: 끄투식으로 받은 제시 글자를 그대로 알려 준다.
+   * (예전에는 화면을 다시 만들면서 잡아 둔 참조가 떨어져 '첫 단어를 입력하세요'가 그대로 남았다)
+   */
+  renderStartHint(state) {
+    const hint = this.el['stage-hint'];
+    if (!hint) return;
+    const ch = state.startChar || state.needChar;
+    // 받침이 있으면 '으로', 없으면 '로'
+    const ro = (ch.charCodeAt(0) - 0xac00) % 28 ? '으로' : '로';
+    hint.innerHTML = state.first === 'bot'
+      ? `봇이 <b>‘${esc(ch)}’</b>${ro} 시작하는 단어를 고르는 중…`
+      : `<b>‘${esc(ch)}’</b>${ro} 시작하는 단어를 입력하세요`;
   }
 
   onTurn(state) {

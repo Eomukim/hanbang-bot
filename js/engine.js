@@ -3,7 +3,7 @@
 import {
   normalizeWord, HANGUL_ONLY, twoeumOf, ERR, MISSION_CHARS, missionHits, missionMultiplier,
 } from './rules.js';
-import { Bot, botLine, pickHellOpening } from './bot.js';
+import { Bot, botLine, pickHellOpening, pickStartTitle } from './bot.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -38,7 +38,12 @@ export class Engine {
     const hellOpening = !startChar && level >= 5 && this.first === 'bot'
       ? pickHellOpening(dict, rng)
       : null;
-    this.startChar = startChar || hellOpening || starts[Math.floor(rng() * starts.length)] || '가';
+    // 나머지는 끄투식으로 기준 단어(일상 명사 2~3글자)를 뽑고 그 첫 글자를 제시한다.
+    // 직접 startChar를 넘긴 시험·재현 경로는 그대로 존중한다.
+    const opening = startChar || hellOpening ? null : pickStartTitle(dict, { level, rng });
+    this.startChar = startChar || hellOpening || opening?.char || starts[Math.floor(rng() * starts.length)] || '가';
+    /** 끄투식으로 고른 기준 단어(제시어). 직접 startChar를 받았거나 Lv.5 오프닝이면 null. */
+    this.startTitle = opening?.title ?? null;
     this.missionChar = mission || this.pickMission(this.startChar);
     this.needChar = this.startChar;
 
@@ -73,6 +78,7 @@ export class Engine {
       mercyTurns: MERCY_TURNS,
       first: this.first,
       startChar: this.startChar,
+      startTitle: this.startTitle,
       needChar: this.needChar,
       needAlt: twoeumOf(this.needChar),
       missionChar: this.missionChar,
