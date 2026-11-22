@@ -2188,6 +2188,28 @@ def scenario_dict(page, tag):
     check(miss['empty'] and miss['n'] == 0 and '없어요' in miss['title'],
           f'[{tag}] 없는 말 안내', json.dumps(miss, ensure_ascii=False))
     if mobile:
+        # 360x640(작은 폰)에서도 가로 오버플로 0, 검색창·정렬·목록이 화면 안
+        small = page.viewport_size
+        page.set_viewport_size({'width': 360, 'height': 640})
+        page.wait_for_timeout(320)
+        tiny = page.evaluate("""() => {
+            const ids = ['dict-input', 'btn-twoeum', 'dict-sorts', 'dict-meta', 'dict-body'];
+            const out = {};
+            for (const id of ids) {
+                const r = document.getElementById(id).getBoundingClientRect();
+                out[id] = { top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom),
+                            visible: r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom > 0 && r.top < innerHeight };
+            }
+            out.vw = innerWidth; out.vh = innerHeight;
+            out.overflow = { doc: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                             body: document.body.scrollWidth - document.body.clientWidth };
+            return out;
+        }""")
+        check(all(v['visible'] for k, v in tiny.items() if isinstance(v, dict)
+                  and k not in ('vw', 'vh', 'overflow')) and not any(tiny['overflow'].values()),
+              f'[{tag}] 360x640 사전 화면 레이아웃', json.dumps(tiny, ensure_ascii=False))
+        page.set_viewport_size(small)
+        page.wait_for_timeout(200)
         # 키보드가 올라온 높이(430px)에서도 검색창·목록·정렬이 보이고 가로 오버플로 0
         page.focus('#dict-input')
         size = page.viewport_size
