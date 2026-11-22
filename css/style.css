@@ -365,7 +365,6 @@ button { cursor: pointer; }
 .setup > #btn-start { margin-top: 16px; }
 
 /* 대전 시작 */
-.foot { margin-top: auto; padding-top: 18px; }
 .btn {
   border: 1px solid var(--edge);
   background: var(--tile);
@@ -1276,7 +1275,6 @@ button { cursor: pointer; }
   .stage-word h2 { font-size: clamp(26px, 9vw, 34px); }
   .need-char b { width: 54px; height: 54px; font-size: 28px; }
   .countdown b { font-size: 21px; }
-  .dict--tight { padding-left: 12px; padding-right: 12px; }
   .turn-panel { padding-left: 15px; padding-right: 15px; }
 }
 
@@ -1292,7 +1290,7 @@ button { cursor: pointer; }
   .field-split { margin-top: 14px; }
   .setup-actions { margin-top: 12px; }
   .setting-row { padding: 11px 14px; }
-  .foot { padding-top: 12px; }
+  .setup > #btn-start { margin-top: 12px; }
   .btn.primary.big { height: 52px; }
 }
 @media (max-height: 700px) {
@@ -1310,7 +1308,7 @@ button { cursor: pointer; }
   .toggle-text small { font-size: 9.5px; }
   .setup-actions { margin-top: 10px; }
   .setting-row { padding: 9px 13px; }
-  .foot { padding-top: 10px; }
+  .setup > #btn-start { margin-top: 10px; }
   .btn.primary.big { height: 46px; font-size: 16.5px; }
   .dict-open { padding: 6px 11px 7px; top: max(8px, env(safe-area-inset-top)); }
 }
