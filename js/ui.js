@@ -3,6 +3,7 @@
 import { Engine } from './engine.js';
 import { LEVELS, levelInfo, botLine } from './bot.js';
 import { saveSettings, recordResult } from './store.js';
+import { allowedStarts } from './rules.js';
 import { DictPanel } from './dict.js';
 
 const $ = (id) => document.getElementById(id);
@@ -14,6 +15,10 @@ const FIRST_OPTIONS = [
   ['me', '나부터'],
   ['bot', '봇부터'],
 ];
+
+/** 앞 단어의 끝 글자로 이 단어를 받을 수 있는가(두음법칙 포함). */
+const linksTo = (prevWord, nextWord) => Boolean(prevWord && nextWord
+  && allowedStarts(prevWord[prevWord.length - 1]).includes(nextWord.charAt(0)));
 
 const REASON_TEXT = {
   timeout: '시간이 다 됐어요.',
@@ -570,9 +575,9 @@ export class App {
     const missionTag = hits
       ? `<span class="tag mission">${hits === 1 ? '미션 +50%' : `미션 ×${hits}`}</span>`
       : '';
-    // 이어지는 글자(앞 단어의 끝 = 이 단어의 첫 글자)는 테라코타, 미션 글자는 세이지로 표시한다.
+    // 이어지는 글자(앞 단어의 끝 = 이 단어의 첫 글자, 두음 포함)는 황동색, 미션 글자는 청록으로 표시한다.
     const prevWord = this.stagePrev?.word || '';
-    const linkAt = prevWord && prevWord[prevWord.length - 1] === entry.word.charAt(0) ? 0 : -1;
+    const linkAt = linksTo(prevWord, entry.word) ? 0 : -1;
     const misChar = hits && mission && mission.char ? mission.char : '';
     const wordHtml = [...entry.word].map((ch, i) => {
       const isLink = i === linkAt;
@@ -589,7 +594,7 @@ export class App {
       ? '<span class="tag danger">외통수</span>'
       : kind === 'route'
         ? '<span class="tag danger">필승 라인</span>'
-        : kind === 'press' ? '<span class="tag danger">압박</span>' : '';
+        : kind === 'press' ? '<span class="tag danger press">압박</span>' : '';
     this.el.stage.innerHTML = `
       <div class="stage-word ${entry.who}">
         <div class="stage-who ${entry.who}"><i class="dot"></i>${who} · ${entry.word.length}글자</div>
@@ -614,7 +619,7 @@ export class App {
     if (!prev) return;              // 첫 수는 보드에만 남긴다
     const word = String(prev.word);
     const before = this.chainPrev;
-    const linked = Boolean(before && before.word && before.word[before.word.length - 1] === word.charAt(0));
+    const linked = linksTo(before?.word, word);
     const li = document.createElement('li');
     li.className = prev.who;
     li.innerHTML = `<span class="chain-who">${prev.who === 'me' ? '나' : '봇'}</span>`
@@ -825,7 +830,7 @@ export class App {
       out.push(`<span class="tag mission">${hits === 1 ? '미션 +50%' : `미션 ×${hits}`}</span>`);
     }
     const kindTag = { oneshot: '한방', outer: '외통수', route: '필승 라인', press: '압박' }[entry.kind];
-    if (kindTag) out.push(`<span class="tag danger">${kindTag}</span>`);
+    if (kindTag) out.push(`<span class="tag danger${entry.kind === 'press' ? ' press' : ''}">${kindTag}</span>`);
     return out;
   }
 
@@ -868,7 +873,7 @@ export class App {
   }
 
   confetti() {
-    const colors = ['#2D8A68', '#E05A47', '#C98A2E', '#7A5A9E', '#E3DBCB'];
+    const colors = ['#3E9B79', '#C4503B', '#C98A2E', '#7E64B8', '#3D7EC8', '#2E8794'];
     for (let i = 0; i < 26; i += 1) {
       const piece = document.createElement('i');
       piece.className = 'confetti';

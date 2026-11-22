@@ -59,13 +59,20 @@ Lv.1(쉬움)·Lv.2(보통) 봇이 낯선 방언·옛말·어인정 대신 일상
 
 `fonts/` 에 함께 넣은 두 폰트는 화면을 시안과 같은 모양으로 그리기 위한 것입니다.
 
-- **Jua** (주아체) — Copyright (c) 2018, Woowahan Brothers. SIL Open Font License 1.1.
-  https://fonts.google.com/specimen/Jua
+- **나눔스퀘어라운드(NanumSquareRound)** — 제목·버튼·난이도 이름·점수 같은 디스플레이 요소.
+  Copyright (c) 2010, NHN Corporation (http://www.nhncorp.com) — NAVER 배포.
+  SIL Open Font License 1.1 (`fonts/Nanum-OFL.txt`).
+  배포처: https://hangeul.naver.com/font (공식 배포 묶음 `nanum-all_new.zip`)
+  `fonts/NanumSquareRound-400.woff2` · `-700.woff2` · `-800.woff2` 는 위 배포본의
+  TTF(Regular/Bold/ExtraBold)를 글자 모양 그대로 웹 전송용 WOFF2 로 변환한 것입니다.
+  https://github.com/google/fonts/blob/main/ofl/nanumgothic/OFL.txt
 - **Pretendard** — Copyright (c) 2021, Kil Hyung-jin. SIL Open Font License 1.1.
+  단어 타일·본문·사전·입력창에 씁니다.
   https://github.com/orioncactus/pretendard
 
-두 폰트 모두 OFL 1.1 에 따라 원본 파일 그대로 배포하며, 파일 안에 저작권·라이선스 정보가 들어 있습니다.
+두 폰트 모두 OFL 1.1 에 따라 배포하며, 파일 안에 저작권·라이선스 정보가 들어 있습니다.
 앱은 `css/style.css` 의 `@font-face` 로 이 파일만 직접 불러옵니다(외부 CDN 없음).
+이전 화면에 쓰던 Jua(주아체)는 읽기 편한 서체로 바꾸면서 저장소에서 함께 지웠습니다.
 
 ## 라이선스
 
