@@ -391,8 +391,12 @@ export class Bot {
   /**
    * @returns {{word: string, delay: number, kind: string} | null}
    */
-  choose({ needChar, used, turn, mission = null }) {
-    const cands = this.dict.candidatesFor(needChar, used);
+  choose({ needChar, used, turn, mission = null, guard = false }) {
+    const all = this.dict.candidatesFor(needChar, used);
+    if (!all.length) return null;
+    // 배려모드: 첫 5수 동안은 한방 단어를 고르지 않는다. 고를 수 있는 수가 없으면
+    // 규칙대로 막힌 것으로 둔다(한방을 쓰지 않는다).
+    const cands = guard ? this.guardedWords(all, used) : all;
     if (!cands.length) return null;
     if (this.level === 5) return this.chooseHell({ needChar, used, cands, mission });
 
@@ -496,6 +500,34 @@ export class Bot {
 
     // 남은 후보가 전부 한방 단어뿐 → 순한 봇은 그런 수를 두지 않는다(막힌 것으로 처리).
     return null;
+  }
+
+  /**
+   * 배려모드 보호(첫 5수) 중 고를 수 있는 수만 남긴다.
+   *  - 사전에 후속 단어가 남아 있어야 한다(끝 글자 후속 0 = 한방 단어 제외).
+   *  - 이번 판에서 이미 다 써 버려 상대가 낼 수가 없는 글자도 즉시 한방이므로 제외한다.
+   */
+  guardedWords(list, used) {
+    const dict = this.dict;
+    let usedStarts = null;
+    const liveAt = (ch) => {
+      if (!usedStarts) {
+        usedStarts = new Map();
+        for (const w of used) {
+          const s = w.charAt(0);
+          usedStarts.set(s, (usedStarts.get(s) || 0) + 1);
+        }
+      }
+      let n = 0;
+      for (const s of allowedStarts(ch)) {
+        n += Math.max(0, dict.dictStartCount(s) - (usedStarts.get(s) || 0));
+      }
+      return n;
+    };
+    return list.filter((w) => {
+      const end = lastOf(w);
+      return dict.countFrom(end) > 0 && liveAt(end) > 0;
+    });
   }
 
   /** 방언·옛말·문화어·어인정 표제어를 뺀 표준어 후보만 남긴다. */

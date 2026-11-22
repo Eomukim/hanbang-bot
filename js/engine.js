@@ -7,12 +7,17 @@ import { Bot, botLine, pickHellOpening } from './bot.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
+/** 배려모드가 한방 단어를 막는 첫 수의 수(1~5수). 6수부터는 풀린다. */
+export const MERCY_TURNS = 5;
+
 export class Engine {
-  constructor({ dict, level = 2, timeLimit = 15, first = 'me', hardcore = false, startChar = null, mission = null, rng = Math.random, on = {} }) {
+  constructor({ dict, level = 2, timeLimit = 15, first = 'me', hardcore = false, mercy = false, startChar = null, mission = null, rng = Math.random, on = {} }) {
     this.dict = dict;
     this.level = level;
     // 하드코어: 제한 시간 5초 고정 · 봇 선공 고정
     this.hardcore = Boolean(hardcore);
+    // 배려모드: 대국 시작 후 첫 5수(chain.length 0~4)는 나도 봇도 한방 단어를 쓰지 않는다.
+    this.mercy = Boolean(mercy);
     this.timeLimit = this.hardcore ? 5 : timeLimit;
     this.first = this.hardcore ? 'bot' : first;
     this.rng = rng;
@@ -62,6 +67,10 @@ export class Engine {
       phase: this.phase,
       level: this.level,
       hardcore: this.hardcore,
+      mercy: this.mercy,
+      mercyGuard: this.mercyGuard(),
+      mercyTurn: Math.min(this.chain.length + 1, MERCY_TURNS),
+      mercyTurns: MERCY_TURNS,
       first: this.first,
       startChar: this.startChar,
       needChar: this.needChar,
@@ -78,6 +87,11 @@ export class Engine {
       candidateCount: this.phase === 'me' ? this.candidateCount() : null,
       turn: this.round,
     };
+  }
+
+  /** 지금 이을 수가 배려모드 보호(첫 5수 · 한방 금지) 안에 있는가. */
+  mercyGuard() {
+    return this.mercy && this.chain.length < MERCY_TURNS;
   }
 
   timeLeft() {
@@ -115,7 +129,9 @@ export class Engine {
     clearTimeout(this.turnTimer);
     this.on.botThinking?.(this.snapshot());
 
-    const move = this.bot.choose({ needChar: this.needChar, used: this.used, turn: this.round, mission: this.missionChar });
+    const move = this.bot.choose({
+      needChar: this.needChar, used: this.used, turn: this.round, mission: this.missionChar, guard: this.mercyGuard(),
+    });
     if (!move) {
       this.botTimer = setTimeout(() => this.finish('me', 'bot-stuck'), 420);
       return;
@@ -190,6 +206,15 @@ export class Engine {
     }
 
     const word = result.word;
+    // 배려모드: 첫 5수 동안은 후속 단어가 없는 한방 단어를 거부한다. 타이머는 그대로 흐른다.
+    if (this.mercyGuard() && this.dict.isOneShot(word)) {
+      const error = {
+        code: 'mercy',
+        message: `배려모드: 첫 ${MERCY_TURNS}턴은 한방 단어를 쓸 수 없어요`,
+      };
+      this.on.error?.({ ...error, input: word, state: this.snapshot() });
+      return { ok: false, error, word };
+    }
     clearTimeout(this.turnTimer);
     this.combo += 1;
     this.bestCombo = Math.max(this.bestCombo, this.combo);
@@ -240,6 +265,7 @@ export class Engine {
       winner,
       reason,
       hardcore: this.hardcore,
+      mercy: this.mercy,
       win: winner === 'me',
       scoreMe: this.scores.me,
       scoreBot: this.scores.bot,

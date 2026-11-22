@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS = {
   first: 'me',      // 'me' | 'bot'
   sound: true,
   hardcore: false,
+  mercy: false,     // 배려모드: 첫 5수 한방 금지
 };
 
 function readJSON(key, fallback) {
@@ -91,6 +92,7 @@ export function loadSettings() {
   if (saved.first === 'me' || saved.first === 'bot') settings.first = saved.first;
   if (typeof saved.sound === 'boolean') settings.sound = saved.sound;
   if (typeof saved.hardcore === 'boolean') settings.hardcore = saved.hardcore;
+  if (typeof saved.mercy === 'boolean') settings.mercy = saved.mercy;
   return settings;
 }
 
@@ -101,6 +103,7 @@ export function saveSettings(settings) {
     first: settings.first,
     sound: settings.sound,
     hardcore: Boolean(settings.hardcore),
+    mercy: Boolean(settings.mercy),
   });
 }
 

@@ -45,13 +45,13 @@ export class App {
     const ids = [
       'scr-loading', 'scr-setup', 'scr-game', 'load-fill', 'load-meta', 'load-error',
       'levels', 'lv-desc', 'time-opts', 'first-opts', 'time-locked', 'first-locked',
-      'btn-hardcore', 'hardcore-desc',
+      'btn-hardcore', 'hardcore-desc', 'btn-mercy', 'mercy-desc',
       'btn-sound', 'sound-icon', 'sound-value', 'btn-start',
-      'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit', 'game-hardcore',
+      'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit', 'game-hardcore', 'game-mercy',
       'arena', 'stage', 'stage-hint', 'bot-bubble', 'chain',
       'need-char', 'need-alt', 'cand-count', 'chip-mission', 'chip-combo',
       'countdown', 'time-left', 'timer-fill', 'turn-panel', 'composer', 'word-input', 'btn-submit',
-      'ov-result', 'result-badge', 'result-title', 'result-hardcore', 'result-level', 'result-level-face',
+      'ov-result', 'result-badge', 'result-title', 'result-hardcore', 'result-mercy', 'result-level', 'result-level-face',
       'result-level-label', 'result-reason', 'result-me', 'result-bot',
       'result-stats', 'btn-again', 'btn-tosetup',
       'battle-log-btn', 'battle-log-label', 'battle-log', 'battle-log-list',
@@ -61,6 +61,7 @@ export class App {
     this.renderLevels();
     this.renderSegments();
     this.renderHardcore();
+    this.renderMercy();
     this.renderSoundButton();
 
     this.bindEvents();
@@ -178,6 +179,36 @@ export class App {
     this.el['first-opts'].hidden = on;
   }
 
+  /* ── 배려모드 ────────────────────────────────────────── */
+
+  /** 설정 화면의 배려모드 스위치: 켜면 첫 5수 동안 나도 봇도 한방 단어를 쓰지 않는다. */
+  renderMercy() {
+    const on = Boolean(this.settings.mercy);
+    const btn = this.el['btn-mercy'];
+    btn.setAttribute('aria-checked', String(on));
+    btn.setAttribute('aria-label', `배려모드 ${on ? '켬' : '끔'}`);
+    this.el['mercy-desc'].textContent = on
+      ? '첫 5턴(1~5수) 한방 금지 · 6턴부터 허용'
+      : '끄면 일반 · 켜면 첫 5턴 한방 금지';
+  }
+
+  /** 대전 화면의 배려모드 칩: 보호 중에는 몇 번째 수인지, 6수부터는 해금을 보여 준다. */
+  renderMercyBadge(state) {
+    const badge = this.el['game-mercy'];
+    if (!badge) return;
+    if (!state?.mercy) {
+      badge.hidden = true;
+      badge.classList.remove('released');
+      return;
+    }
+    const guard = Boolean(state.mercyGuard);
+    badge.hidden = false;
+    badge.classList.toggle('released', !guard);
+    badge.innerHTML = guard
+      ? `🛡️ 배려모드<small>${state.mercyTurn}/${state.mercyTurns}턴 · 한방 금지</small>`
+      : '🛡️ 배려 해금<small>한방 가능</small>';
+  }
+
   renderSoundButton() {
     const btn = this.el['btn-sound'];
     const on = this.settings.sound;
@@ -223,6 +254,12 @@ export class App {
       this.renderHardcore();
       this.sfx.play('tap');
     });
+    this.el['btn-mercy'].addEventListener('click', () => {
+      this.settings.mercy = !this.settings.mercy;
+      this.persist();
+      this.renderMercy();
+      this.sfx.play('tap');
+    });
 
     this.el.composer.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -261,6 +298,7 @@ export class App {
     const info = levelInfo(level);
     // 하드코어: 5초 고정 · 봇 선공 고정 (실제 대국도 반드시)
     const hardcore = overrides.hardcore ?? Boolean(this.settings.hardcore);
+    const mercy = overrides.mercy ?? Boolean(this.settings.mercy);
     const timeLimit = hardcore ? 5 : (overrides.timeLimit ?? this.settings.timeLimit);
     const first = hardcore ? 'bot' : (overrides.first ?? this.settings.first);
 
@@ -277,6 +315,7 @@ export class App {
     this.el['bot-name'].textContent = info.botName;
     this.el['bot-lv'].textContent = info.label;
     this.el['game-hardcore'].hidden = !hardcore;
+    this.el['game-mercy'].hidden = !mercy;
     document.body.dataset.level = String(level);
     document.body.dataset.hardcore = hardcore ? '1' : '0';
     this.show('game');
@@ -291,6 +330,7 @@ export class App {
       dict: this.dict,
       level,
       hardcore,
+      mercy,
       timeLimit,
       first,
       startChar: overrides.startChar ?? null,
@@ -346,6 +386,7 @@ export class App {
 
   setNeed(state) {
     this.el['need-char'].textContent = state.needChar;
+    this.renderMercyBadge(state);
     const alt = this.el['need-alt'];
     if (state.needAlt) {
       alt.hidden = false;
@@ -421,12 +462,13 @@ export class App {
     this.toast(`${who === 'bot' ? '봇 ' : ''}${head} ‘${char}’ ${gain}${tail}`, 'mission');
   }
 
-  onError({ message }) {
+  onError({ message, code }) {
     this.sfx.play('error');
     const input = this.el['word-input'];
     input.classList.add('bad', 'shake');
     input.addEventListener('animationend', () => input.classList.remove('shake'), { once: true });
-    this.toast(message);
+    // 배려모드로 거주된 한방 단어는 실수가 아니라 규칙 안내다.
+    this.toast(message, code === 'mercy' ? 'mercy' : '');
   }
 
   onEnd(payload) {
@@ -624,6 +666,7 @@ export class App {
     this.el['result-badge'].textContent = payload.win ? '🏆' : '💀';
     this.el['result-title'].textContent = payload.win ? '승리' : '패배';
     this.el['result-hardcore'].hidden = !payload.hardcore;
+    this.el['result-mercy'].hidden = !payload.mercy;
     this.renderResultLevel(payload.state?.level);
     this.el['result-reason'].textContent = reasonLine || '';
     this.el['result-me'].textContent = payload.scoreMe.toLocaleString('ko-KR');

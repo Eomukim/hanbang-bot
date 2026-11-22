@@ -10,10 +10,13 @@
 - 내 단어장 삭제(버튼·모달·사전 API 없음)와 효과음 설정 행 전체 폭
 - 힌트 삭제(버튼·문구·API 없음)
 - 하드코어 모드: 스위치·5초 고정·봇 선공·헤더/결과 배지·별도 전적, 끄면 일반 모드
+- 배려모드: 스위치·첫 5수 한방 차단 안내·6수부터 해금·헤더/결과 배지, 설정 화면 스크롤 0
 - 결과 화면(승리·패배·포기)의 난이도 배지, 버튼으로 여는 배틀 내역(카드 안 스크롤)
 - downloads/itda/ 에 setup.png, lv5-setup.png, lv5-game.png, oneshot.png,
   result-win.png, result-lv5.png, mobile-setup.png, mobile-game.png, mobile-lv5.png, mobile-result.png,
   hardcore-setup.png, hardcore-game.png, hardcore-result.png,
+  mercy-setup.png, mercy-blocked.png, mercy-game.png, mercy-result.png,
+  mobile-mercy-setup.png, mobile-mercy-game.png,
   battle-log-open.png, mobile-battle-log-open.png 저장
 
 usage:
@@ -650,6 +653,116 @@ def main():
               and hc_off['saved'] is False,
               '하드코어 끄면 일반 모드 복귀', json.dumps(hc_off, ensure_ascii=False))
 
+        # ── 데스크톱: 배려모드(첫 5수 한방 금지) ─────────────
+        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.wait_for_timeout(200)
+        if page.evaluate("document.getElementById('btn-mercy').getAttribute('aria-checked')") == 'true':
+            page.click('#btn-mercy')
+            page.wait_for_timeout(180)
+        page.click('#btn-mercy')
+        page.wait_for_timeout(250)
+        mercy_setup = page.evaluate("""() => {
+            const sec = document.getElementById('scr-setup');
+            const btn = document.getElementById('btn-mercy');
+            const r = document.getElementById('btn-start').getBoundingClientRect();
+            return {
+                on: btn.getAttribute('aria-checked'),
+                desc: document.getElementById('mercy-desc').textContent,
+                afterHardcore: document.getElementById('btn-hardcore').nextElementSibling === btn,
+                saved: JSON.parse(localStorage.getItem('itda.settings.v1') || '{}').mercy,
+                scroll: sec.scrollHeight - sec.clientHeight,
+                startBottom: Math.round(r.bottom), vh: innerHeight,
+            };
+        }""")
+        check(mercy_setup['on'] == 'true' and mercy_setup['saved'] is True
+              and mercy_setup['afterHardcore'] and '5턴' in mercy_setup['desc'],
+              '배려모드 스위치(하드코어 바로 아래)', json.dumps(mercy_setup, ensure_ascii=False))
+        check(mercy_setup['scroll'] <= 1 and mercy_setup['startBottom'] <= mercy_setup['vh'],
+              '배려모드 켠 설정 화면 스크롤 없음',
+              f"{mercy_setup['startBottom']} / {mercy_setup['vh']}px")
+        hits = brand_hits(page)
+        check(not hits, '배려모드 설정 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'mercy-setup.png'))
+        summary['mercy_setup'] = mercy_setup
+
+        mpick = page.evaluate("""() => {
+            const d = window.__ITDA.dict;
+            for (const [ch] of d.ranges) {
+                const cands = d.candidatesFor(ch, new Set());
+                if (cands.length < 5 || cands.length > 4000) continue;
+                const shot = cands.find((w) => d.countFrom(w[w.length - 1]) === 0 && w.length <= 5);
+                const safe = cands.find((w) => d.countFrom(w[w.length - 1]) >= 60 && w.length <= 3);
+                if (shot && safe) return { ch, shot, safe };
+            }
+            return null;
+        }""")
+        check(mpick is not None, '배려모드 시나리오 탐색', str(mpick))
+        if mpick:
+            page.evaluate("window.__ITDA.startGame({level:2, first:'me', hardcore:false, startChar:'%s', timeLimit:20})" % mpick['ch'])
+            page.wait_for_timeout(450)
+            page.fill('#word-input', mpick['shot'])
+            page.click('#btn-submit')
+            page.wait_for_timeout(600)
+            blocked = page.evaluate("""() => ({
+                toast: document.querySelector('.toast')?.textContent || '',
+                badge: document.getElementById('game-mercy').innerText.replace(/\\s+/g, ' ').trim(),
+                phase: window.__ITDA.state().phase,
+                chain: window.__ITDA.state().chain.length,
+            })""")
+            check('배려모드' in blocked['toast'] and '한방' in blocked['toast']
+                  and '1/5' in blocked['badge'] and blocked['phase'] == 'me' and blocked['chain'] == 0,
+                  '배려모드 첫 5수 한방 차단', json.dumps(blocked, ensure_ascii=False))
+            check(sum(overflow(page).values()) <= 0, '배려모드 대전 가로 오버플로 0', str(overflow(page)))
+            page.screenshot(path=os.path.join(OUT, 'mercy-blocked.png'))
+            # 5수를 채워 보호를 푼다 (한방이 아닌 단어만)
+            for _ in range(10):
+                st = wait_my_turn(page, 8000)
+                if not st or st['phase'] != 'me' or not st['mercyGuard']:
+                    break
+                w = page.evaluate("""() => {
+                    const d = window.__ITDA.dict, st = window.__ITDA.state();
+                    const used = new Set(st.chain.map((c) => c.word));
+                    const cands = d.candidatesFor(st.needChar, used);
+                    const safe = cands.filter((x) => d.countFrom(x[x.length - 1]) > 0 && x.length <= 4);
+                    const list = safe.length ? safe : cands.filter((x) => d.countFrom(x[x.length - 1]) > 0);
+                    return list[Math.min(2, list.length - 1)] || null;
+                }""")
+                if not w:
+                    break
+                page.fill('#word-input', w)
+                page.click('#btn-submit')
+                page.wait_for_timeout(700)
+            page.wait_for_timeout(500)
+            guard_view = page.evaluate("""() => ({
+                guard: window.__ITDA.state().mercyGuard,
+                chain: window.__ITDA.state().chain.length,
+                badge: document.getElementById('game-mercy').innerText.replace(/\\s+/g, ' ').trim(),
+            })""")
+            check(guard_view['guard'] is False and '해금' in guard_view['badge'],
+                  '배려모드 6수부터 해금 배지', json.dumps(guard_view, ensure_ascii=False))
+            page.screenshot(path=os.path.join(OUT, 'mercy-game.png'))
+            # 해제된 뒤 한방으로 마무리 → 결과 배지
+            page.evaluate("""(ch) => {
+                const e = window.__ITDA.engine;
+                e.needChar = ch;
+                window.__ITDA.app.setNeed(e.snapshot());
+            }""", mpick['ch'])
+            page.wait_for_timeout(150)
+            page.fill('#word-input', mpick['shot'])
+            page.click('#btn-submit')
+            page.wait_for_timeout(2200)
+            m_res = result_view(page)
+            m_badge = page.evaluate("!document.getElementById('result-mercy').hidden")
+            check(m_badge and '배려모드' in page.evaluate("document.getElementById('result-mercy').innerText"),
+                  '배려모드 결과 배지', json.dumps(m_res, ensure_ascii=False))
+            check(sum(overflow(page).values()) <= 0, '배려모드 결과 가로 오버플로 0', str(overflow(page)))
+            page.screenshot(path=os.path.join(OUT, 'mercy-result.png'))
+            summary['mercy'] = {'pick': mpick, 'blocked': blocked, 'released': guard_view, 'result': m_res}
+            page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+            page.wait_for_timeout(200)
+            page.click('#btn-mercy')
+            page.wait_for_timeout(200)
+
         summary['desktop_console_errors'] = console
         summary['desktop_page_errors'] = errors
         check(not console, '콘솔 에러 0', json.dumps(console, ensure_ascii=False)[:300])
@@ -790,6 +903,53 @@ def main():
         check(sum(overflow(page).values()) <= 0, '모바일 하드코어 결과 가로 오버플로 0', str(overflow(page)))
         page.screenshot(path=os.path.join(OUT, 'mobile-hardcore-result.png'))
         summary['mobile_hardcore'] = m_hc_res
+        # ── 모바일: 배려모드 설정·대전 ─────────────────────
+        page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        page.wait_for_timeout(200)
+        if page.evaluate("document.getElementById('btn-hardcore').getAttribute('aria-checked')") == 'true':
+            page.click('#btn-hardcore')
+            page.wait_for_timeout(180)
+        if page.evaluate("document.getElementById('btn-mercy').getAttribute('aria-checked')") == 'true':
+            page.click('#btn-mercy')
+            page.wait_for_timeout(180)
+        page.click('#btn-mercy')
+        page.wait_for_timeout(250)
+        m_mercy = page.evaluate("""() => {
+            const sec = document.getElementById('scr-setup');
+            const r = document.getElementById('btn-start').getBoundingClientRect();
+            return {
+                on: document.getElementById('btn-mercy').getAttribute('aria-checked'),
+                scroll: sec.scrollHeight - sec.clientHeight,
+                startBottom: Math.round(r.bottom), vh: innerHeight,
+            };
+        }""")
+        check(m_mercy['on'] == 'true' and m_mercy['scroll'] <= 1 and m_mercy['startBottom'] <= m_mercy['vh'],
+              '모바일 배려모드 설정 스크롤 없음', json.dumps(m_mercy, ensure_ascii=False))
+        check(sum(overflow(page).values()) <= 0, '모바일 배려모드 설정 가로 오버플로 0', str(overflow(page)))
+        page.screenshot(path=os.path.join(OUT, 'mobile-mercy-setup.png'))
+        if mpick:
+            page.evaluate("window.__ITDA.startGame({level:2, first:'me', hardcore:false, startChar:'%s', timeLimit:20})" % mpick['ch'])
+            page.wait_for_timeout(450)
+            page.fill('#word-input', mpick['shot'])
+            page.click('#btn-submit')
+            page.wait_for_timeout(500)
+            m_block = page.evaluate("""() => ({
+                toast: document.querySelector('.toast')?.textContent || '',
+                badge: document.getElementById('game-mercy').innerText.replace(/\\s+/g, ' ').trim(),
+            })""")
+            check('배려모드' in m_block['toast'] and '1/5' in m_block['badge'],
+                  '모바일 배려모드 첫 5수 한방 차단', json.dumps(m_block, ensure_ascii=False))
+            check(sum(overflow(page).values()) <= 0, '모바일 배려모드 대전 가로 오버플로 0', str(overflow(page)))
+            page.screenshot(path=os.path.join(OUT, 'mobile-mercy-game.png'))
+            page.evaluate('window.__ITDA.engine.quit()')
+            page.wait_for_timeout(1100)
+            page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+            page.wait_for_timeout(200)
+            summary['mobile_mercy'] = m_block
+        page.click('#btn-mercy')
+        page.wait_for_timeout(200)
+        check(page.evaluate("JSON.parse(localStorage.getItem('itda.settings.v1')||'{}').mercy") is False,
+              '모바일 배려모드 끄면 저장도 꺼짐')
         summary['mobile_console_errors'] = console
         summary['mobile_page_errors'] = errors
         check(not console, '모바일 콘솔 에러 0', json.dumps(console, ensure_ascii=False)[:300])

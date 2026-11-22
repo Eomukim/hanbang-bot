@@ -7,6 +7,8 @@
  - 힌트 삭제(버튼·로직·문구·API 없음)와 입력 바 배치
  - 설정 화면 정리(상단 태그라인·하단 규칙/팁/전적 블록이 DOM·CSS·JS에 없음, 대전 시작이 마지막 요소, 세로 스크롤 0)와 전적 저장 유지
  - 하드코어 모드(스위치 · 5초 고정 · 봇 선공 고정 · 헤더/결과 배지 · 별도 전적 · 끄면 일반 모드)
+ - 배려모드(스위치 · 저장 · 첫 5수 플레이어 한방 차단과 타이머 유지 · Lv.1~5 봇 한방 회피 ·
+   5수째 한방뿐인 자리 처리 · 6수부터 허용 · 헤더/결과 배지 · 설정 화면 스크롤 0)
  - 내 단어장 삭제(버튼·모달·사전 API 없음, 남은 localStorage 값 무시)
  - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
  - 결과 화면 배틀 내역: 버튼 열기/닫기 · 카드 안 세로 스크롤 · 턴·나/봇·단어·점수·태그 · 0수 종료(포기·시간 초과) · 아주 긴 단어 줄바꿈 · 모바일 오버플로
@@ -27,6 +29,7 @@ usage:
     python3 tools/verify.py --local
     python3 tools/verify.py --url https://itda-play.onrender.com
     python3 tools/verify.py --local --url https://itda-play.onrender.com
+    python3 tools/verify.py --local --viewport desktop   # 한 화면 크기만(빠른 확인)
 """
 import argparse
 import functools
@@ -1936,6 +1939,369 @@ def scenario_setup_clean(page, tag):
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 화면 가로 오버플로 0', str(overflow(page)))
 
 
+def mercy_view(page):
+    """설정 화면의 배려모드 스위치 상태."""
+    return page.evaluate("""() => {
+        const btn = document.getElementById('btn-mercy');
+        const hc = document.getElementById('btn-hardcore');
+        return {
+            exists: !!btn,
+            role: btn ? btn.getAttribute('role') : null,
+            on: btn ? btn.getAttribute('aria-checked') : null,
+            desc: document.getElementById('mercy-desc')?.textContent || '',
+            afterHardcore: !!(hc && hc.nextElementSibling === btn),
+            saved: JSON.parse(localStorage.getItem('itda.settings.v1') || '{}'),
+            scroll: document.getElementById('scr-setup').scrollHeight - document.getElementById('scr-setup').clientHeight,
+            startTop: Math.round(document.getElementById('btn-start').getBoundingClientRect().top),
+            startBottom: Math.round(document.getElementById('btn-start').getBoundingClientRect().bottom),
+            vh: window.innerHeight,
+        };
+    }""")
+
+
+def mercy_badge(page):
+    """대전 화면의 배려모드 칩과 엔진 보호 상태."""
+    return page.evaluate("""() => {
+        const b = document.getElementById('game-mercy');
+        const st = window.__ITDA.state();
+        return {
+            hidden: b.hidden,
+            text: b.innerText.replace(/\\s+/g, ' ').trim(),
+            released: b.classList.contains('released'),
+            mercy: window.__ITDA.engine ? window.__ITDA.engine.mercy : null,
+            guard: st ? st.mercyGuard : null,
+            turn: st ? st.mercyTurn : null,
+            chain: st ? st.chain.length : null,
+        };
+    }""")
+
+
+def mercy_safe_word(page):
+    """이어야 할 글자로 낼 수 있는 한방이 아닌 단어 하나(없으면 null)."""
+    return page.evaluate("""() => {
+        const d = window.__ITDA.dict, st = window.__ITDA.state();
+        const used = new Set(st.chain.map((c) => c.word));
+        const cands = d.candidatesFor(st.needChar, used);
+        if (!cands.length) return null;
+        const safe = cands.filter((w) => d.countFrom(w[w.length - 1]) > 0);
+        const list = safe.length ? safe : cands;
+        return list[Math.min(3, list.length - 1)] || null;
+    }""")
+
+
+def mercy_chain(page):
+    """지난 수와 각 수가 한방 단어였는지."""
+    return page.evaluate("""() => {
+        const d = window.__ITDA.dict;
+        return window.__ITDA.state().chain.map((c) => ({
+            who: c.who, word: c.word, kind: c.kind,
+            oneShot: d.countFrom(c.word[c.word.length - 1]) === 0,
+        }));
+    }""")
+
+
+def scenario_mercy(page, tag, report_dir=None):
+    """배려모드: 스위치 · 저장 · 첫 5수 플레이어 한방 차단 · 봇 한방 회피 · 6수부터 허용 · 배지."""
+    print(f'  · 배려모드 [{tag}]')
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(200)
+
+    # 1) 설정 스위치: 하드코어 바로 아래, 기본은 꺼짐, 켜면 저장
+    if page.evaluate("document.getElementById('btn-mercy').getAttribute('aria-checked')") == 'true':
+        page.click('#btn-mercy')
+        page.wait_for_timeout(180)
+    off = mercy_view(page)
+    check(off['exists'] and off['role'] == 'switch', f'[{tag}] 배려모드 토글 스위치 존재',
+          json.dumps(off, ensure_ascii=False)[:140])
+    check(off['afterHardcore'], f'[{tag}] 배려모드는 하드코어 스위치 바로 아래', str(off['afterHardcore']))
+    check(off['on'] == 'false' and off['saved'].get('mercy') is not True,
+          f'[{tag}] 기본은 배려모드 꺼짐', json.dumps(off, ensure_ascii=False)[:160])
+    check('5턴' in off['desc'], f'[{tag}] 배려모드 설명에 첫 5턴 안내', off['desc'])
+
+    page.click('#btn-mercy')
+    page.wait_for_timeout(220)
+    on = mercy_view(page)
+    check(on['on'] == 'true' and on['saved'].get('mercy') is True,
+          f'[{tag}] 배려모드 켜짐 · 설정 저장', json.dumps(on['saved'], ensure_ascii=False))
+    check('5턴' in on['desc'] and '6' in on['desc'], f'[{tag}] 켜면 첫 5턴 금지·6턴부터 안내', on['desc'])
+    check(on['scroll'] <= 1 and on['startTop'] > 0 and on['startBottom'] <= on['vh'],
+          f'[{tag}] 배려모드 켜도 설정 화면 세로 스크롤 0',
+          f"{on['startTop']}~{on['startBottom']} / {on['vh']}px, 스크롤 {on['scroll']}px")
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 배려모드 설정 가로 오버플로 0', str(overflow(page)))
+    report_shot(page, tag, report_dir, 'mercy-setup')
+
+    pick = page.evaluate("""() => {
+        const d = window.__ITDA.dict;
+        for (const [ch] of d.ranges) {
+            const cands = d.candidatesFor(ch, new Set());
+            if (cands.length < 5 || cands.length > 4000) continue;
+            const shot = cands.find((w) => d.countFrom(w[w.length - 1]) === 0 && w.length <= 5);
+            const safe = cands.find((w) => d.countFrom(w[w.length - 1]) >= 60 && w.length <= 3);
+            if (shot && safe) return { ch, shot, safe };
+        }
+        return null;
+    }""")
+    if not check(bool(pick), f'[{tag}] 한방·안전 후보가 같이 있는 시작 글자', str(pick)):
+        page.click('#btn-mercy')
+        page.wait_for_timeout(150)
+        return
+
+    # 2) 대전 시작(설정값이 엔진까지 전달) · 헤더 배지 · 플레이어 한방 차단
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', hardcore:false, startChar:'%s', timeLimit:20})" % pick['ch'])
+    page.wait_for_timeout(500)
+    b0 = mercy_badge(page)
+    check(b0['mercy'] is True and b0['guard'] is True and not b0['hidden']
+          and '배려모드' in b0['text'] and '1/5' in b0['text'] and '한방 금지' in b0['text'],
+          f'[{tag}] 대전 헤더 배려모드 배지(1/5턴 보호)', json.dumps(b0, ensure_ascii=False)[:180])
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 배려모드 대전 가로 오버플로 0', str(overflow(page)))
+
+    t0 = page.evaluate('window.__ITDA.engine.timeLeft()')
+    page.fill('#word-input', pick['shot'])
+    page.click('#btn-submit')
+    page.wait_for_timeout(1000)
+    rej = page.evaluate("""(word) => ({
+        phase: window.__ITDA.state().phase,
+        chain: window.__ITDA.state().chain.length,
+        left: window.__ITDA.engine.timeLeft(),
+        toast: document.querySelector('.toast')?.textContent || '',
+        toastCls: document.querySelector('.toast')?.className || '',
+        input: document.getElementById('word-input').value,
+        recorded: window.__ITDA.engine.used.has(word),
+        guard: window.__ITDA.state().mercyGuard,
+    })""", pick['shot'])
+    check('배려모드' in rej['toast'] and '한방' in rej['toast'],
+          f'[{tag}] 첫 5수 플레이어 한방 단어 차단 안내', rej['toast'])
+    check(rej['toastCls'].split().count('mercy') == 1, f'[{tag}] 차단 안내는 배려모드 스타일', rej['toastCls'])
+    check(rej['phase'] == 'me' and rej['chain'] == 0 and not rej['recorded'],
+          f'[{tag}] 차단된 한방 단어는 판에 남지 않음', json.dumps(rej, ensure_ascii=False)[:160])
+    check(rej['guard'] is True and rej['left'] < t0 - 0.6,
+          f'[{tag}] 차단 뒤 타이머는 계속 흐름', f"{t0:.2f}s → {rej['left']:.2f}s")
+    check(rej['input'] == pick['shot'], f'[{tag}] 차단 뒤 입력한 단어는 그대로 남아 고칠 수 있음', rej['input'])
+    shot(page, f'{tag}-mercy-blocked')
+
+    # 같은 차례에 다른 유효 단어는 바로 받아들여진다
+    page.fill('#word-input', pick['safe'])
+    page.click('#btn-submit')
+    try:
+        page.wait_for_function("() => window.__ITDA.state().chain.length >= 1", timeout=4000)
+    except Exception:
+        pass
+    page.wait_for_timeout(300)
+    okv = page.evaluate("""(word) => ({
+        chain: window.__ITDA.state().chain.map((c) => c.word),
+        phase: window.__ITDA.state().phase,
+        badge: document.getElementById('game-mercy').innerText.replace(/\\s+/g, ' ').trim(),
+    })""", pick['safe'])
+    check(okv['chain'][:1] == [pick['safe']], f'[{tag}] 차단 뒤 다른 단어는 정상 입력',
+          json.dumps(okv, ensure_ascii=False)[:160])
+    check('2/5' in okv['badge'] and '한방 금지' in okv['badge'], f'[{tag}] 배지가 2/5턴으로 진행', okv['badge'])
+
+    # 3) 보호 중 봇이 낼 수 있는 수가 전부 한방뿐이면: 한방을 두지 않고 막힌 것으로 처리
+    page.evaluate("window.__ITDA.app.hideResult()")
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', hardcore:false, mercy:true, timeLimit:20})")
+    page.wait_for_timeout(400)
+    page.evaluate("window.__ITDA.engine.bot.choose = () => null; window.__ITDA.engine.botTurn()")
+    page.wait_for_timeout(1300)
+    stuck = page.evaluate("""() => ({
+        phase: window.__ITDA.state().phase,
+        title: document.getElementById('result-title').textContent,
+        visible: !document.getElementById('ov-result').hidden,
+        reason: document.getElementById('result-reason').textContent,
+        mercy: !document.getElementById('result-mercy').hidden,
+        mercyText: document.getElementById('result-mercy').innerText.replace(/\\s+/g, ' ').trim(),
+        hardcore: !document.getElementById('result-hardcore').hidden,
+    })""")
+    check(stuck['phase'] == 'over' and stuck['visible'] and stuck['title'] == '승리'
+          and '찾지 못' in stuck['reason'],
+          f'[{tag}] 첫 5수에 낼 수가 한방뿐이면 봇은 한방 대신 막힘으로 처리',
+          json.dumps(stuck, ensure_ascii=False)[:180])
+    check(stuck['mercy'] and '배려모드' in stuck['mercyText'], f'[{tag}] 결과 화면 배려모드 배지', stuck['mercyText'])
+    shot(page, f'{tag}-mercy-result')
+
+    # 4) 봇 규칙 직접 확인: 한방이 있어도 guard 면 고르지 않고, 남은 수 기준 즉시 한방도 피한다
+    rule = page.evaluate("""() => {
+        const d = window.__ITDA.dict, Bot = window.__ITDA.Bot;
+        const isShot = (w) => d.countFrom(w[w.length - 1]) === 0;
+        const out = { pair: null, stuck: null, live: null };
+        for (const [ch] of d.ranges) {
+            const cands = d.candidatesFor(ch, new Set());
+            if (!cands.length || cands.length > 600) continue;
+            const shots = cands.filter(isShot);
+            if (!shots.length || shots.length === cands.length) continue;
+            const used = new Set();
+            const f4 = new Bot({ level: 4, dict: d }).choose({ needChar: ch, used, turn: 3, guard: false });
+            const h4 = new Bot({ level: 4, dict: d }).choose({ needChar: ch, used, turn: 3, guard: true });
+            const f5 = new Bot({ level: 5, dict: d }).choose({ needChar: ch, used, turn: 3, guard: false });
+            const h5 = new Bot({ level: 5, dict: d }).choose({ needChar: ch, used, turn: 3, guard: true });
+            if (f4 && isShot(f4.word) && h4 && !isShot(h4.word) && f5 && isShot(f5.word) && h5 && !isShot(h5.word)) {
+                out.pair = {
+                    ch, shots: shots.length,
+                    lv4: { free: f4.word, held: h4.word },
+                    lv5: { free: f5.word, held: h5.word },
+                };
+                break;
+            }
+        }
+        for (const [ch] of d.ranges) {
+            const cands = d.candidatesFor(ch, new Set());
+            if (!cands.length || cands.length > 600) continue;
+            const ns = cands.filter((w) => !isShot(w));
+            const shots = cands.filter(isShot);
+            if (!ns.length || !shots.length) continue;
+            const used = new Set(ns);
+            const left = d.candidatesFor(ch, used);
+            if (!left.length || !left.every(isShot)) continue;
+            out.stuck = {
+                ch, left: left.slice(0, 3), count: left.length,
+                lv4: (new Bot({ level: 4, dict: d }).choose({ needChar: ch, used, turn: 5, guard: true }) || {}).word || null,
+                lv5: (new Bot({ level: 5, dict: d }).choose({ needChar: ch, used, turn: 5, guard: true }) || {}).word || null,
+                free4: (new Bot({ level: 4, dict: d }).choose({ needChar: ch, used, turn: 5, guard: false }) || {}).word || null,
+            };
+            break;
+        }
+        const bot4 = new Bot({ level: 4, dict: d });
+        for (const ch of d.goodStartChars(60)) {
+            for (const w of d.candidatesFor(ch, new Set()).slice(0, 40)) {
+                const end = w[w.length - 1];
+                const followers = d.candidatesFor(end, new Set([w]));
+                if (!followers.length || followers.length > 40) continue;
+                const used = new Set(followers);
+                out.live = {
+                    ch, word: w, end, followers: followers.length,
+                    dictCount: d.countFrom(end),
+                    kept: bot4.guardedWords([w], used).length,
+                };
+                break;
+            }
+            if (out.live) break;
+        }
+        return out;
+    }""")
+    pair = rule['pair']
+    if check(bool(pair), f'[{tag}] 봇 한방 회피 시험 자리 탐색', json.dumps(rule, ensure_ascii=False)[:140]):
+        kinds = page.evaluate("""(pair) => {
+            const d = window.__ITDA.dict;
+            const shot = (w) => d.countFrom(w[w.length - 1]) === 0;
+            return {
+                lv4free: shot(pair.lv4.free), lv4held: shot(pair.lv4.held),
+                lv5free: shot(pair.lv5.free), lv5held: shot(pair.lv5.held),
+            };
+        }""", pair)
+        check(kinds['lv4free'] and not kinds['lv4held'],
+              f'[{tag}] Lv.4 배려모드: 한방 대신 이어지는 수', json.dumps(pair['lv4'], ensure_ascii=False))
+        check(kinds['lv5free'] and not kinds['lv5held'],
+              f'[{tag}] Lv.5 배려모드: 한방 대신 이어지는 수', json.dumps(pair['lv5'], ensure_ascii=False))
+    stk = rule['stuck']
+    if check(bool(stk), f'[{tag}] 5수째 한방뿐인 자리 탐색', json.dumps(stk, ensure_ascii=False)[:140]):
+        check(stk['lv4'] is None and stk['lv5'] is None and bool(stk['free4']),
+              f'[{tag}] 5수째 남은 수가 한방뿐이면 봇은 한방을 두지 않음',
+              json.dumps(stk, ensure_ascii=False)[:180])
+    lv = rule['live']
+    if check(bool(lv), f'[{tag}] 남은 수 기준 즉시 한방 자리 탐색', json.dumps(lv, ensure_ascii=False)[:140]):
+        check(lv['dictCount'] > 0 and lv['kept'] == 0,
+              f'[{tag}] 사전 후속은 있어도 이번 판에서 다 쓴 글자는 즉시 한방으로 보고 회피',
+              json.dumps(lv, ensure_ascii=False))
+
+    # 5) 실제 대전(Lv.4·Lv.5): 첫 5수 동안 봇이 한방 단어를 내지 않는다
+    for level in (4, 5):
+        early, hist = [], []
+        for _ in range(2):
+            page.evaluate("window.__ITDA.app.hideResult()")
+            page.evaluate("window.__ITDA.startGame({level:%d, first:'bot', hardcore:false, mercy:true, timeLimit:20})" % level)
+            page.wait_for_timeout(600)
+            for _ in range(14):
+                st = wait_my_turn(page, 9000)
+                if not st or st['phase'] != 'me':
+                    break
+                safe = mercy_safe_word(page)
+                if not safe:
+                    break
+                page.fill('#word-input', safe)
+                page.click('#btn-submit')
+                page.wait_for_timeout(900)
+                st = page.evaluate('window.__ITDA.state()')
+                hist = mercy_chain(page)
+                if st['phase'] == 'over':
+                    break
+            early = [h for h in hist[:5] if h['who'] == 'bot']
+            if len(early) >= 2:
+                break
+        check(len(early) >= 1 and all(not h['oneShot'] for h in early),
+              f'[{tag}] Lv.{level} 첫 5수 봇 한방 금지(실제 대전)',
+              f"{len(early)}수: {[(h['word'], h['kind']) for h in early]}")
+        late_shots = [i + 1 for i, h in enumerate(hist) if h['who'] == 'bot' and h['oneShot']]
+        check(all(i >= 6 for i in late_shots),
+              f'[{tag}] Lv.{level} 봇 한방은 6수 이후에만', f'한방 낸 수: {late_shots} / 전체 {len(hist)}수')
+
+    # 6) 5수를 채운 뒤에는 플레이어도 한방 단어를 쓸 수 있다 (6수부터 허용)
+    page.evaluate("window.__ITDA.app.hideResult()")
+    page.evaluate("window.__ITDA.startGame({level:1, first:'me', hardcore:false, mercy:true, timeLimit:20})")
+    page.wait_for_timeout(500)
+    fifth_badge = ''
+    for _ in range(12):
+        st = wait_my_turn(page, 9000)
+        if not st or st['phase'] != 'me':
+            break
+        if st['mercyGuard'] and len(st['chain']) >= 4:
+            fifth_badge = page.evaluate("document.getElementById('game-mercy').innerText.replace(/\\s+/g, ' ').trim()")
+        if not st['mercyGuard']:
+            break
+        safe = mercy_safe_word(page)
+        if not safe:
+            break
+        page.fill('#word-input', safe)
+        page.click('#btn-submit')
+        page.wait_for_timeout(900)
+    rel = page.evaluate("""(ch) => {
+        const e = window.__ITDA.engine;
+        e.needChar = ch;
+        window.__ITDA.app.setNeed(e.snapshot());
+        const st = e.snapshot();
+        return {
+            guard: st.mercyGuard, chain: st.chain.length,
+            badge: document.getElementById('game-mercy').innerText.replace(/\\s+/g, ' ').trim(),
+            cls: document.getElementById('game-mercy').className,
+        };
+    }""", pick['ch'])
+    check(rel['chain'] >= 5 and rel['guard'] is False,
+          f'[{tag}] 5수를 채우면 보호가 풀린다', json.dumps(rel, ensure_ascii=False)[:160])
+    check('해금' in rel['badge'] and 'released' in rel['cls'],
+          f'[{tag}] 6수째 배려 해금 배지', json.dumps(rel, ensure_ascii=False)[:160])
+    check('5/5' in fifth_badge and '한방 금지' in fifth_badge,
+          f'[{tag}] 5수째까지는 한방 금지 표시', fifth_badge)
+    page.fill('#word-input', pick['shot'])
+    page.click('#btn-submit')
+    page.wait_for_timeout(2000)
+    acc = page.evaluate("""(word) => ({
+        inChain: window.__ITDA.state().chain.some((c) => c.who === 'me' && c.word === word),
+        title: document.getElementById('result-title').textContent,
+        visible: !document.getElementById('ov-result').hidden,
+        reason: document.getElementById('result-reason').textContent,
+        mercy: !document.getElementById('result-mercy').hidden,
+        mercyText: document.getElementById('result-mercy').innerText.replace(/\\s+/g, ' ').trim(),
+    })""", pick['shot'])
+    check(acc['inChain'] and acc['visible'] and acc['title'] == '승리',
+          f'[{tag}] 6수부터 플레이어 한방 단어 허용', json.dumps(acc, ensure_ascii=False)[:200])
+    check(acc['mercy'] and '배려모드' in acc['mercyText'],
+          f'[{tag}] 배려모드 대국의 결과 배지', acc['mercyText'])
+    shot(page, f'{tag}-mercy-unlocked-win')
+
+    # 7) 끄면 일반 모드로 돌아가고, 설정 화면은 그대로 한 화면
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(200)
+    if page.evaluate("document.getElementById('btn-mercy').getAttribute('aria-checked')") == 'true':
+        page.click('#btn-mercy')
+        page.wait_for_timeout(200)
+    fin = mercy_view(page)
+    check(fin['on'] == 'false' and fin['saved'].get('mercy') is False,
+          f'[{tag}] 배려모드 끄면 설정도 꺼짐', json.dumps(fin['saved'], ensure_ascii=False))
+    check(fin['scroll'] <= 1 and fin['startBottom'] <= fin['vh'],
+          f'[{tag}] 설정 화면 세로 스크롤 0(배려모드 끈 뒤)',
+          f"스크롤 {fin['scroll']}px / {fin['startBottom']}~{fin['vh']}px")
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 화면 가로 오버플로 0', str(overflow(page)))
+
+
 def run_local(base_url, browser):
     print(f'\n=== LOCAL {base_url} ===')
     for vp_name in VIEWPORTS:
@@ -1994,6 +2360,7 @@ def run_local(base_url, browser):
         scenario_hell(page, 'local-' + vp_name)
         scenario_variety(page, 'local-' + vp_name)
         scenario_legacy(page, 'local-' + vp_name)
+        scenario_mercy(page, 'local-' + vp_name, REPORT_DIR)
         scenario_hardcore(page, 'local-' + vp_name, REPORT_DIR)
 
         # 대전 중 스크린샷 (여러 단어가 쌓인 화면)
@@ -2063,6 +2430,7 @@ def run_live(url, browser):
         scenario_hell(page, 'live-' + vp_name)
         scenario_variety(page, 'live-' + vp_name)
         scenario_legacy(page, 'live-' + vp_name)
+        scenario_mercy(page, 'live-' + vp_name, REPORT_DIR)
         scenario_hardcore(page, 'live-' + vp_name, REPORT_DIR)
 
         check(not col.errors, f'[{vp_name}] 페이지 에러 0', json.dumps(col.errors, ensure_ascii=False)[:400])
@@ -2075,7 +2443,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--local', action='store_true')
     ap.add_argument('--url', default=None)
+    ap.add_argument('--viewport', choices=['desktop', 'mobile'], default=None,
+                    help='한 화면 크기만 검사한다(기본: 둘 다)')
     args = ap.parse_args()
+
+    if args.viewport:
+        keep = VIEWPORTS[args.viewport]
+        VIEWPORTS.clear()
+        VIEWPORTS[args.viewport] = keep
 
     httpd = None
     with sync_playwright() as p:

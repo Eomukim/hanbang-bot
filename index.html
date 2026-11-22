@@ -48,10 +48,18 @@
         <div class="levels" id="levels" role="radiogroup" aria-label="난이도"></div>
       </div>
 
-      <button class="hardcore-card" id="btn-hardcore" type="button" role="switch" aria-checked="false">
-        <span class="hardcore-text">
+      <button class="toggle-card hardcore-card" id="btn-hardcore" type="button" role="switch" aria-checked="false">
+        <span class="toggle-text">
           <b>🔥 하드코어</b>
           <small id="hardcore-desc">끄면 일반 모드 · 켜면 5초 고정 · 봇 선공</small>
+        </span>
+        <span class="switch" aria-hidden="true"><i></i></span>
+      </button>
+
+      <button class="toggle-card mercy-card" id="btn-mercy" type="button" role="switch" aria-checked="false">
+        <span class="toggle-text">
+          <b>🛡️ 배려모드</b>
+          <small id="mercy-desc">끄면 일반 · 켜면 첫 5턴 한방 금지</small>
         </span>
         <span class="switch" aria-hidden="true"><i></i></span>
       </button>
@@ -90,6 +98,7 @@
   <section class="screen screen-game" id="scr-game" data-screen="game" hidden>
     <header class="game-top">
       <div class="hardcore-badge" id="game-hardcore" hidden>🔥 하드코어<small>5초 · 봇 선공</small></div>
+      <div class="mercy-badge" id="game-mercy" hidden>🛡️ 배려모드<small>1/5턴 · 한방 금지</small></div>
       <div class="game-top-row">
         <div class="bot-info">
           <span class="bot-face" id="bot-face" aria-hidden="true">🙂</span>
@@ -142,6 +151,7 @@
     <div class="result-badge" id="result-badge">🏆</div>
     <h2 id="result-title">승리</h2>
     <div class="hardcore-badge result-hardcore" id="result-hardcore" hidden>🔥 하드코어<small>5초 · 봇 선공</small></div>
+    <div class="mercy-badge result-mercy" id="result-mercy" hidden>🛡️ 배려모드<small>첫 5턴 한방 금지</small></div>
     <div class="result-level" id="result-level" data-lv="2" aria-label="대국 난이도">
       <span class="result-level-cap">난이도</span>
       <i id="result-level-face" aria-hidden="true">😐</i>
