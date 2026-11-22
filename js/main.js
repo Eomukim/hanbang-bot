@@ -40,6 +40,7 @@ async function boot() {
     naturalness: (w) => naturalness(dict, w),
     levelInfo,
     get engine() { return app.engine; },
+    get dictPanel() { return app.dictPanel; },
     startGame: (opts) => app.startGame(opts || {}),
     submit: (word) => app.engine?.playMe(word),
     state: () => app.engine?.snapshot() ?? null,

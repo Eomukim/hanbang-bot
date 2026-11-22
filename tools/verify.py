@@ -12,6 +12,9 @@
  - 첫 제시 글자(끄투식): 제시어(사전의 2~3글자 일상 단어)에서 뽑은 글자 · 모든 글자 이어짐 ·
    Lv.1·2는 일상 표준어로 20개 이상 이어지는 글자 · 안내 문구 · 다른 글자 거부 ·
    봇 선공(Lv.1~4는 같은 제시 글자, Lv.5는 지옥 오프닝 유지) · 배려모드 1수째 한방 금지
+ - 단어 사전(#scr-dict): 설정 화면 맨 위 오른쪽 📖 사전 버튼(기존 정리 규칙·세로 스크롤 0 유지) ·
+   1글자/앞부분 검색 · 두음 포함 토글 · 어려움·쉬움·긴·짧은 4가지 정렬 순서 · 항목의 글자 수와
+   후속 개수 배지 · 100개씩 더 보기 · ← 돌아가기 · 키보드 높이 레이아웃
  - 내 단어장 삭제(버튼·모달·사전 API 없음, 남은 localStorage 값 무시)
  - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
  - 결과 화면 배틀 내역: 버튼 열기/닫기 · 카드 안 세로 스크롤 · 턴·나/봇·단어·점수·태그 · 0수 종료(포기·시간 초과) · 아주 긴 단어 줄바꿈 · 모바일 오버플로
@@ -1957,6 +1960,290 @@ def scenario_setup_clean(page, tag):
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 화면 가로 오버플로 0', str(overflow(page)))
 
 
+def dict_view(page):
+    """사전 화면의 상태: 검색어·정렬·개수, 렌더된 항목, 더 보기 버튼."""
+    return page.evaluate("""() => {
+        const p = window.__ITDA.dictPanel;
+        const items = [...document.querySelectorAll('#dict-list .dict-item')];
+        const body = document.getElementById('dict-body');
+        return {
+            info: p.info(),
+            meta: document.getElementById('dict-meta').innerText,
+            items: items.length,
+            first: items.slice(0, 3).map((li) => ({
+                word: li.querySelector('.dict-word').innerText,
+                len: li.querySelector('.dict-len').innerText,
+                tail: li.querySelector('.dict-tail') ? li.querySelector('.dict-tail').innerText : '',
+                chips: [...li.querySelectorAll('.dict-chip')].map((c) => c.innerText),
+                oneshot: li.classList.contains('oneshot'),
+                count: Number(li.dataset.count), dataLen: Number(li.dataset.len),
+            })),
+            more: {
+                hidden: document.getElementById('dict-more').hidden,
+                text: document.getElementById('dict-more').innerText.replace(/\\s+/g, ' ').trim(),
+            },
+            scroll: body.scrollHeight - body.clientHeight, bodyH: body.clientHeight,
+        };
+    }""")
+
+
+def dict_search(page, text, timeout=6000):
+    """검색어를 넣고 디바운스가 끝나 결과가 자리 잡을 때까지 기다린다."""
+    page.fill('#dict-input', text)
+    page.wait_for_function("q => window.__ITDA.dictPanel.query === q", arg=text, timeout=timeout)
+    page.wait_for_timeout(120)
+
+
+# 정렬 결과 전체가 규칙대로인지 (위반 3건까지만 모아 돌려준다)
+DICT_ORDER = """(sort) => {
+  const rows = window.__ITDA.dictPanel.rows();
+  const easy = (r) => (r.tier > 0 ? 0 : 1);
+  const bad = [];
+  for (let i = 1; i < rows.length; i += 1) {
+    const a = rows[i - 1], b = rows[i];
+    let ok = true;
+    if (sort === 'hard') ok = a.count <= b.count;
+    else if (sort === 'easy') ok = easy(a) < easy(b) || (easy(a) === easy(b) && a.count >= b.count);
+    else if (sort === 'long') ok = a.len >= b.len;
+    else ok = a.len <= b.len;
+    if (!ok) {
+      bad.push([i, a.word, a.count, a.len, b.word, b.count, b.len]);
+      if (bad.length >= 3) break;
+    }
+  }
+  return { n: rows.length, bad };
+}"""
+
+
+def scenario_dict(page, tag):
+    """단어 사전(#scr-dict): 설정 화면 오른쪽 위 📖 사전 버튼, 시작 글자·앞부분 검색,
+    두음 포함 토글, 어려움·쉬움·긴·짧은 4가지 정렬 순서, 100개씩 더 보기, 돌아가기."""
+    print(f'  · 단어 사전 [{tag}]')
+    mobile = 'mobile' in tag
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(220)
+
+    # 1) 진입 버튼은 설정 화면 맨 위 오른쪽, 기존 정리 규칙(대전 시작이 마지막·세로 스크롤 0) 유지
+    view = page.evaluate("""() => {
+        const btn = document.getElementById('btn-dict');
+        const r = btn ? btn.getBoundingClientRect() : null;
+        const setup = document.querySelector('#scr-setup .setup');
+        const box = setup.getBoundingClientRect();
+        const sec = document.getElementById('scr-setup');
+        const kids = [...setup.children];
+        const start = document.getElementById('btn-start').getBoundingClientRect();
+        return {
+            exists: !!btn, text: btn ? btn.innerText.replace(/\\s+/g, ' ').trim() : '',
+            rect: r ? { top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom),
+                        left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) } : null,
+            box: { top: Math.round(box.top), right: Math.round(box.right) },
+            last: kids[kids.length - 1].id,
+            lastId: kids.map((el) => el.id).filter(Boolean).pop(),
+            scroll: sec.scrollHeight - sec.clientHeight,
+            startBottom: Math.round(start.bottom), vh: innerHeight,
+            visible: r ? (r.width > 0 && r.height > 0 && r.top >= 0 && r.right <= innerWidth && r.left >= 0) : false,
+        };
+    }""")
+    check(view['exists'] and '사전' in view['text'], f'[{tag}] 사전 버튼 있음', view['text'])
+    check(view['visible'], f'[{tag}] 사전 버튼이 화면 안에 보임', json.dumps(view['rect'], ensure_ascii=False))
+    check(view['rect'] and view['rect']['top'] <= 40, f'[{tag}] 사전 버튼이 설정 화면 맨 위',
+          f"top {view['rect']['top']}px")
+    right_gap = (view['box']['right'] - view['rect']['right']) if view['rect'] else -1
+    check(0 <= right_gap <= 24, f'[{tag}] 사전 버튼이 설정 화면 오른쪽',
+          f"오른쪽 여백 {right_gap}px (열 {view['box']['right']}px)")
+    check(view['lastId'] == 'btn-start' and view['scroll'] <= 1 and view['startBottom'] <= view['vh'],
+          f'[{tag}] 사전 버튼이 설정 화면 정리 규칙을 깨지 않음',
+          f"마지막 {view['lastId']} · 스크롤 {view['scroll']}px · 시작 {view['startBottom']}/{view['vh']}px")
+
+    # 2) 사전 화면 열기
+    page.click('#btn-dict')
+    page.wait_for_selector('#scr-dict:not([hidden])')
+    page.wait_for_timeout(200)
+    opened = page.evaluate("""() => ({
+        dict: !document.getElementById('scr-dict').hidden,
+        setup: document.getElementById('scr-setup').hidden,
+        back: document.getElementById('btn-dict-back').innerText.trim(),
+        total: document.getElementById('dict-total').innerText.trim(),
+        empty: !document.getElementById('dict-empty').hidden,
+        emptyTitle: document.getElementById('dict-empty-title').innerText.trim(),
+        sorts: [...document.querySelectorAll('#dict-sorts button')].map((b) => b.innerText.trim()),
+        checked: [...document.querySelectorAll('#dict-sorts button')]
+            .filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.dataset.sort),
+        sortsInView: (() => { const r = document.getElementById('dict-sorts').getBoundingClientRect();
+                             return r.top >= 0 && r.bottom <= innerHeight; })(),
+    })""")
+    check(opened['dict'] and opened['setup'], f'[{tag}] 사전 화면 열림(설정 화면 숨김)',
+          json.dumps({k: opened[k] for k in ('dict', 'setup')}, ensure_ascii=False))
+    check(opened['back'].startswith('←') and '돌아가기' in opened['back'],
+          f'[{tag}] ← 돌아가기 버튼', opened['back'])
+    check('796,750' in opened['total'], f'[{tag}] 사전 화면에 전체 단어 수', opened['total'])
+    check(opened['sorts'] == ['어려움순', '쉬움순', '긴순', '짧은순'] and opened['checked'] == ['hard'],
+          f'[{tag}] 정렬 4종 버튼 · 기본 어려움순', str(opened['sorts']))
+    check(opened['empty'] and '시작 글자' in opened['emptyTitle'], f'[{tag}] 빈 검색 안내',
+          opened['emptyTitle'])
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 사전 화면 가로 오버플로 0', str(overflow(page)))
+    check(opened['sortsInView'], f'[{tag}] 사전 화면 상단(정렬)이 화면 안')
+
+    # 3) 1글자 검색: 사전 구간 수와 같고, 한 번에 100개만 그린다
+    dict_search(page, '이')
+    total_expected = page.evaluate("() => window.__ITDA.dict.ranges.get('이') ? window.__ITDA.dict.ranges.get('이')[1] - window.__ITDA.dict.ranges.get('이')[0] : 0")
+    view = dict_view(page)
+    check(view['info']['total'] == total_expected and total_expected > 10000,
+          f'[{tag}] ‘이’ 검색 개수', f"{view['info']['total']} / 사전 {total_expected}개")
+    check(view['items'] == 100, f'[{tag}] 첫 화면 100개만 렌더', f"{view['items']}개")
+    rows = page.evaluate("() => window.__ITDA.dictPanel.rows(100)")
+    dom = page.evaluate("""() => [...document.querySelectorAll('#dict-list .dict-item')].map((li) => ({
+        word: li.querySelector('.dict-word').innerText,
+        len: li.querySelector('.dict-len').innerText,
+        tail: li.querySelector('.dict-tail') ? li.querySelector('.dict-tail').innerText : '',
+        oneshot: li.classList.contains('oneshot') }))""")
+    bad_rows = [i for i, (d, r) in enumerate(zip(dom, rows))
+                if d['word'] != r['word'] or d['len'] != f"{r['len']}글자"
+                or d['oneshot'] != (r['count'] == 0)
+                or d['tail'] != ('🔥 한방' if r['count'] == 0 else f"후속 {r['count']:,}개")]
+    check(len(dom) == len(rows) and not bad_rows, f'[{tag}] 항목마다 단어·글자 수·후속 배지가 맞음',
+          f"어긋난 항목 {len(bad_rows)}건" + (f" · {bad_rows[:3]}" if bad_rows else ''))
+    sample = view['first'][0]
+    check('🔥 한방' in sample['tail'] if sample['count'] == 0 else '후속' in sample['tail'],
+          f'[{tag}] 끝 글자 후속 배지', json.dumps(view['first'][0], ensure_ascii=False))
+
+    # 4) 정렬 4종: 전체 순서가 규칙대로이고, 화면 순서도 같다
+    labels = {'hard': '어려움순', 'easy': '쉬움순', 'long': '긴순', 'short': '짧은순'}
+    for key, label in labels.items():
+        page.click(f'#dict-sorts button[data-sort="{key}"]')
+        page.wait_for_function("k => window.__ITDA.dictPanel.sort === k", arg=key, timeout=4000)
+        page.wait_for_timeout(140)
+        order = page.evaluate(DICT_ORDER, key)
+        shown = page.evaluate("() => [...document.querySelectorAll('#dict-list .dict-item')].map((li) => li.dataset.word)")
+        top = page.evaluate("() => window.__ITDA.dictPanel.rows(100).map((r) => r.word)")
+        meta = page.evaluate("document.getElementById('dict-meta').innerText")
+        check(order['n'] > 10000 and not order['bad'], f'[{tag}] {label} 정렬 순서',
+              f"{order['n']}개 중 위반 {len(order['bad'])}" + (f" · {order['bad'][:2]}" if order['bad'] else ''))
+        check(shown == top, f'[{tag}] {label} 화면 순서 = 계산 순서', f"{len(shown)}개")
+        check(label in meta and '어려움순' not in meta.replace(label, ''),
+              f'[{tag}] {label} 안내 문구', meta)
+    page.click('#dict-sorts button[data-sort="hard"]')
+    page.wait_for_function("() => window.__ITDA.dictPanel.sort === 'hard'")
+    page.wait_for_timeout(140)
+
+    # 5) 두음 포함 토글: ‘리’ 하나로 리·이 두 구간을 함께 본다
+    dict_search(page, '리')
+    both = dict_view(page)
+    ri_only = page.evaluate("() => { const r = window.__ITDA.dict.ranges.get('리'); return r ? r[1] - r[0] : 0; }")
+    i_only = page.evaluate("() => { const r = window.__ITDA.dict.ranges.get('이'); return r ? r[1] - r[0] : 0; }")
+    alt_both = page.evaluate("() => window.__ITDA.dictPanel.rows().filter((r) => r.alt).length")
+    check(both['info']['twoeum'] is True, f'[{tag}] 두음 포함 기본 켬', str(both['info']['twoeum']))
+    page.click('#btn-twoeum')
+    page.wait_for_function("() => window.__ITDA.dictPanel.twoeum === false", timeout=4000)
+    page.wait_for_timeout(150)
+    only = dict_view(page)
+    alt_only = page.evaluate("() => window.__ITDA.dictPanel.rows().filter((r) => r.alt).length")
+    check(only['info']['total'] == ri_only and alt_only == 0,
+          f'[{tag}] 두음 끄면 입력한 글자만',
+          f"{only['info']['total']}개 / 사전 리 구간 {ri_only}개")
+    check('두음 포함' not in only['meta'] and '두음' in both['meta'],
+          f'[{tag}] 두음 상태가 안내 문구에 반영', f"켬: {both['meta']} / 끔: {only['meta']}")
+    page.click('#btn-twoeum')
+    page.wait_for_function("() => window.__ITDA.dictPanel.twoeum === true", timeout=4000)
+    page.wait_for_timeout(150)
+    on = dict_view(page)
+    alt_on = page.evaluate("() => window.__ITDA.dictPanel.rows().filter((r) => r.alt).length")
+    check(on['info']['total'] == ri_only + i_only and alt_on == i_only and alt_both == i_only,
+          f'[{tag}] 두음 켜면 대체 글자까지',
+          f"{on['info']['total']}개 (리 {ri_only} + 이 {i_only})")
+    check(page.evaluate("document.querySelectorAll('#dict-list .dict-chip.twoeum').length") > 0,
+          f'[{tag}] 두음으로 걸린 단어에 두음 표시')
+
+    # 6) 더 보기: 100 → 200 → 300개, 남은 수 표기
+    before = dict_view(page)
+    check(not before['more']['hidden'] and '남음' in before['more']['text'],
+          f'[{tag}] 더 보기 버튼 · 남은 수', before['more']['text'])
+    page.click('#dict-more')
+    page.wait_for_timeout(180)
+    mid = dict_view(page)
+    check(mid['items'] == 200, f'[{tag}] 더 보기 200개', f"{mid['items']}개")
+    page.click('#dict-more')
+    page.wait_for_timeout(180)
+    more = dict_view(page)
+    left = more['info']['total'] - 300
+    check(more['items'] == 300 and f"{left:,}" in more['more']['text'],
+          f'[{tag}] 더 보기 300개 · 남은 수 갱신',
+          f"{more['items']}개 / {more['more']['text']}")
+    check(more['scroll'] > 0, f'[{tag}] 목록이 목록 영역 안에서 스크롤', f"{more['scroll']}px")
+
+    # 7) 앞부분 검색(2글자 이상)
+    dict_search(page, '가방')
+    prefix = page.evaluate("""() => {
+        const rows = window.__ITDA.dictPanel.rows();
+        return { n: rows.length, wrong: rows.filter((r) => !r.word.startsWith('가방')).length,
+                 sample: rows.slice(0, 3).map((r) => r.word) };
+    }""")
+    check(prefix['n'] > 0 and prefix['wrong'] == 0, f'[{tag}] 앞부분 검색(가방)',
+          f"{prefix['n']}개 · {prefix['sample']}")
+    dict_search(page, '없는말없음')
+    miss = page.evaluate("""() => ({ empty: !document.getElementById('dict-empty').hidden,
+        title: document.getElementById('dict-empty-title').innerText.trim(),
+        n: document.querySelectorAll('#dict-list .dict-item').length })""")
+    check(miss['empty'] and miss['n'] == 0 and '없어요' in miss['title'],
+          f'[{tag}] 없는 말 안내', json.dumps(miss, ensure_ascii=False))
+    if mobile:
+        # 키보드가 올라온 높이(430px)에서도 검색창·목록·정렬이 보이고 가로 오버플로 0
+        page.focus('#dict-input')
+        size = page.viewport_size
+        page.set_viewport_size({'width': size['width'], 'height': 430})
+        page.wait_for_timeout(320)
+        kb = page.evaluate("""() => {
+            const ids = ['dict-input', 'btn-twoeum', 'dict-sorts', 'dict-body'];
+            const out = {};
+            for (const id of ids) {
+                const r = document.getElementById(id).getBoundingClientRect();
+                out[id] = { top: Math.round(r.top), bottom: Math.round(r.bottom),
+                            visible: r.top >= 0 && r.bottom > 0 && r.top < innerHeight };
+            }
+            out.vh = innerHeight;
+            return out;
+        }""")
+        check(all(v['visible'] for k, v in kb.items() if isinstance(v, dict)) and kb['dict-body']['top'] < 430,
+              f'[{tag}] 키보드 높이에서도 검색창·목록 노출', json.dumps(kb, ensure_ascii=False))
+        check(sum(overflow(page).values()) <= 0, f'[{tag}] 키보드 높이 가로 오버플로 0', str(overflow(page)))
+        page.set_viewport_size(size)
+        page.wait_for_timeout(200)
+
+    # 8) 돌아가기 → 설정 화면(정리 규칙 그대로)
+    page.click('#btn-dict-back')
+    page.wait_for_selector('#scr-setup:not([hidden])')
+    page.wait_for_timeout(200)
+    back = page.evaluate("""() => {
+        const sec = document.getElementById('scr-setup');
+        const kids = [...document.querySelector('#scr-setup .setup').children];
+        const start = document.getElementById('btn-start').getBoundingClientRect();
+        return { dict: document.getElementById('scr-dict').hidden,
+                 setup: !document.getElementById('scr-setup').hidden,
+                 last: kids[kids.length - 1].id,
+                 scroll: sec.scrollHeight - sec.clientHeight,
+                 startBottom: Math.round(start.bottom), vh: innerHeight,
+                 focusInDict: document.activeElement ? document.activeElement.id : '' };
+    }""")
+    check(back['dict'] and back['setup'], f'[{tag}] 돌아가기로 설정 화면 복귀',
+          json.dumps({k: back[k] for k in ('dict', 'setup')}, ensure_ascii=False))
+    check(back['last'] == 'btn-start' and back['scroll'] <= 1 and back['startBottom'] <= back['vh'],
+          f'[{tag}] 돌아온 설정 화면 스크롤 0 · 대전 시작 마지막',
+          f"마지막 {back['last']} · 스크롤 {back['scroll']}px")
+    check(back['focusInDict'] != 'dict-input', f'[{tag}] 사전을 닫으면 사전 입력에서 포커스가 빠짐', back['focusInDict'])
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 복귀 후 가로 오버플로 0', str(overflow(page)))
+
+    # Esc 로도 닫힌다(데스크톱 키보드)
+    if not mobile:
+        page.click('#btn-dict')
+        page.wait_for_selector('#scr-dict:not([hidden])')
+        page.wait_for_timeout(150)
+        page.keyboard.press('Escape')
+        page.wait_for_timeout(200)
+        check(page.evaluate("document.getElementById('scr-dict').hidden && !document.getElementById('scr-setup').hidden"),
+              f'[{tag}] Esc로 사전 닫기')
+
+
 def mercy_view(page):
     """설정 화면의 배려모드 스위치 상태."""
     return page.evaluate("""() => {
@@ -2517,6 +2804,7 @@ def run_local(base_url, browser):
         scenario_no_custom(page, 'local-' + vp_name)
         scenario_no_hint(page, 'local-' + vp_name)
         scenario_setup_clean(page, 'local-' + vp_name)
+        scenario_dict(page, 'local-' + vp_name)
         scenario_result_level(page, 'local-' + vp_name)
         scenario_battle_log(page, 'local-' + vp_name)
         scenario_mission(page, 'local-' + vp_name, REPORT_DIR)
@@ -2588,6 +2876,7 @@ def run_live(url, browser):
         scenario_no_custom(page, 'live-' + vp_name)
         scenario_no_hint(page, 'live-' + vp_name)
         scenario_setup_clean(page, 'live-' + vp_name)
+        scenario_dict(page, 'live-' + vp_name)
         scenario_result_level(page, 'live-' + vp_name)
         scenario_battle_log(page, 'live-' + vp_name)
         scenario_mission(page, 'live-' + vp_name, REPORT_DIR)

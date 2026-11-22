@@ -3,6 +3,7 @@
 import { Engine } from './engine.js';
 import { LEVELS, levelInfo, botLine } from './bot.js';
 import { saveSettings, recordResult } from './store.js';
+import { DictPanel } from './dict.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -37,16 +38,17 @@ export class App {
     this.quitArmed = false;
     this.quitTimer = null;
     this.rafId = null;
+    this.dictPanel = null;
 
     this.el = {};
   }
 
   mount() {
     const ids = [
-      'scr-loading', 'scr-setup', 'scr-game', 'load-fill', 'load-meta', 'load-error',
+      'scr-loading', 'scr-setup', 'scr-dict', 'scr-game', 'load-fill', 'load-meta', 'load-error',
       'levels', 'lv-desc', 'time-opts', 'first-opts', 'time-locked', 'first-locked',
       'btn-hardcore', 'hardcore-desc', 'btn-mercy', 'mercy-desc',
-      'btn-sound', 'sound-icon', 'sound-value', 'btn-start',
+      'btn-sound', 'sound-icon', 'sound-value', 'btn-start', 'btn-dict',
       'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit', 'game-hardcore', 'game-mercy',
       'arena', 'stage', 'stage-hint', 'bot-bubble', 'chain',
       'need-char', 'need-alt', 'cand-count', 'chip-mission', 'chip-combo',
@@ -57,6 +59,14 @@ export class App {
       'battle-log-btn', 'battle-log-label', 'battle-log', 'battle-log-list',
     ];
     for (const id of ids) this.el[id] = $(id);
+
+    // 단어 사전 화면(설정 화면 오른쪽 위 📖 사전 버튼으로 연다)
+    this.dictPanel = new DictPanel({
+      dict: this.dict,
+      sfx: this.sfx,
+      onBack: () => this.show('setup'),
+    });
+    this.dictPanel.mount();
 
     this.renderLevels();
     this.renderSegments();
@@ -73,7 +83,7 @@ export class App {
 
   show(name) {
     this.screen = name;
-    for (const key of ['scr-loading', 'scr-setup', 'scr-game']) {
+    for (const key of ['scr-loading', 'scr-setup', 'scr-dict', 'scr-game']) {
       this.el[key].hidden = key !== `scr-${name}`;
     }
     if (name !== 'game') document.body.dataset.hardcore = '0';
@@ -237,6 +247,7 @@ export class App {
     });
 
     this.el['btn-start'].addEventListener('click', () => this.startGame());
+    this.el['btn-dict'].addEventListener('click', () => this.openDict());
     this.el['btn-again'].addEventListener('click', () => {
       this.hideResult();
       this.startGame();
@@ -273,6 +284,7 @@ export class App {
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !this.el['ov-result'].hidden) this.hideResult();
+      if (e.key === 'Escape' && this.screen === 'dict') this.closeDict();
       if (e.key === 'Enter' && this.screen === 'setup') {
         if (document.activeElement && ['INPUT', 'BUTTON'].includes(document.activeElement.tagName)) return;
         e.preventDefault();
@@ -289,6 +301,19 @@ export class App {
     };
     window.addEventListener('pointerdown', unlock, { once: true });
     window.addEventListener('keydown', unlock, { once: true });
+  }
+
+  /* ── 단어 사전 ────────────────────────────────────────── */
+
+  openDict() {
+    this.sfx.play('tap');
+    this.show('dict');
+    this.dictPanel.open();
+    if (this.isFinePointer()) this.dictPanel.focusInput();
+  }
+
+  closeDict() {
+    this.dictPanel?.close();
   }
 
   /* ── 대전 시작 ─────────────────────────────────────────── */

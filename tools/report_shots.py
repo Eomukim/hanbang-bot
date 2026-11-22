@@ -7,6 +7,8 @@
 - Lv.5 지옥 봇이 실제로: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 · 소수 후보 압박 · 미션/장문
 - 4단계 극악 한방 봇 동작 확인
 - 설정 화면 정리: 상단 태그라인·하단 규칙/팁/전적 블록 없음, 대전 시작이 마지막 요소, 세로 스크롤 0
+- 단어 사전: 설정 화면 오른쪽 위 📖 사전 버튼 · ‘이’ 1글자 검색 · 어려움순(한방·후속 수) ·
+  쉬움순(일상 먼저) · 100개씩 더 보기 · 돌아가기 (dict.png, dict-easy.png, mobile-dict.png)
 - 내 단어장 삭제(버튼·모달·사전 API 없음)와 효과음 설정 행 전체 폭
 - 힌트 삭제(버튼·문구·API 없음)
 - 첫 제시 글자: 플레이어 선공이 제시어(사전의 2~3글자 일상 단어)의 첫 글자를 받고,
@@ -421,6 +423,58 @@ def main():
             lv: el.dataset.lv, name: el.querySelector('b').textContent, label: el.querySelector('small').textContent }))""")
         check(len(cards) == 5 and [c['name'] for c in cards] == ['쉬움', '보통', '어려움', '극악', '지옥'],
               '난이도 5단계 카드', str([c['name'] for c in cards]))
+
+        # ── 데스크톱: 단어 사전 ──────────────────────────────
+        entry = page.evaluate("""() => {
+            const r = document.getElementById('btn-dict').getBoundingClientRect();
+            const box = document.querySelector('#scr-setup .setup').getBoundingClientRect();
+            return { top: Math.round(r.top), right: Math.round(r.right),
+                     gap: Math.round(box.right - r.right), text: document.getElementById('btn-dict').innerText.trim() };
+        }""")
+        check(entry['top'] <= 40 and 0 <= entry['gap'] <= 24 and '사전' in entry['text'],
+              '설정 화면 오른쪽 위 📖 사전 버튼', json.dumps(entry, ensure_ascii=False))
+        page.click('#btn-dict')
+        page.wait_for_selector('#scr-dict:not([hidden])')
+        page.wait_for_timeout(250)
+        check(sum(overflow(page).values()) <= 0, '사전 화면 가로 오버플로 0', str(overflow(page)))
+        page.fill('#dict-input', '이')
+        page.wait_for_function("q => window.__ITDA.dictPanel.query === q", arg='이', timeout=6000)
+        page.wait_for_timeout(260)
+        dview = page.evaluate("""() => {
+            const p = window.__ITDA.dictPanel;
+            const items = [...document.querySelectorAll('#dict-list .dict-item')];
+            return {
+                total: p.info().total, shown: items.length,
+                meta: document.getElementById('dict-meta').innerText,
+                sorts: [...document.querySelectorAll('#dict-sorts button')].map((b) => b.innerText.trim()),
+                first: items.slice(0, 3).map((li) => li.innerText.replace(/\\s+/g, ' ').trim()),
+                oneshot: items.filter((li) => li.classList.contains('oneshot')).length,
+                more: document.getElementById('dict-more').innerText.replace(/\\s+/g, ' ').trim(),
+            };
+        }""")
+        check(dview['total'] == 10210 and dview['shown'] == 100 and dview['oneshot'] > 0
+              and '남음' in dview['more'],
+              '사전: ‘이’ 1글자 검색 · 어려움순 100개 · 한방 배지',
+              json.dumps(dview, ensure_ascii=False)[:220])
+        check(dview['sorts'] == ['어려움순', '쉬움순', '긴순', '짧은순'], '사전 정렬 4종', str(dview['sorts']))
+        hits = brand_hits(page)
+        check(not hits, '사전 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'dict.png'))
+        page.click('#dict-sorts button[data-sort="easy"]')
+        page.wait_for_timeout(260)
+        easy_view = page.evaluate("""() => [...document.querySelectorAll('#dict-list .dict-item')].slice(0, 5)
+            .map((li) => ({ word: li.dataset.word, tail: li.querySelector('.dict-tail').innerText,
+                            chips: [...li.querySelectorAll('.dict-chip')].map((c) => c.innerText) }))""")
+        check(any('일상' in r['chips'] for r in easy_view), '사전 쉬움순: 일상 단어 먼저',
+              json.dumps(easy_view[:3], ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'dict-easy.png'))
+        page.click('#dict-sorts button[data-sort="hard"]')
+        page.wait_for_timeout(200)
+        page.click('#btn-dict-back')
+        page.wait_for_timeout(250)
+        check(page.evaluate("document.getElementById('scr-dict').hidden && !document.getElementById('scr-setup').hidden"),
+              '사전 → 돌아가기로 설정 화면')
+        summary['dict'] = dview
 
         # ── 데스크톱: 첫 제시 글자(플레이어 선공) ─────────────
         page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:20})")
@@ -855,6 +909,31 @@ def main():
               '모바일 설정 화면 정리·스크롤 없음', json.dumps(mobile_clean, ensure_ascii=False))
         summary['mobile_setup'] = mobile_clean
         page.screenshot(path=os.path.join(OUT, 'mobile-setup.png'))
+
+        # ── 모바일: 단어 사전 ────────────────────────────────
+        page.click('#btn-dict')
+        page.wait_for_selector('#scr-dict:not([hidden])')
+        page.wait_for_timeout(250)
+        check(sum(overflow(page).values()) <= 0, '모바일 사전 화면 가로 오버플로 0', str(overflow(page)))
+        page.fill('#dict-input', '이')
+        page.wait_for_function("q => window.__ITDA.dictPanel.query === q", arg='이', timeout=6000)
+        page.wait_for_timeout(260)
+        mdict = page.evaluate("""() => {
+            const items = [...document.querySelectorAll('#dict-list .dict-item')];
+            const body = document.getElementById('dict-body').getBoundingClientRect();
+            return { shown: items.length,
+                     meta: document.getElementById('dict-meta').innerText,
+                     first: items.slice(0, 2).map((li) => li.innerText.replace(/\\s+/g, ' ').trim()),
+                     bodyTop: Math.round(body.top), bodyBottom: Math.round(body.bottom), vh: innerHeight };
+        }""")
+        check(mdict['shown'] == 100 and mdict['bodyBottom'] <= mdict['vh'],
+              '모바일 사전 목록 100개 · 화면 안', json.dumps(mdict, ensure_ascii=False)[:200])
+        hits = brand_hits(page)
+        check(not hits, '모바일 사전 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'mobile-dict.png'))
+        summary['mobile_dict'] = mdict
+        page.click('#btn-dict-back')
+        page.wait_for_timeout(250)
 
         # ── 모바일: 첫 제시 글자(플레이어 선공) ─────────────
         page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:20})")
