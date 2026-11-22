@@ -738,6 +738,24 @@ button { cursor: pointer; }
   .blog-word { font-size: 13.5px; }
 }
 
+/* 짧은 화면(360x640 · 키보드가 올라온 휴대폰): 결과 카드가 다 들어와
+   '다시 대전'·'난이도 변경' 버튼까지 스크롤 없이 보이게 여백을 줄인다. */
+@media (max-height: 700px) {
+  .sheet { padding: 14px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .result-badge { font-size: 34px; margin-bottom: 2px; }
+  .result-sheet h2 { font-size: 22px; }
+  .result-reason { margin: 6px 0 9px; font-size: 12px; }
+  .result-level { margin-top: 6px; padding: 4px 10px 5px; }
+  .result-score { margin-bottom: 10px; }
+  .result-score b { font-size: 22px; }
+  .result-stats { margin-bottom: 11px; gap: 6px; }
+  .result-stats div { padding: 7px 4px; }
+  .result-stats dt { font-size: 9.5px; }
+  .result-stats dd { font-size: 15px; }
+  .battle-log-btn { padding: 8px 10px; margin-bottom: 8px; }
+  .battle-log { max-height: min(24dvh, 168px); margin-bottom: 9px; }
+}
+
 
 /* ── responsive / short viewport (keyboard open) ──────────── */
 @media (max-width: 430px) {
