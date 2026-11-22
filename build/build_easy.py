@@ -18,6 +18,12 @@ Lv.1(쉬움)·Lv.2(보통) 봇이 낯선 방언·옛말·어인정·신조어 �
     1 = A단계/TOPIK 초급, 2 = B단계/TOPIK 중급, 3 = C단계
   동음이의어 번호(가구03), 접사 표시(-가13)는 떼고, 같은 단어는 가장 쉬운 단계로 한 번만 적는다.
 
+품사
+  끝말잇기에 자연스러운 **명사(고유 명사 포함)** 만 남긴다.
+  동사·형용사('가다'·'두껍다')를 넣으면 봇이 '~다'로 끝나는 단어만 이어 받아
+  '두껍다 → 다하다 → 다가가다'처럼 '다'에서 맴도는 판이 된다. 부사·관형사·대명사·
+  수사·감탄사·의존명사·접사·보조 용언도 끝말잇기 단어로는 어색해서 뺀다.
+
 usage:
     python3 build/build_easy.py                 # 원격 results.tsv 를 받아 다시 만든다
     python3 build/build_easy.py --source x.tsv  # 내려받아 둔 파일로 만든다
@@ -39,6 +45,9 @@ TOPIK_TIER = {'초급': 1, '중급': 2}
 
 HANGUL = re.compile(r'^[가-힣]{2,4}$')
 TRAILING_NUMBER = re.compile(r'\d+$')
+
+# 끝말잇기 단어로 자연스러운 품사. 동사·형용사·부사 등은 넣지 않는다(위 설명).
+KEEP_POS = {'명사', '고유 명사'}
 
 
 def read_source(path):
@@ -70,6 +79,9 @@ def parse(text):
         raw = fields[idx['word']].strip()
         if raw.startswith('-') or raw.endswith('-'):
             skipped += 1                      # 접사(‘-가13’)는 게임 단어가 아니다
+            continue
+        if 'part_of_speech' in idx and fields[idx['part_of_speech']].strip() not in KEEP_POS:
+            skipped += 1                      # 동사·형용사·부사 등은 제외
             continue
         word = TRAILING_NUMBER.sub('', raw)
         if not HANGUL.match(word):
@@ -103,7 +115,7 @@ def main():
         counts[tier] = counts.get(tier, 0) + 1
 
     with open(args.out, 'w', encoding='utf-8') as f:
-        f.write('# 국립국어원 한국어 학습용 어휘 목록(A·B·C) + TOPIK 어휘 목록(초급·중급) 기반 일상 어휘\n')
+        f.write('# 국립국어원 한국어 학습용 어휘 목록(A·B·C) + TOPIK 어휘 목록(초급·중급) 기반 일상 명사\n')
         f.write('# 형식: 단어<TAB>단계(1=A/초급, 2=B/중급, 3=C) — 출처는 NOTICE.md\n')
         f.write('# generated %s — build/build_easy.py\n'
                 % datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
@@ -112,6 +124,7 @@ def main():
 
     print('rows      :', rows, '(skipped %d)' % skipped)
     print('words     :', len(tiers), '1단계', counts.get(1, 0), '/ 2단계', counts.get(2, 0), '/ 3단계', counts.get(3, 0))
+    print('verbish   :', sum(1 for w in tiers if w.endswith('다')), '(명사만 남겨 0이어야 한다)')
     print('written   :', args.out, '%d bytes' % os.path.getsize(args.out))
 
 

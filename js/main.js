@@ -3,7 +3,7 @@
 import { Dictionary } from './data.js';
 import { App } from './ui.js';
 import { Sfx } from './audio.js';
-import { Bot, LEVELS, levelInfo } from './bot.js';
+import { Bot, LEVELS, levelInfo, naturalness } from './bot.js';
 import { loadSettings, loadRecord, migrateLegacy } from './store.js';
 
 async function boot() {
@@ -37,6 +37,7 @@ async function boot() {
     dict,
     Bot,
     LEVELS,
+    naturalness: (w) => naturalness(dict, w),
     levelInfo,
     get engine() { return app.engine; },
     startGame: (opts) => app.startGame(opts || {}),

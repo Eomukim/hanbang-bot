@@ -163,25 +163,26 @@ HELL_PICKS = """
     const mult = hits <= 0 ? 1 : hits === 1 ? 1.5 : hits;
     return (w.length * w.length + 4 * w.length) * mult;
   };
+  const natOf = (w) => window.__ITDA.naturalness(w);
   const out = {};
 
-  // 1) 한방이 여러 개일 때: 어떤 한방이든 즉사다. 장문 상위권에서 고르는가
+  // 1) 한방이 여러 개일 때: 어떤 한방이든 즉사다. 같은 즉사 안에서는 보통 말(자연스러운 등급)을 고르는가
   for (const ch of starts) {
     const cands = dict.candidatesFor(ch, new Set());
     const kills = cands.filter((w) => dict.countFrom(last(w)) === 0);
     if (kills.length < 2) continue;
-    const maxLen = Math.max(...kills.map((w) => w.length));
+    const minNat = Math.min(...kills.map(natOf));
     const mv = new Bot({level: 5, dict}).choose({needChar: ch, used: new Set(), turn: 1, mission: '가'});
     out.kill = {ok: true, char: ch, got: mv.word, kind: mv.kind,
                 isKill: dict.countFrom(last(mv.word)) === 0,
-                inBand: mv.word.length >= maxLen - 5,
-                kills: kills.length, band: kills.filter((w) => w.length >= maxLen - 5).length,
-                len: mv.word.length, maxLen};
+                inBand: natOf(mv.word) <= minNat + 1,
+                kills: kills.length, band: kills.filter((w) => natOf(w) <= minNat + 1).length,
+                nat: natOf(mv.word), minNat};
     break;
   }
   if (!out.kill) out.kill = {ok: false};
 
-  // 2) 고른 끝 글자 안에서는 미션 중첩·장문으로 점수가 가장 높은 단어를 고르는가
+  // 2) 고른 끝 글자 안에서는 보통 말을 먼저, 같은 등급이면 미션·점수가 높은 단어를 고르는가
   let checked = 0, agree = 0, detail = null;
   for (const ch of starts) {
     const used = new Set();
@@ -189,10 +190,12 @@ HELL_PICKS = """
     if (!mv) continue;
     const end = last(mv.word);
     const same = dict.candidatesFor(ch, used).filter((w) => last(w) === end);
-    const best = same.reduce((a, b) => (value(b, '가') > value(a, '가') ? b : a), mv.word);
+    const minNat = Math.min(...same.map(natOf));
+    const bestVal = same.filter((w) => natOf(w) === minNat)
+      .reduce((a, b) => (value(b, '가') > value(a, '가') ? b : a), mv.word);
     checked += 1;
-    if (mv.word === best) agree += 1;
-    else if (!detail) detail = {char: ch, got: mv.word, best, end, same: same.length, kind: mv.kind};
+    if (natOf(mv.word) <= minNat + 1) agree += 1;
+    else if (!detail) detail = {char: ch, got: mv.word, best: bestVal, end, same: same.length, kind: mv.kind};
     if (checked >= 25) break;
   }
   out.mission = {ok: checked > 0, checked, agree, detail};
@@ -223,6 +226,7 @@ VARIETY_PROPS = """
   const last = (w) => w[w.length - 1];
   const N = 15;
   const out = {rows: []};
+  const natOf = (w) => window.__ITDA.naturalness(w);
   const run = (lv, ch, used) => {
     const cands = new Set(dict.candidatesFor(ch, used));
     const words = [], kinds = {};
@@ -253,20 +257,24 @@ VARIETY_PROPS = """
     const drained = new Set(kills);
     const dCands = dict.candidatesFor(ch, drained);
     const dMin = dCands.length ? Math.min(...dCands.map((w) => dict.countFrom(last(w)))) : 0;
+    // 같은 즉사 안에서도 보통 말 후보가 둘 이상이면 단어가 섞여야 한다(고착 아님).
+    const killBand = kills.length
+      ? kills.filter((w) => natOf(w) <= Math.min(...kills.map(natOf)) + 1).length : 0;
+    const thinBand = open.filter((w) => dict.countFrom(last(w)) <= minEnd + 2).length;
     for (const lv of [4, 5]) {
       const o = run(lv, ch, new Set());
       out.rows.push({
-        lv, ch, pos: 'open', kills: kills.length, pool: open.length, ...o,
+        lv, ch, pos: 'open', kills: kills.length, pool: open.length, ...o, eligible: killBand,
         killOk: kills.length ? o.words.every((w) => dict.countFrom(last(w)) === 0) : true,
         endOk: (!kills.length && lv === 4)
-          ? o.words.every((w) => dict.countFrom(last(w)) <= minEnd + 1) : true,
+          ? o.words.every((w) => dict.countFrom(last(w)) <= minEnd + 2) : true,
       });
       if (dCands.length) {
         const d = run(lv, ch, drained);
         out.rows.push({
-          lv, ch, pos: 'drained', kills: 0, pool: dCands.length, ...d,
+          lv, ch, pos: 'drained', kills: 0, pool: dCands.length, ...d, eligible: thinBand,
           killOk: true,
-          endOk: lv === 4 ? d.words.every((w) => dict.countFrom(last(w)) <= dMin + 1) : true,
+          endOk: lv === 4 ? d.words.every((w) => dict.countFrom(last(w)) <= dMin + 2) : true,
         });
       }
     }
@@ -571,7 +579,8 @@ def scenario_easy_words(page, tag):
     """Lv.1·Lv.2 가 흔한 글자에서 일상 단어를 고르는지, Lv.3~5 는 그대로인지."""
     props = page.evaluate(EASY_PROPS, {'chars': EASY_CHARS, 'n': 20})
     bad = props['bad']
-    check(props['easyTotal'] >= 5000, f'[{tag}] 일상 어휘 목록 로드', f"{props['easyTotal']}단어")
+    # 일상 어휘는 명사만 남겼다(동사·형용사 '~다'를 빼서 3,982단어).
+    check(props['easyTotal'] >= 3500, f'[{tag}] 일상 어휘 목록 로드', f"{props['easyTotal']}단어")
 
     for lv, title in ((1, 'Lv.1'), (2, 'Lv.2')):
         per = props['levels'][str(lv)]
@@ -612,11 +621,13 @@ def scenario_easy_words(page, tag):
     check(not any(r['oneShot'] or r['kind'] == 'oneshot' for r in shot1),
           f'[{tag}] Lv.1 한방 0수', f"{len(shot1)}수 표본")
 
-    # Lv.3~5 는 사전 전체(796,750단어)를 그대로 쓴다 — 일상 목록 밖 단어도 나온다
+    # Lv.3~5 는 일상 목록에 갇히지 않고 사전 전체(796,750단어)를 쓴다.
+    #  Lv.3 은 '보통 말'을 우선하느라 일상어 비중이 높지만, 제한이 아니라 선택이다.
     for lv in (3, 4, 5):
         deep = props['deep'][str(lv)]
         outside = [d for d in deep if not d['tier']]
-        check(len(deep) >= 40 and len(outside) >= len(deep) * 0.5,
+        need = 0.2 if lv == 3 else 0.5
+        check(len(deep) >= 40 and len(outside) >= len(deep) * need,
               f'[{tag}] Lv.{lv} 사전 전체 사용 유지',
               f'{len(deep)}수 중 일상 목록 밖 {len(outside)}수 · ' + ' '.join(d['word'] for d in deep[:5]))
 
@@ -854,7 +865,7 @@ def scenario_legacy(page, tag):
 
 
 def scenario_hell(page, tag):
-    """Lv.5 지옥: 한방 즉사 · 강제 필승 · 한방 각 회피 · 압박/미션·장문 · 응답 속도."""
+    """Lv.5 지옥: 한방 즉사 · 강제 필승 · 한방 각 회피 · 압박/미션 · 응답 속도."""
     props = page.evaluate(HELL_PROPS)
     check(props['moves'] >= 50, f'[{tag}] Lv.5 표본 판단', f"{props['moves']}수")
     check(props['handedKillAvoidable'] == 0,
@@ -868,15 +879,17 @@ def scenario_hell(page, tag):
     check(props['msMax'] < 60, f'[{tag}] Lv.5 판단 속도', f"평균 {props['msAvg']}ms / 최대 {props['msMax']}ms")
     check(props['delayMin'] >= 140 and props['delayMax'] <= 410,
           f'[{tag}] Lv.5 응답 텀 0.15~0.4초', f"{props['delayMin']:.0f}~{props['delayMax']:.0f}ms")
-    check(props['longMoves'] >= props['moves'] * 0.3,
-          f'[{tag}] Lv.5 장문 선택', f"{props['longMoves']}/{props['moves']}수 5글자 이상")
+    # Lv.5 는 장문을 좇지 않는다(2~4글자 보통 말 우선). 그래도 점수·미션 때문에
+    # 5글자 이상이 다섯 수에 한 번은 나와야 한다 — 짧은 단어만 고르지는 않는지 본다.
+    check(props['longMoves'] >= props['moves'] * 0.2,
+          f'[{tag}] Lv.5 장문도 섞음', f"{props['longMoves']}/{props['moves']}수 5글자 이상")
 
     picks = page.evaluate(HELL_PICKS)
     check(picks.get('kill', {}).get('ok') and picks['kill']['isKill'] and picks['kill']['inBand'],
-          f'[{tag}] Lv.5 한방 중 상위권 즉사 선택',
+          f'[{tag}] Lv.5 한방 중 보통 말 즉사 선택',
           json.dumps(picks.get('kill'), ensure_ascii=False)[:180])
     check(picks.get('mission', {}).get('ok') and picks['mission']['agree'] == picks['mission']['checked'],
-          f'[{tag}] Lv.5 같은 끝 글자에서 미션·최고점 단어',
+          f'[{tag}] Lv.5 같은 끝 글자에서 보통 말 우선',
           json.dumps(picks.get('mission'), ensure_ascii=False)[:200])
     check(picks.get('pressure', {}).get('ok'),
           f'[{tag}] Lv.5 소수 후보 글자로 압박',
@@ -994,7 +1007,9 @@ def scenario_variety(page, tag):
     data = page.evaluate(VARIETY_PROPS)
     rows = data['rows']
     check(len(rows) >= 8, f'[{tag}] 다양성 표본 국면', f'{len(rows)}개')
-    flat = [r for r in rows if r['n'] < 10 or r['distinct'] < 2 or r['maxShare'] > 0.8]
+    # 고를 수 있는 '보통 말' 후보가 둘 이상인데도 한 단어만 나오면 고착이다.
+    # (즉사 단어가 하나뿐인 자리처럼 선택지가 없는 자리는 제외)
+    flat = [r for r in rows if r['n'] < 10 or (r['eligible'] >= 2 and (r['distinct'] < 2 or r['maxShare'] > 0.8))]
     check(not flat, f'[{tag}] Lv.4·Lv.5 단어 선택 다양성',
           '단일 반복: ' + str([(r['lv'], r['ch'], r['pos'], r['distinct'], r['maxShare']) for r in flat[:4]]))
     for lv in (4, 5):

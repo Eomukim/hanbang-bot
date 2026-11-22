@@ -134,9 +134,58 @@ const lastOf = (w) => w.charAt(w.length - 1);
 const NOT_EVERYDAY = 2 | 8 | 16 | 32;
 
 /**
+ * 문장 조각처럼 생긴 표제어(오픈DB에는 띄어쓰기를 지운 문장·대사가 섮여 있다).
+ *  예: 다시해줘 · 관둬 · 가슴은아니까 · 빵만으로는살수없다
+ *  사전에서 지우지는 않는다(플레이어가 직접 내면 그대로 인정) — 봇이 먼저 꺼내지만 않게 한다.
+ */
+const SENTENCE_END = /(해줘|해봐|해요|어요|아요|네요|지요|니까|지만|면서|려고|습니다|한다|된다|했다|였다|이다|인데|라고|다고|구나|더라|거야|볼래|줄래|줘|둬)$/;
+/** 같은 글자만 되풀이된 표제어(가가가·둬둬둬). */
+const SAME_CHAR = /^(.)\1{2,}$/;
+
+/**
+ * 단어가 사람에게 얼마나 '보통 말'인가. 낮을수록 자연스럽다.
+ *  0 = 일상 명사(1~3단계)   1 = 일상 외래어(5~7단계)   2 = 표준어 2~4자
+ *  3 = 표준어 5~6자 또는 어인정·방언·옛말·문화어   4 = 문장형·되풀이·7~9자   5 = 10자 이상
+ *
+ * 난이도는 '상대에게 남기는 후속 단어 수'로 만들고, 같은 자리에서 고를 수 있으면
+ * 언제나 이 등급이 낮은 쪽을 먼저 고른다. 그래서 79만 단어 가운데 낯선 어인정
+ * 고유명사·문장형 표제어가 먼저 튀어나오지 않는다(사전에서는 빼지 않는다).
+ */
+export function naturalness(dict, word) {
+  const tier = dict.easyTier(word);
+  if (tier) return tier <= 3 ? 0 : 1;
+  if (dict.flagOf(word) & NOT_EVERYDAY) return 4;
+  const n = word.length;
+  if (n <= 6 && (SENTENCE_END.test(word) || SAME_CHAR.test(word))) return 4;
+  if (n <= 4) return 2;
+  if (n <= 6) return 3;
+  if (n <= 9) return 4;
+  return 5;
+}
+
+/**
+ * 후보 중 가장 자연스러운 등급의 무리만 남긴다.
+ * 무리가 너무 좁으면(2개 미만) 한 등급 넓혀 매 판 같은 단어에 고정되지 않게 한다.
+ */
+function naturalBand(dict, list, maxRank = 2) {
+  if (list.length <= 1) return list;
+  const scored = [];
+  let best = 9;
+  for (const w of list) {
+    const r = naturalness(dict, w);
+    if (r < best) best = r;
+    scored.push({ w, r });
+  }
+  let band = scored.filter((c) => c.r === best);
+  if (band.length < 2) band = scored.filter((c) => c.r <= Math.min(best + 1, Math.max(best, maxRank)));
+  if (!band.length) band = scored;
+  return band.map((c) => c.w);
+}
+
+/**
  * 일상어 점수(낮을수록 쉬움). Lv.1·Lv.2 가 같은 기준을 쓴다.
  *  - 표준어 단계(1~3) → 외래어 단계(5~7)
- *  - 끝 글자에 일상 단어가 이어지는 쪽(판이 쉬운 쪽으로 계속 흐른다)
+ *  - 끝 글자에 일상 단어가 많이 이어지는 쪽(사·수·리·다처럼 다음 단어를 떠올리기 쉬운 글자)
  *  - 후속 단어가 많은 글자(300 / 100 / 40 이상)
  *  - 2~3글자 우선
  */
@@ -146,7 +195,8 @@ function easyScore(dict, word) {
   const n = dict.countFrom(end);
   const bucket = n >= 300 ? 0 : n >= 100 ? 1 : n >= 40 ? 2 : 3;
   const tierRank = tier <= 3 ? (tier - 1) * 0.5 : 4 + (tier - 5) * 0.5;
-  const flow = dict.easyCountFrom(end) >= 3 ? 0 : 4;
+  const easyNext = dict.easyCountFrom(end);
+  const flow = easyNext >= 12 ? 0 : easyNext >= 6 ? 0.5 : easyNext >= 3 ? 1.5 : easyNext >= 1 ? 3 : 5;
   return tierRank + flow + bucket + (word.length <= 3 ? 0 : 1);
 }
 
@@ -406,42 +456,80 @@ export class Bot {
     const oneShot = cands.filter((w) => endCount(w) === 0);
 
     if (this.level === 4) {
+      // 한방이 있으면 100% 즉사(기존 강도 유지). 다만 무엇이든 되는 경우에는
+      // 관싕·다봊 같은 낯선 표제어 대신 보통 말을 먼저 쓴다.
       if (oneShot.length) {
-        return { word: pick(oneShot, rng), delay: delayBetween(200, 480, rng), kind: 'oneshot' };
+        return { word: pick(naturalBand(dict, oneShot, 3), rng), delay: delayBetween(200, 480, rng), kind: 'oneshot' };
       }
       // 한방이 없으면: 상대 후속 단어가 가장 적은 자리로 몰아넣는다.
-      // 1등 한 단어로 고정하지 않고, 같은 최소 후속 수(모자라면 한 단계 위) 안에서
-      // 길이 상위권을 뽑아 매 판 다른 수를 둔다. 강도는 후속 수가 결정하므로 그대로다.
+      // 같은 최소 후속 수(모자라면 한 단계 위) 안에서 자연스러운 단어를 골라
+      // 매 판 다른 수를 둔다. 강도는 끝 글자의 후속 수가 결정하므로 그대로다.
       let minEnd = Infinity;
       for (const w of cands) {
         const n = endCount(w);
         if (n < minEnd) minEnd = n;
       }
       let pool = cands.filter((w) => endCount(w) === minEnd);
-      if (pool.length < 2) pool = cands.filter((w) => endCount(w) <= minEnd + 1);
-      const maxLen = pool.reduce((m, w) => (w.length > m ? w.length : m), 0);
-      const long = pool.filter((w) => w.length >= maxLen - 4);
-      const finalPool = long.length >= 2 ? long : pool;
-      return { word: pick(finalPool, rng), delay: delayBetween(200, 500, rng), kind: 'outer' };
+      if (pool.length < 3) pool = cands.filter((w) => endCount(w) <= minEnd + 2);
+      return { word: pick(naturalBand(dict, this.flowing(pool), 2), rng), delay: delayBetween(200, 500, rng), kind: 'outer' };
     }
 
     if (this.level === 3) {
-      if (turn >= 4 && oneShot.length && rng() < 0.85) {
-        return { word: pick(oneShot, rng), delay: delayBetween(700, 1300, rng), kind: 'oneshot' };
+      // 어려움: 보통 말로 두면서 판이 길어질수록 점점 조여 온다.
+      //  1~3수는 넉넉한 자리(후속 25~200), 4~6수는 6~60, 7수부터 1~25로 좁힌다.
+      //  8수 이후에야 확률적으로 한방으로 마무리한다. 예전에는 4수부터 85% 확률로
+      //  한방·후속 1~3 자리를 써서 3수 만에 끝났고, 그 단어도 관싕·곰븨님븨 같은
+      //  괴상한 표제어였다.
+      const clean = this.noVerb(this.plain(cands)).filter((w) => endCount(w) > 0);
+      const natural = clean.length ? clean : cands.filter((w) => endCount(w) > 0);
+
+      const cap = turn <= 2 ? 200 : turn <= 5 ? 60 : 25;
+      const floor = turn <= 2 ? 30 : turn <= 5 ? 8 : 1;
+      if (turn >= 10 && rng() < 0.25) {
+        const shots = naturalBand(dict, natural.filter((w) => endCount(w) === 0), 3);
+        if (shots.length) {
+          return { word: pick(shots, rng), delay: delayBetween(700, 1300, rng), kind: 'oneshot' };
+        }
       }
-      const induced = cands.filter((w) => {
+      // 6수부터는 가끔 가장 좁은 자리(후속 1~4)를 골라 외통수로 몰아넣는다.
+      // 나머지는 4~25로 넓게 둬서 Lv.4·5처럼 숨 막히지는 않게 한다.
+      const tight = turn >= 6 && rng() < 0.55
+        ? natural.filter((w) => {
+          const n = endCount(w);
+          return n >= 1 && n <= 4 && naturalness(dict, w) <= 2;
+        })
+        : [];
+      if (tight.length) return { word: pick(tight, rng), delay: delayBetween(700, 1400, rng), kind: 'press' };
+
+      // 기본은 '압박 가중 추첨': 후속이 적은 글자로 끝나는 단어일수록 자주 뽑는다.
+      // 어떤 무리에서 뽑을지는 먼저 정한다 — 65%는 일상 단어, 나머지는 일반 표준어.
+      // (사전 전체에서 무게만 주면 30만 개의 낯선 4글자 단어가 일상 단어를 덮어 버린다.)
+      // 판이 길어질수록(sharp↑) 조여 오고, 같은 자리에서도 매번 다른 단어가 나온다.
+      const sharp = turn <= 2 ? 0.25 : turn <= 5 ? 0.4 : 0.55;
+      const useEveryday = rng() < 0.75;
+      const list = [];
+      const weights = [];
+      let total = 0;
+      for (const w of natural) {
         const n = endCount(w);
-        return n >= 1 && n <= 3;
-      });
-      if (induced.length && rng() < 0.7) {
-        return { word: pick(induced, rng), delay: delayBetween(700, 1400, rng), kind: 'press' };
+        if (n < floor || n > Math.max(cap, 400)) continue;
+        const rank = naturalness(dict, w);
+        if (useEveryday ? rank > 1 : rank !== 2) continue;
+        // 일반 표준어는 '다음 수로 일상 단어를 댈 수 있는 글자'로 끝나는 것만 고른다.
+        // (브랜드·어인정 이름은 드문 글자로 끝나서 여기서 걸러진다)
+        if (!useEveryday && dict.easyCountFrom(w.charAt(w.length - 1)) < 1) continue;
+        total += 1 / Math.pow(n + 40, sharp);
+        list.push(w);
+        weights.push(total);
       }
-      const tough = cands.filter((w) => {
-        const n = endCount(w);
-        return n > 0 && n <= 30;
-      });
-      const pool = tough.length ? tough : cands.filter((w) => endCount(w) > 0);
-      return { word: pick(pool.length ? pool : cands, rng), delay: delayBetween(750, 1400, rng), kind: 'press' };
+      if (!list.length) {
+        const fallback = naturalBand(dict, natural, 3);
+        return { word: pick(fallback.length ? fallback : cands, rng), delay: delayBetween(700, 1400, rng), kind: 'press' };
+      }
+      let roll = rng() * total;
+      let idx = 0;
+      while (idx < list.length - 1 && weights[idx] < roll) idx += 1;
+      return { word: list[idx], delay: delayBetween(700, 1400, rng), kind: 'press' };
     }
 
     if (this.level === 2) {
@@ -450,53 +538,66 @@ export class Bot {
         const shots = this.calmShots(oneShot);
         if (shots.length) return { word: pick(shots, rng), delay: delayBetween(1000, 1700, rng), kind: 'oneshot' };
       }
-      // 가끔 장문(4~6글자): 낯선 표제어 대신 일상 단어를 먼저 본다.
-      const longPool = this.plain(cands.filter((w) => w.length >= 4 && w.length <= 6 && endCount(w) > 5));
-      const longWords = longPool.filter((w) => dict.easyTier(w));
-      const longs = longWords.length ? longWords : longPool;
-      if (longs.length && rng() < 0.22) {
-        return { word: pick(longs, rng), delay: delayBetween(1000, 1800, rng), kind: 'long' };
+      // 가끔 장문(4~6글자): 낯선 표제어 대신 일상 명사를 먼저 본다.
+      const longEasy = cands.filter((w) => dict.easyTier(w) && w.length >= 4 && w.length <= 6 && endCount(w) > 5);
+      const longPool = longEasy.length
+        ? longEasy
+        : naturalBand(dict, this.noVerb(this.plain(cands.filter((w) => w.length >= 4 && w.length <= 6 && endCount(w) > 5))), 2);
+      if (longPool.length && rng() < 0.22) {
+        return { word: pick(longPool, rng), delay: delayBetween(1000, 1800, rng), kind: 'long' };
       }
-      // 본 수: 일상적인 2~4글자, 후속 단어가 남아 있는 쪽
+      // 본 수: 일상 명사 2~4글자, 후속 단어가 남아 있는 쪽
       const everyday = cands.filter((w) => dict.easyTier(w) && w.length <= 4 && endCount(w) >= 25);
       if (everyday.length) return this.everydayMove(everyday, rng, 'normal', 1000, 1800);
       const everydayThin = cands.filter((w) => dict.easyTier(w) && w.length <= 4 && endCount(w) > 0);
       if (everydayThin.length) return this.everydayMove(everydayThin, rng, 'normal', 1000, 1800);
-      const plain = this.plain(cands.filter((w) => w.length <= 4 && endCount(w) >= 25));
-      const thin = plain.length ? plain : this.plain(cands.filter((w) => w.length <= 4 && endCount(w) > 0));
-      const pool = thin.length ? thin : this.plain(cands.filter((w) => endCount(w) > 0));
+      const plain = this.noVerb(this.plain(cands.filter((w) => w.length <= 4 && endCount(w) >= 25)));
+      if (plain.length) {
+        return { word: pick(naturalBand(dict, this.flowing(plain), 2), rng), delay: delayBetween(1000, 1800, rng), kind: 'normal' };
+      }
+      const thin = this.noVerb(this.plain(cands.filter((w) => w.length <= 4 && endCount(w) > 0)));
+      const pool = thin.length ? thin : this.noVerb(this.plain(cands.filter((w) => endCount(w) > 0)));
       return {
-        word: pick(pool.length ? pool : cands, rng),
+        word: pick(naturalBand(dict, this.flowing(pool.length ? pool : cands), 2), rng),
         delay: delayBetween(1000, 1800, rng),
         kind: 'normal',
       };
     }
 
-    // 레벨 1: 한방 금지 · 일상적인 쉬운 2~3글자 우선.
-    //  일상 어휘 풀이 비어 있을 때만 표준어 일반 풀 → 일반 비한방 풀로 내려간다.
+    // 레벨 1: 한방 금지 · 일상 명사 2~3글자 우선.
+    //  일상 명사 풀이 비어 있을 때만 표준어 일반 풀 → 일반 비한방 풀로 내려간다.
+    //  '~다'로 끝나는 서술어는 일상 명사가 아니면 쓰지 않는다(다·하다에서 맴도는 판 방지).
     const everyday = cands.filter((w) => dict.easyTier(w) && w.length <= 3 && endCount(w) > 0);
     if (everyday.length) return this.everydayMove(everyday, rng, 'normal', 1500, 2500);
 
     const everydayAny = cands.filter((w) => dict.easyTier(w) && endCount(w) > 0);
     if (everydayAny.length) return this.everydayMove(everydayAny, rng, 'normal', 1500, 2500);
 
-    const plain = this.plain(cands.filter((w) => endCount(w) > 0));
+    const plain = this.noVerb(this.plain(cands.filter((w) => endCount(w) > 0)));
     const safe = plain.filter((w) => {
       const n = endCount(w);
       return n >= 40 && w.length <= 3;
     });
-    if (safe.length) return { word: pick(safe, rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
+    if (safe.length) {
+      return { word: pick(naturalBand(dict, this.flowing(safe), 2), rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
+    }
 
     const safer = plain.filter((w) => {
       const n = endCount(w);
       return n >= 15 && w.length <= 4;
     });
-    if (safer.length) return { word: pick(safer, rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
+    if (safer.length) {
+      return { word: pick(naturalBand(dict, this.flowing(safer), 2), rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
+    }
 
-    if (plain.length) return { word: pick(plain, rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
+    if (plain.length) {
+      return { word: pick(naturalBand(dict, this.flowing(plain), 2), rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
+    }
 
     const notDead = cands.filter((w) => endCount(w) > 0);
-    if (notDead.length) return { word: pick(notDead, rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
+    if (notDead.length) {
+      return { word: pick(naturalBand(dict, this.flowing(notDead), 2), rng), delay: delayBetween(1500, 2500, rng), kind: 'normal' };
+    }
 
     // 남은 후보가 전부 한방 단어뿐 → 순한 봇은 그런 수를 두지 않는다(막힌 것으로 처리).
     return null;
@@ -537,6 +638,25 @@ export class Bot {
   }
 
   /**
+   * '~다'로 끝나는 서술어를 뺀다(일상 명사는 남긴다).
+   * 동사·형용사만 이어 받으면 '두껍다 → 다하다 → 다가가다'처럼 판이 '다'에서 맴돈다.
+   */
+  noVerb(list) {
+    const dict = this.dict;
+    return list.filter((w) => !w.endsWith('다') || dict.easyTier(w));
+  }
+
+  /**
+   * 끝 글자에 일상 단어가 이어지는 후보만 남긴다(없으면 그대로).
+   * 낯선 글자에서 어쩔 수 없이 표준어로 내려갈 때, 다음 수는 쉬운 자리로 돌아오게 한다.
+   */
+  flowing(list) {
+    const dict = this.dict;
+    const out = list.filter((w) => dict.easyCountFrom(w.charAt(w.length - 1)) >= 3);
+    return out.length ? out : list;
+  }
+
+  /**
    * Lv.2 가 가끔 쓸 한방 단어: 일상 목록에 있는 짧은(2~3글자) 단어만.
    *  한방 단어는 태생이 ‘끝 글자에 후속 단어가 없는’ 낯선 표제어라(“가녘”·“나노뿝”),
    *  일상 목록에 있는 것만 쓴다. 없으면 한방을 두지 않고 보통 수로 넘긴다.
@@ -548,7 +668,7 @@ export class Bot {
 
   /**
    * 일상 어휘 후보 중 가장 쉬운 무리에서 하나를 고른다.
-   * 1등 점수 무리가 너무 좁으면(2개 미만) 한 단계 넓혀 매 판 단어가 달라지게 한다.
+   * 1등 점수 무리가 너무 좁으면(4개 미만) 한 단계씩 넓혀 매 판 단어가 달라지게 한다.
    */
   everydayMove(pool, rng, kind = 'normal', minDelay = 1500, maxDelay = 2500) {
     const dict = this.dict;
@@ -556,7 +676,11 @@ export class Bot {
     let best = Infinity;
     for (const c of scored) if (c.s < best) best = c.s;
     let band = scored.filter((c) => c.s <= best);
-    if (band.length < 2) band = scored.filter((c) => c.s <= best + 1);
+    for (const step of [0.5, 1, 2]) {
+      if (band.length >= 4) break;
+      band = scored.filter((c) => c.s <= best + step);
+    }
+    if (!band.length) band = scored;
     return { word: pick(band, rng).w, delay: delayBetween(minDelay, maxDelay, rng), kind };
   }
 
@@ -575,10 +699,18 @@ export class Bot {
     duel.deadline = performance.now() + HELL.deadlineMs;
 
     const valueOf = (w) => {
-      const len = w.length;
+      // 장문을 좇지 않는다: 6글자를 넘으면 점수를 더 주지 않는다(예전에는 20~30글자
+      // 어인정 표제어가 점수 1등이라 늘 그런 단어만 나왔다).
+      const len = Math.min(w.length, 6);
       const hits = mission ? countMission(w, mission) : 0;
       return (len * len + 4 * len) * missionMultiplier(hits);
     };
+
+    // 같은 끝 글자 안에서는 자연스러운 단어를 먼저, 그다음 점수(미션·길이) 순으로 고른다.
+    const natOf = (w) => naturalness(dict, w);
+    const better = (cand, prev) => !prev
+      || natOf(cand.w) < natOf(prev.w)
+      || (natOf(cand.w) === natOf(prev.w) && cand.val > prev.val);
 
     const kills = [];
     const traps = new Map();     // 끝 글자별: 상대가 죽는 자리로 보내는 최고 점수 단어
@@ -595,31 +727,29 @@ export class Bot {
       }
       const status = dict.graphStatus(end);
       const depth = dict.graphDepth(end);
+      const cand = { w, end, val, live, status, depth };
       // 정적 패배 노드 + 이미 나온 단어 때문에 1~2수로 좁아진 함정 음절
       if (status === 'L' || live <= 2) {
         const prev = traps.get(end);
-        if (!prev || val > prev.val) traps.set(end, { w, end, val, live, status, depth });
+        if (better(cand, prev)) traps.set(end, cand);
       }
       const prev = endBest.get(end);
-      if (!prev || val > prev.val) endBest.set(end, { w, end, val, live, status, depth });
+      if (better(cand, prev)) endBest.set(end, cand);
     }
     const safe = [...endBest.values()];
 
     // 1) 한방 즉사 — 어떤 한방이든 즉시 승리다. 매번 같은 1등 단어 대신
-    //    장문 상위권(최장 - 5글자) 안에서 골라 매 판 달라지게 한다.
-    //    끝 글자가 같으면 점수가 가장 높은 단어로 모아, 같은 자리에서 더 짧은 단어를 내지 않는다.
+    //    같은 끝 글자 안에서는 보통 말을 우선하고, 그 무리 안에서 골라 매 판 달라지게 한다.
     if (kills.length) {
       const byEnd = new Map();
       for (const k of kills) {
         const prev = byEnd.get(k.end);
-        if (!prev || k.val > prev.val) byEnd.set(k.end, k);
+        if (better(k, prev)) byEnd.set(k.end, k);
       }
       const uniq = [...byEnd.values()];
-      const maxLen = Math.max(...uniq.map((k) => k.w.length));
-      let pool = uniq.filter((k) => k.w.length >= maxLen - 5);
-      if (pool.length < 2) pool = uniq;
+      const pool = naturalBand(dict, uniq.map((k) => k.w), 3);
       const chosen = pick(pool, rng);
-      return { word: chosen.w, delay: delayBetween(150, 400, rng), kind: 'oneshot' };
+      return { word: chosen, delay: delayBetween(150, 400, rng), kind: 'oneshot' };
     }
 
     // 2) 강제 필승 — 상대의 모든 응수를 실제 수로 확인한다.
@@ -687,9 +817,10 @@ export class Bot {
     // 3) 안전 후보 전수 평가 — 첫 안전 수에서 멈추지 않고, 상대의 모든 응수를 뜯어
     //    가장 숨통을 조이는 '독배'를 고른다.
     const statusRank = (c) => (c.status === 'L' ? 0 : c.status === 'D' ? 1 : 2);
-    const ranked = safe.map((c) => ({ ...c, rank: statusRank(c) }))
+    const ranked = safe.map((c) => ({ ...c, rank: statusRank(c), nat: natOf(c.w) }))
       .sort((a, b) => a.rank - b.rank
         || pressureTier(a.live) - pressureTier(b.live)
+        || a.nat - b.nat
         || b.val - a.val);
 
     const safeScored = [];
@@ -723,14 +854,17 @@ export class Bot {
 
     if (safeScored.length) {
       // 그래프 상태(이론적 승패)를 먼저 보고, 같은 등급 안에서 독배 점수를 쓴다.
-      // 안전한 수 중 최상위권(최고 rank · 독배 점수 4점 이내)에서 골라 매 판 달라지게 한다.
+      // 안전한 수 중 최상위권(최고 rank · 독배 점수 4점 이내)에서 골라 매 판 달라지게 하고,
+      // 같은 조건이면 보통 말(자연스러운 등급이 낮은 쪽)을 먼저 둔다.
       // 안전성(exact === 0: 상대 한방 각 없음)은 후보 조건 자체가 보장한다.
       safeScored.sort((a, b) => a.rank - b.rank
         || b.mate - a.mate
+        || a.nat - b.nat
         || a.replies - b.replies
         || b.val - a.val);
       const best = safeScored[0];
-      const pool = safeScored.filter((c) => c.rank === best.rank && c.mate >= best.mate - 4);
+      const pool = safeScored.filter((c) => c.rank === best.rank
+        && c.mate >= best.mate - 4 && c.nat <= best.nat);
       const chosen = pick(pool.length ? pool : safeScored, rng);
       return {
         word: chosen.w,

@@ -513,6 +513,8 @@ button { cursor: pointer; }
 }
 .countdown b { font-size: 21px; font-weight: 900; letter-spacing: -.5px; color: #fff; }
 .countdown span { font-size: 10.5px; color: var(--dim-2); }
+.countdown.waiting b { color: var(--dim-2); letter-spacing: 1px; }
+.countdown.waiting span { visibility: hidden; }
 .countdown.urgent b { color: var(--bad); animation: urgentPulse .7s ease-in-out infinite; }
 @keyframes urgentPulse { 50% { transform: scale(1.13); } }
 
@@ -679,6 +681,12 @@ button { cursor: pointer; }
   background: rgba(4,5,10,.45);
   scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.22) transparent;
   animation: logIn .18s ease-out;
+}
+.battle-log.more {
+  /* 스크롤이 더 남았다는 표시: 아래 가장자리를 부드럽게 지운다 */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+  padding-bottom: 18px;
 }
 .battle-log:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .battle-log::-webkit-scrollbar { width: 6px; }

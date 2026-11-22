@@ -3,6 +3,7 @@
 
 Usage:
     python3 build/build_data.py path/to/db.sql [path/to/kkuko-words.txt]
+    python3 build/build_data.py --easy-only   # easy_words.txt만 바뀌었을 때 stats.json의 easy만 갱신
 
 The first source is the KKuTu `db.sql` dump (GPL-3.0); the optional second source
 is the Kkuko Utils open DB word list collected with `build/collect_kkuko.py`
@@ -274,9 +275,58 @@ def read_open_db(path):
     print("open db rows  :", rows)
 
 
+def read_words_txt(path):
+    """data/words.txt(단어<TAB>flag) → {단어: flag}. 일상 어휘만 다시 계산할 때 쓴다."""
+    words = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n").rstrip("\r")
+            if not line:
+                continue
+            word, _, flag = line.partition("\t")
+            try:
+                flag = int(flag or 0)
+            except ValueError:
+                flag = 0
+            words[word] = flag
+    return words
+
+
+def rebuild_easy_only():
+    """db.sql 원본 없이 data/words.txt + data/stats.json 만으로 `easy` 구간만 다시 계산한다.
+
+    easy_words.txt(일상 어휘 목록)가 바뀌었는데 전체 사전을 다시 만들 필요는 없을 때 쓴다.
+    단어 목록·그래프·한방/유도 목록은 그대로 두고 stats.json 의 easy 부분만 갱신한다.
+    """
+    out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    words_path = os.path.join(out_dir, "words.txt")
+    stats_path = os.path.join(out_dir, "stats.json")
+    words = read_words_txt(words_path)
+    with open(stats_path, encoding="utf-8") as f:
+        stats = json.load(f)
+    easy = read_easy(EASY_PATH)
+    bands, dropped = easy_bands(words, easy)
+    stats["easy"] = {
+        "version": 2,
+        "source": "국립국어원 한국어 학습용 어휘 목록 + TOPIK 어휘 목록(명사) — 출처 표기는 NOTICE.md",
+        "total": sum(len(v) for v in bands.values()),
+        "bands": {str(k): " ".join(v) for k, v in sorted(bands.items())},
+    }
+    with open(stats_path, "w", encoding="utf-8") as f:
+        json.dump(stats, f, ensure_ascii=False, separators=(",", ":"))
+    print("words.txt     :", len(words))
+    print("easy list     :", len(easy))
+    print("easy words    :", stats["easy"]["total"],
+          {k: len(v) for k, v in sorted(bands.items())}, "(dropped %d)" % dropped)
+    print("stats.json    : %.1f KB" % (os.path.getsize(stats_path) / 1024.0))
+
+
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "--easy-only":
+        rebuild_easy_only()
+        return
     if len(sys.argv) < 2:
-        sys.exit("usage: build_data.py <db.sql> [kkuko-words.txt]")
+        sys.exit("usage: build_data.py <db.sql> [kkuko-words.txt]\n       build_data.py --easy-only")
     src = sys.argv[1]
     open_db = sys.argv[2] if len(sys.argv) > 2 else None
     out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")

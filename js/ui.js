@@ -248,6 +248,7 @@ export class App {
 
     this.el['btn-quit'].addEventListener('click', () => this.armQuit());
     this.el['battle-log-btn'].addEventListener('click', () => this.toggleBattleLog());
+    this.el['battle-log'].addEventListener('scroll', () => this.updateBattleLogFade(), { passive: true });
     this.el['btn-hardcore'].addEventListener('click', () => {
       this.settings.hardcore = !this.settings.hardcore;
       this.persist();
@@ -365,12 +366,15 @@ export class App {
       input.placeholder = '단어 입력';
       this.el['btn-submit'].disabled = false;
       this.lastTick = -1;
+      this.el['countdown'].classList.remove('waiting');
       if (this.screen === 'game' && this.isFinePointer()) input.focus({ preventScroll: true });
     } else {
       input.disabled = true;
       input.placeholder = '봇이 고르는 중…';
       this.el['btn-submit'].disabled = true;
       this.el['countdown'].classList.remove('urgent');
+      // 봇 차례에는 '···초' 대신 점만 보이게 한다(단위 '초'는 내 차례에만).
+      this.el['countdown'].classList.add('waiting');
       const timerEl = document.querySelector('.timer');
       timerEl.classList.remove('warn', 'urgent');
       this.el['timer-fill'].style.width = '100%';
@@ -382,6 +386,8 @@ export class App {
   onBotThinking() {
     this.el['word-input'].disabled = true;
     this.el['btn-submit'].disabled = true;
+    this.el['countdown'].classList.add('waiting');
+    this.el['time-left'].textContent = '···';
   }
 
   setNeed(state) {
@@ -734,6 +740,17 @@ export class App {
     this.el['battle-log-btn'].setAttribute('aria-expanded', String(open));
     this.el['battle-log'].hidden = !open;
     if (open) this.el['battle-log'].scrollTop = 0;
+    // 스크롤이 더 남아 있으면 아래쪽을 흐리게 해 '더 있음'을 보여 준다.
+    requestAnimationFrame(() => this.updateBattleLogFade());
+  }
+
+  /** 배틀 내역이 잘려 보이지 않도록, 아래에 더 남았을 때만 페이드를 켠다. */
+  updateBattleLogFade() {
+    const box = this.el['battle-log'];
+    if (!box || box.hidden) return;
+    const more = box.scrollHeight - box.clientHeight > 2
+      && box.scrollTop + box.clientHeight < box.scrollHeight - 4;
+    box.classList.toggle('more', more);
   }
 
   toggleBattleLog() {
