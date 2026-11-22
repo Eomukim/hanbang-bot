@@ -691,12 +691,14 @@ button { cursor: pointer; }
 
 /* 주고받은 단어 타일 */
 .chain {
-  list-style: none; margin: 0; padding: 2px 0 4px;
+  list-style: none; margin: 0; padding: 6px 6px 8px;
   flex: 1 1 auto; min-height: 0;
-  overflow-y: auto; overscroll-behavior: contain;
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; -ms-overflow-style: none;
   display: flex; flex-direction: column; align-items: flex-start; gap: 9px;
 }
+.chain::-webkit-scrollbar { display: none; }
 /* 적은 수일 때는 보드 바로 위에 붙고, 넘치면 위에서부터 스크롤된다 */
 .chain > li:first-child { margin-top: auto; }
 /* 위로 더 남아 있을 때 위쪽을 부드럽게 지운다 */
