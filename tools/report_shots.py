@@ -965,27 +965,6 @@ def main():
         check(sum(overflow(page).values()) <= 0, '모바일 Lv.5 대전 가로 오버플로 0', str(overflow(page)))
         hits = brand_hits(page)
         check(not hits, '모바일 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
-        # 보고용 대전 화면: Lv.5 봇이 일찍 한방으로 끝낸 판이면 결과를 닫고 Lv.2로 한 판 더 둔다
-        if st and st['phase'] == 'over':
-            page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-            page.wait_for_timeout(1300)
-            page.click('.level[data-lv="2"]')
-            page.wait_for_timeout(180)
-            page.click('#btn-start')
-            page.wait_for_selector('#scr-game:not([hidden])')
-            page.wait_for_timeout(450)
-            for _ in range(3):
-                st2 = wait_my_turn(page, 9000)
-                if not st2 or st2['phase'] != 'me':
-                    break
-                w2 = human_word(page, cautious=True)
-                if not w2:
-                    break
-                page.fill('#word-input', w2)
-                page.click('#btn-submit')
-                page.wait_for_timeout(1400)
-            page.wait_for_timeout(300)
-        page.screenshot(path=os.path.join(OUT, 'mobile-game.png'))
         summary['mobile_game'] = {'bot_moves': [(c['word'], c['kind']) for c in bot_moves], 'brand_hits': hits}
 
         # ── 모바일: 결과 화면 난이도 ────────────────────────
@@ -1018,6 +997,30 @@ def main():
         check(not hits, '모바일 배틀 내역 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
         page.screenshot(path=os.path.join(OUT, 'mobile-battle-log-open.png'))
         summary['mobile_battle_log'] = mblog
+
+        # ── 모바일: 대전 화면(디자인 보고용) ─────────────────
+        # Lv.5 지옥 봇은 판이 일찍 끝날 수 있어, 한 판을 처음부터 두며 대전 화면을 담는다.
+        page.evaluate('window.__ITDA.app.hideResult()')
+        page.evaluate("window.__ITDA.app.show('setup')")
+        page.wait_for_timeout(400)
+        page.click('.level[data-lv="2"]')
+        page.wait_for_timeout(200)
+        page.click('#btn-start')
+        page.wait_for_selector('#scr-game:not([hidden])')
+        page.wait_for_timeout(450)
+        for _ in range(3):
+            st2 = wait_my_turn(page, 9000)
+            if not st2 or st2['phase'] != 'me':
+                break
+            w2 = human_word(page, cautious=True)
+            if not w2:
+                break
+            page.fill('#word-input', w2)
+            page.click('#btn-submit')
+            page.wait_for_timeout(1400)
+        page.wait_for_timeout(300)
+        check(sum(overflow(page).values()) <= 0, '모바일 대전 화면 가로 오버플로 0', str(overflow(page)))
+        page.screenshot(path=os.path.join(OUT, 'mobile-game.png'))
 
         # ── 모바일: 하드코어 설정·대전·결과 ──────────────────
         page.evaluate('window.__ITDA.app.hideResult(); window.__ITDA.app.show(\'setup\')')
