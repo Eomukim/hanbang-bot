@@ -428,9 +428,10 @@ def main():
         entry = page.evaluate("""() => {
             const r = document.getElementById('btn-dict').getBoundingClientRect();
             const box = document.querySelector('#scr-setup .setup').getBoundingClientRect();
-            return { top: Math.round(r.top), right: Math.round(r.right),
+            return { top: Math.round(r.top - box.top), right: Math.round(r.right),
                      gap: Math.round(box.right - r.right), text: document.getElementById('btn-dict').innerText.trim() };
         }""")
+        # 데스크톱 보드는 화면 가운데에 앉으므로 판의 맨 위 모서리에서 잰다
         check(entry['top'] <= 40 and 0 <= entry['gap'] <= 24 and '사전' in entry['text'],
               '설정 화면 오른쪽 위 📖 사전 버튼', json.dumps(entry, ensure_ascii=False))
         page.click('#btn-dict')

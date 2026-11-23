@@ -1866,8 +1866,15 @@ def scenario_dict(page, tag):
     }""")
     check(view['exists'] and '사전' in view['text'], f'[{tag}] 사전 버튼 있음', view['text'])
     check(view['visible'], f'[{tag}] 사전 버튼이 화면 안에 보임', json.dumps(view['rect'], ensure_ascii=False))
-    check(view['rect'] and view['rect']['top'] <= 40, f'[{tag}] 사전 버튼이 설정 화면 맨 위',
-          f"top {view['rect']['top']}px")
+    # 데스크톱은 보드가 화면 가운데에 앉으므로(모바일은 화면을 꽉 채운다)
+    # 화면 좌표 대신 '설정 보드의 맨 위·오른쪽 모서리'를 기준으로 본다.
+    wide = page.viewport_size['width'] >= 820
+    if wide:
+        top_gap = view['rect']['top'] - view['box']['top'] if view['rect'] else 10 ** 6
+    else:
+        top_gap = view['rect']['top'] if view['rect'] else 10 ** 6
+    check(view['rect'] and top_gap <= 40, f'[{tag}] 사전 버튼이 설정 화면 맨 위',
+          f"top {view['rect']['top']}px (판 {view['box']['top']}px)" if view['rect'] else 'no button')
     right_gap = (view['box']['right'] - view['rect']['right']) if view['rect'] else -1
     check(0 <= right_gap <= 24, f'[{tag}] 사전 버튼이 설정 화면 오른쪽',
           f"오른쪽 여백 {right_gap}px (열 {view['box']['right']}px)")

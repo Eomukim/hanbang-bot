@@ -1443,25 +1443,304 @@ button { cursor: pointer; }
   .stage { justify-content: center; }
 }
 
-/* 데스크톱: 탁자 위에 놓인 보드 한 벌 */
+/* ── 데스크톱: 탁자 위에 넓게 펼친 보드 한 벌 ────────────────
+   · 모바일(≤819px)은 손대지 않는다. 여기서부터만 와이드 보드로 바뀐다.
+   · 모든 화면이 같은 크기의 보드 안에 앉아, 화면을 옮겨도 판이 흔들리지 않는다. */
 @media (min-width: 820px) {
-  .screen-setup { display: flex; justify-content: center; align-items: center; }
+  :root {
+    --board-w: min(1060px, calc(100vw - 56px));
+    --board-h: min(820px, calc(var(--vvh, 100dvh) - 44px));
+    --setup-h: min(660px, calc(var(--vvh, 100dvh) - 44px));
+  }
+
+  /* 보드는 늘 화면 한가운데 */
+  #app {
+    display: grid;
+    place-items: center;
+    height: var(--vvh, 100dvh);
+  }
+  .screen { height: auto; }
+
+  /* ── 설정: 왼쪽에 브랜드·난이도, 오른쪽에 대전 설정 서랍 ── */
+  .screen-setup { display: grid; place-items: center; overflow-y: auto; }
   .setup {
-    width: 500px; max-width: 500px;
-    min-height: calc(100% - 32px);
-    margin: 16px auto;
-    padding: 30px 34px 26px;
-    background: rgba(252,249,242,.72);
+    position: relative;
+    width: var(--board-w); max-width: none;
+    height: var(--setup-h); min-height: 0;
+    margin: 0;
+    padding: 36px 48px 32px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.16fr) minmax(0, .84fr);
+    grid-template-rows: auto auto auto auto;
+    column-gap: 56px;
+    row-gap: 22px;
+    align-content: center;
+    background: rgba(252,249,242,.8);
+    border: 1px solid var(--edge);
+    border-radius: 30px;
+    box-shadow: 0 6px 0 var(--sh), 0 54px 92px -54px rgba(90,74,50,.55), inset 0 1px 0 #fff;
+  }
+
+  /* 보드 가운데를 가로지르는 결 — 왼쪽은 놀이판, 오른쪽은 대전 설정 */
+  .setup::before {
+    content: '';
+    position: absolute;
+    top: 46px; bottom: 46px;
+    left: calc(48px + (100% - 152px) * .58 + 28px);
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, var(--edge) 14%, var(--edge) 86%, transparent);
+    pointer-events: none;
+  }
+
+  .brand { grid-column: 1; grid-row: 1; margin-top: 0; }
+  .brand-kicker { font-size: 12px; letter-spacing: .44em; text-indent: .44em; }
+  .brand .logo-mark { margin-top: 16px; }
+  .logo-mark .lt {
+    width: 84px; height: 84px; margin: 0 5px;
+    font-size: 46px; border-radius: 20px; padding-bottom: 6px;
+  }
+  .logo-mark .lt:first-child { transform: rotate(-2deg); }
+  .logo-mark .lt:last-child { transform: rotate(1.6deg); }
+  .brand-sub { margin-top: 15px; font-size: 12.5px; }
+  /* 브랜드 아래 가는 실선 — 판의 머리말과 몸통을 나눈다 */
+  .brand::after {
+    content: '';
+    align-self: stretch;
+    height: 1px;
+    margin-top: 24px;
+    background: linear-gradient(90deg, transparent, var(--edge-strong) 18%, var(--edge-strong) 82%, transparent);
+  }
+
+  .setup > .field:not(.field-split) { grid-column: 1; grid-row: 2; margin-top: 0; }
+  .field { gap: 11px; }
+  .field-head span { font-size: 12px; letter-spacing: .16em; }
+  .field-head em { font-size: 11.5px; }
+  .levels { gap: 9px; }
+  .level {
+    height: 150px; gap: 3px; border-radius: 15px;
+    transition: transform var(--dur-mid) var(--ease-out), box-shadow var(--dur-mid) ease,
+                background var(--dur-fast) ease, border-color var(--dur-fast) ease;
+  }
+  .level:hover { border-color: var(--lv-edge); transform: translateY(-2px); }
+  .level[aria-checked="true"]:hover { transform: translateY(2px); }
+  .level b { font-size: 17px; margin-top: 12px; }
+  .level small { font-size: 10.5px; letter-spacing: .06em; }
+  .pips { gap: 5px; }
+  .pips i { width: 7px; height: 7px; }
+
+  .mercy-card { grid-column: 1; grid-row: 3; margin-top: 0; align-self: start; padding: 18px 20px; }
+  .toggle-card:hover { border-color: var(--edge-strong); }
+  .toggle-text b { font-size: 15px; }
+  .toggle-text b i { font-size: 13.5px; }
+  .toggle-text small { font-size: 11px; }
+  .switch { width: 48px; height: 27px; border-radius: 14px; }
+  .switch i { width: 21px; height: 21px; }
+  .toggle-card[aria-checked="true"] .switch i { transform: translateX(21px); }
+
+  .field-split {
+    grid-column: 2; grid-row: 2;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 15px; margin-top: 0;
+    align-self: start;
+  }
+  .segmented button { height: 46px; font-size: 13.5px; }
+
+  .setup-actions { grid-column: 2; grid-row: 3; margin-top: 0; align-self: start; }
+  .setting-row { padding: 17px 20px; font-size: 15px; }
+  .setting-row:hover { border-color: var(--edge-strong); }
+  .setting-row-name i { font-size: 13.5px; }
+  .setting-row-value { font-size: 11.5px; padding: 5px 11px; border-radius: 9px; }
+
+  .setup > #btn-start { grid-column: 2; grid-row: 4; margin-top: 0; align-self: end; }
+  .btn.primary.big { height: 66px; font-size: 20px; border-radius: 18px; }
+  .btn.primary.big kbd { right: 18px; font-size: 10.5px; padding: 5px 9px; border-radius: 7px; }
+
+  .dict-open {
+    top: 20px; right: 22px;
+    padding: 10px 15px 11px; border-radius: 12px;
+    font-size: 12.5px; gap: 7px;
+  }
+  .dict-open svg { width: 13px; height: 13px; }
+
+  /* ── 대전: 넓은 보드 위에 봇·점수, 큰 단어 타일, 넉넉한 입력 독 ── */
+  .screen-game {
+    width: var(--board-w);
+    height: var(--board-h);
+    max-width: none;
+    margin: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    background: #F7F3EB;
     border: 1px solid var(--edge);
     border-radius: 28px;
-    box-shadow: 0 6px 0 var(--sh), 0 44px 80px -48px rgba(90,74,50,.55), inset 0 1px 0 #fff;
+    overflow: hidden;
+    box-shadow: 0 6px 0 var(--sh), 0 54px 92px -54px rgba(90,74,50,.5), inset 0 1px 0 #fff;
   }
-  .screen-game, .screen-dict {
-    border-left: 1px solid var(--edge);
-    border-right: 1px solid var(--edge);
-    background: #F7F3EB;
-    box-shadow: 0 0 60px -20px rgba(90,78,58,.28);
+  .game-top { padding: 17px 26px 15px; gap: 11px; }
+  .game-top-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 16px; align-items: center; }
+  .bot-face { width: 46px; height: 46px; font-size: 22px; border-radius: 13px; }
+  .bot-text b { font-size: 17px; }
+  .bot-text small { font-size: 10.5px; }
+  .scoreboard { margin-left: 0; gap: 8px; }
+  .scoreboard .sc { padding: 8px 14px 7px; border-radius: 12px; }
+  .scoreboard .sc i { font-size: 10px; }
+  .scoreboard .sc b { font-size: 20px; }
+  .icon-btn { width: 40px; height: 40px; border-radius: 12px; font-size: 14px; justify-self: end; }
+  .mercy-badge { font-size: 12px; padding: 5px 13px 6px; }
+  .mercy-badge small { font-size: 10.5px; }
+
+  .arena { padding: 14px 40px 10px; gap: 11px; }
+  .chain { padding: 10px 8px 10px; gap: 10px; }
+  .chain li { max-width: 56%; padding: 9px 20px 11px; border-radius: 15px; }
+  .chain-who { font-size: 9px; }
+  .chain-word { font-size: 22px; }
+  .bot-bubble { max-width: 58%; font-size: 13.5px; padding: 10px 15px 11px; }
+
+  .stage-word { padding: 20px 44px 18px; border-radius: 22px; }
+  .stage-word h2 { font-size: clamp(44px, 4.7vw, 64px); }
+  .stage-word h2.long { font-size: clamp(24px, 2.4vw, 34px); }
+  .stage-who { font-size: 10.5px; }
+  .stage-hint { font-size: 14px; padding: 18px 30px 19px; }
+  .stage-hint b { font-size: 19px; }
+  .stage-sub { margin-top: 11px; gap: 7px; }
+  .stage-sub .gain { font-size: 13.5px; }
+  .stage-sub .tag { font-size: 10.5px; padding: 4px 10px; }
+
+  .turn-panel {
+    margin: 0 16px 16px;
+    padding: 18px 22px 20px;
+    border: 1px solid var(--edge);
+    border-radius: 20px;
+    box-shadow: 0 2px 0 var(--sh), inset 0 1px 0 #fff;
   }
+  .turn-head { gap: 18px; }
+  .need { gap: 9px; }
+  .need-label { font-size: 10.5px; }
+  .need-char b { width: 74px; height: 74px; font-size: 38px; border-radius: 16px; padding-bottom: 5px; }
+  .need-char em { font-size: 10.5px; padding: 4px 9px; }
+  .mini { font-size: 11px; padding: 6px 10px; border-radius: 9px; }
+  .countdown { padding-bottom: 8px; }
+  .countdown b { font-size: 30px; }
+  .countdown span { font-size: 11px; }
+  .timer { height: 10px; margin: 13px 0 14px; border-radius: 5px; }
+  .composer input { height: 58px; font-size: 17px; border-radius: 15px; padding: 0 18px; }
+  .composer .btn { font-size: 17px; }
+  .composer .btn.go { min-width: 108px; border-radius: 15px; }
+
+  /* ── 사전: 넓은 검색 바 + 단어 카드 여러 열 ── */
+  .screen-dict { display: grid; place-items: center; }
+  .dict {
+    width: var(--board-w);
+    height: var(--board-h);
+    max-width: none;
+    padding: 26px 32px 20px;
+    gap: 14px;
+    background: #F8F4EC;
+    border: 1px solid var(--edge);
+    border-radius: 28px;
+    box-shadow: 0 6px 0 var(--sh), 0 54px 92px -54px rgba(90,74,50,.5), inset 0 1px 0 #fff;
+  }
+  .dict-top { gap: 16px; }
+  .dict-back { padding: 10px 15px 11px; border-radius: 12px; font-size: 12.5px; }
+  .dict-title b { font-size: 17px; }
+  .dict-title small { font-size: 11.5px; }
+  .dict-search { gap: 10px; }
+  .dict-input { height: 58px; padding: 0 46px 0 18px; border-radius: 15px; font-size: 17px; }
+  .dict-clear { width: 28px; height: 28px; right: 12px; font-size: 11px; }
+  .dict-twoeum { padding: 0 14px 0 16px; border-radius: 15px; font-size: 12.5px; }
+  .dict-twoeum:hover { border-color: var(--sage-edge); color: var(--sage-ink); }
+  .dict-twoeum .switch { width: 40px; height: 22px; border-radius: 11px; }
+  .dict-twoeum .switch i { width: 18px; height: 18px; }
+  .dict-twoeum[aria-checked="true"] .switch i { transform: translateX(18px); }
+  .dict-sorts { width: 460px; max-width: 100%; align-self: flex-start; }
+  .dict-sorts button { padding: 12px 4px; font-size: 13.5px; }
+  .dict-sorts button:hover { color: var(--sky-ink); }
+  .dict-meta { font-size: 12px; }
+  .dict-body { gap: 10px; }
+  .dict-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+    gap: 8px;
+  }
+  .dict-item { padding: 12px 15px; border-radius: 13px; }
+  .dict-word { font-size: 17px; }
+  .dict-len, .dict-tail, .dict-chip { font-size: 10.5px; }
+  .dict-more { padding: 13px; font-size: 13px; border-radius: 13px; }
+  .dict-empty { padding: 40px 20px; }
+  .dict-empty b { font-size: 15px; }
+  .dict-empty small { font-size: 12px; max-width: 340px; }
+  .dict-suggest button { width: 40px; height: 40px; font-size: 16px; border-radius: 11px; }
+
+  /* ── 결과 시트: 데스크톱에서도 작아 보이지 않게 ──
+     배틀 내역을 펼쳐도 카드가 화면 안에 다 들어와야 하므로 높이를 아껴 쓴다 */
+  .overlay { padding: 26px; }
+  .sheet {
+    max-width: 520px;
+    padding: 24px 28px 22px;
+    border-radius: 26px;
+  }
+  .result-badge { width: 58px; height: 58px; margin-bottom: 8px; font-size: 29px; border-radius: 16px; }
+  .result-sheet h2 { font-size: 28px; }
+  .result-level { margin-top: 10px; padding: 6px 14px 7px; font-size: 12.5px; border-radius: 11px; }
+  .result-level i { font-size: 15px; }
+  .result-level b { font-size: 13.5px; }
+  .result-reason { margin: 10px 0 14px; font-size: 13px; }
+  .result-score { margin: 14px 0; gap: 16px; }
+  .result-score .rs { min-width: 96px; padding: 9px 13px 8px; border-radius: 14px; }
+  .result-score .rs i { font-size: 10px; }
+  .result-score .rs b { font-size: 27px; }
+  .result-score .vs { font-size: 17px; }
+  .result-stats { gap: 9px; margin-bottom: 14px; }
+  .result-stats div { padding: 9px 8px 10px; border-radius: 12px; }
+  .result-stats dt { font-size: 10px; }
+  .result-stats dd { font-size: 18px; }
+  .battle-log-btn { padding: 11px; font-size: 13px; margin-bottom: 10px; }
+  .battle-log { max-height: 212px; }
+  .blog-word { font-size: 18px; line-height: 1.5; }
+  .result-actions { gap: 11px; }
+  .result-actions .btn { height: 50px; font-size: 16px; }
+}
+
+/* 좁은 데스크톱 창(820~1050px): 보드가 줄어든 만큼 여백·글자를 함께 줄인다 */
+@media (min-width: 820px) and (max-width: 1050px) {
+  .setup { padding: 28px 30px 26px; column-gap: 34px; row-gap: 16px; }
+  .setup::before { left: calc(30px + (100% - 94px) * .58 + 17px); top: 36px; bottom: 36px; }
+  .logo-mark .lt { width: 68px; height: 68px; font-size: 37px; border-radius: 17px; }
+  .brand::after { margin-top: 18px; }
+  .level { height: 100px; }
+  .level b { font-size: 13px; margin-top: 6px; }
+  .level small { font-size: 8.5px; }
+  .segmented button { height: 42px; font-size: 12.5px; }
+  .setting-row { padding: 14px 16px; font-size: 14px; }
+  .btn.primary.big { height: 58px; font-size: 18px; }
+  .arena { padding: 12px 26px 10px; }
+  .turn-panel { margin: 0 12px 12px; padding: 15px 17px 17px; }
+  .need-char b { width: 62px; height: 62px; font-size: 32px; }
+  .composer input { height: 52px; font-size: 16px; }
+  .composer .btn.go { min-width: 92px; }
+  .dict { padding: 20px 22px 16px; }
+  .dict-list { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+}
+
+/* 낮은 데스크톱 창(높이 680px 이하): 보드가 낮아진 만큼 한 화면에 다시 맞춘다 */
+@media (min-width: 820px) and (max-height: 680px) {
+  .setup { padding: 24px 32px 22px; row-gap: 14px; }
+  .brand .logo-mark { margin-top: 10px; }
+  .logo-mark .lt { width: 62px; height: 62px; font-size: 34px; border-radius: 15px; }
+  .brand::after { margin-top: 14px; }
+  .brand-sub { margin-top: 10px; font-size: 11.5px; }
+  .level { height: 108px; }
+  .level b { font-size: 14px; margin-top: 6px; }
+  .mercy-card { padding: 13px 16px; }
+  .toggle-text b { font-size: 14px; }
+  .toggle-text small { font-size: 10px; }
+  .field-split { row-gap: 10px; }
+  .segmented button { height: 40px; font-size: 12.5px; }
+  .setting-row { padding: 12px 16px; font-size: 14px; }
+  .btn.primary.big { height: 54px; font-size: 18px; }
+  .need-char b { width: 60px; height: 60px; font-size: 30px; }
+  .composer input { height: 48px; font-size: 16px; }
+  .timer { margin: 9px 0 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
