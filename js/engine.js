@@ -1,7 +1,7 @@
 /** 게임 진행. 규칙 판정 · 점수 · 타이머 · 봇 턴을 맡는다. */
 
 import {
-  normalizeWord, HANGUL_ONLY, twoeumOf, ERR, MISSION_CHARS, missionHits, missionMultiplier,
+  normalizeWord, WORD_PATTERN, twoeumOf, ERR, MISSION_CHARS, missionHits, missionMultiplier,
 } from './rules.js';
 import { Bot, botLine, pickHellOpening, pickStartTitle } from './bot.js';
 
@@ -184,7 +184,7 @@ export class Engine {
     const word = normalizeWord(raw);
     if (!word) return { ok: false, error: ERR.EMPTY };
     if (word.length < 2) return { ok: false, error: ERR.TOO_SHORT };
-    if (!HANGUL_ONLY.test(word)) return { ok: false, error: ERR.NOT_HANGUL };
+    if (!WORD_PATTERN.test(word)) return { ok: false, error: ERR.NOT_HANGUL };
     const starts = this.dictStartVariants();
     if (!starts.some((s) => word.startsWith(s))) return { ok: false, error: ERR.WRONG_START };
     if (this.used.has(word)) return { ok: false, error: ERR.USED };

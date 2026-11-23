@@ -17,6 +17,20 @@ const I_VOWELS = new Set([2, 3, 6, 7, 12, 17, 20]);
 
 export const HANGUL_ONLY = /^[가-힣]+$/;
 
+/**
+ * 낼 수 있는 단어: 한글로 시작해 한글로 끝나고, 중간에는 한글·숫자·영문자를 쓸 수 있다.
+ * 끄코 오픈DB에는 `가락1동`, `…볼륨3코스믹어벤저스`, 71글자 `너바나더밴드…17년전으로돌`
+ * 처럼 숫자가 섞인 표제어가 1만여 개 있고, 끄투코리아에서도 그대로 쓰는 단어다.
+ * (첫·끝 글자가 한글이어야 하는 이유: 다음 차례는 늘 끝 글자로 이어가고, 사전 구간도
+ *  시작 글자로 나눠 두었기 때문이다.)
+ */
+export const WORD_PATTERN = /^[가-힣][가-힣0-9A-Za-z]*[가-힣]$/;
+
+/** 제로폭 문자(복사·붙여넣기에서 섞여 들어오는 보이지 않는 글자) */
+const ZERO_WIDTH = /[\u200b-\u200f\u2060\ufeff]/g;
+/** 전각 영숫자(U+FF10~FF19, FF21~FF3A, FF41~FF5A) → 반각 */
+const FULLWIDTH_ALNUM = /[\uff10-\uff19\uff21-\uff3a\uff41-\uff5a]/g;
+
 /** 음절 하나를 초성·중성·종성으로 나눈다. 한글이 아니면 null. */
 export function decompose(ch) {
   const k = ch.charCodeAt(0) - BASE;
@@ -58,6 +72,8 @@ export function allowedStarts(ch) {
 export function normalizeWord(raw) {
   return String(raw || '')
     .normalize('NFC')
+    .replace(ZERO_WIDTH, '')
+    .replace(FULLWIDTH_ALNUM, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
     .replace(/\s+/g, '')
     .trim();
 }
@@ -82,7 +98,7 @@ export function missionMultiplier(hits) {
 export const ERR = {
   EMPTY: { code: 'empty', message: '단어를 입력해 주세요.' },
   TOO_SHORT: { code: 'short', message: '두 글자 이상이어야 해요.' },
-  NOT_HANGUL: { code: 'hangul', message: '한글로 된 단어만 쓸 수 있어요.' },
+  NOT_HANGUL: { code: 'hangul', message: '한글로 시작하고 한글로 끝나는 단어만 쓸 수 있어요.' },
   WRONG_START: { code: 'start', message: '이어야 할 글자로 시작해야 해요.' },
   NOT_FOUND: { code: 'notfound', message: '사전에 없는 단어예요.' },
   USED: { code: 'used', message: '이미 나온 단어예요.' },

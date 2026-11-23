@@ -11,6 +11,10 @@
   쉬움순(일상 먼저) · 100개씩 더 보기 · 돌아가기 (dict.png, dict-easy.png, mobile-dict.png)
 - 사전 단어 클릭 복사(토스트) · ‘후속 O개’ 클릭으로 그 끝 글자 재검색 · ← 이전 칩
   (dict-copy.png, dict-follow.png, mobile-dict-copy.png, mobile-dict-follow.png)
+- 영·숫자가 섞인 표제어(`가락1동`·71글자 `너바나더밴드…17년전으로돌`): 사전 검색·복사·후속,
+  게임 입력창 제출, 보드 타일·지난 단어 말풍선의 줄바꿈
+  (2026-11-23-alnum/ 아래 dict-alnum.png, dict-alnum-long.png, game-alnum.png, game-alnum-tile.png,
+   mobile-dict-alnum.png, mobile-game-alnum.png, mobile-game-alnum-tile.png)
 - 내 단어장 삭제(버튼·모달·사전 API 없음)
 - 별도 설정 창(⚙ 설정): 음량 70% → gain 0.35, 흑백모드로 화면 전체 회색, 화면 안·스크롤 0
   (desktop-settings.png, desktop-settings-mono.png, desktop-mono-home.png,
@@ -41,12 +45,14 @@ import time
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from verify import HELL_PROPS, HELL_PICKS, serve, time_scale, ticks_ok  # noqa: E402
+from verify import HELL_PROPS, HELL_PICKS, serve, time_scale, ticks_ok, ALNUM_WORD, ALNUM_LONG  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CHROME = os.environ.get('ITDA_CHROME', '/workspace/.local/pw/chromium-1255/chrome-linux64/chrome')
 OUT = os.environ.get('SHOT_OUT', '/workspace/downloads/itda')
+# 영·숫자가 섞인 표제어 스크린샷은 따로 모아 둔다(요청받은 폴더).
+ALNUM_OUT = os.environ.get('ITDA_ALNUM_DIR') or os.path.join(OUT, '2026-11-23-alnum')
 BAD = ('끝말봇', 'kkeutmalbot', '한방봇', 'hanbang', '끄투', 'kkutu')
 
 FAILS = []
@@ -240,6 +246,106 @@ def wait_my_turn(page, timeout=8000):
             return st
         page.wait_for_timeout(120)
     return page.evaluate('window.__ITDA.state()')
+
+
+def alnum_shots(page, tag, names):
+    """영·숫자가 섞인 표제어: 사전 검색 · 게임 입력·제출 · 보드/말풍선 표시를 확인하고 스크린샷을 남긴다.
+
+    names = {'dict':…, 'dict_long':…, 'game':…, 'tile':…} — 값이 None이면 그 파일은 건너뛴다.
+    """
+    os.makedirs(ALNUM_OUT, exist_ok=True)
+
+    def save(name):
+        if not name:
+            return None
+        path = os.path.join(ALNUM_OUT, name)
+        page.screenshot(path=path)
+        print(f'  shot  {path}')
+        return path
+
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(220)
+
+    # 1) 사전 검색: 숫자가 섞인 단어와 71글자 장문을 통째로
+    page.click('#btn-dict')
+    page.wait_for_selector('#scr-dict:not([hidden])')
+    page.wait_for_timeout(220)
+    page.fill('#dict-input', ALNUM_WORD)
+    page.wait_for_function("q => window.__ITDA.dictPanel.query === q", arg=ALNUM_WORD, timeout=6000)
+    page.wait_for_timeout(260)
+    dv = page.evaluate("""() => {
+        const li = document.querySelector('#dict-list .dict-item');
+        return { q: window.__ITDA.dictPanel.query, total: window.__ITDA.dictPanel.info().total,
+                 word: li ? li.dataset.word : '', len: li ? Number(li.dataset.len) : 0,
+                 text: li ? li.innerText.replace(/\\s+/g, ' ').trim() : '',
+                 overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    }""")
+    check(dv['word'] == ALNUM_WORD and dv['total'] == 1 and dv['len'] == 4 and dv['overflow'] <= 0,
+          f'{tag} 사전: ‘{ALNUM_WORD}’ 숫자 섞인 단어 검색', json.dumps(dv, ensure_ascii=False)[:180])
+    save(names.get('dict'))
+
+    page.fill('#dict-input', ALNUM_LONG)
+    page.wait_for_function("q => window.__ITDA.dictPanel.query === q", arg=ALNUM_LONG, timeout=6000)
+    page.wait_for_timeout(280)
+    dl = page.evaluate("""() => {
+        const li = document.querySelector('#dict-list .dict-item');
+        const body = document.getElementById('dict-body');
+        return { qLen: window.__ITDA.dictPanel.query.length, total: window.__ITDA.dictPanel.info().total,
+                 len: li ? Number(li.dataset.len) : 0, word: li ? li.dataset.word : '',
+                 overflow: body.scrollWidth - body.clientWidth };
+    }""")
+    check(dl['qLen'] == 71 and dl['len'] == 71 and dl['word'] == ALNUM_LONG and dl['overflow'] <= 0,
+          f'{tag} 사전: 71글자 장문 통째로 검색·표시', json.dumps(dl, ensure_ascii=False)[:180])
+    save(names.get('dict_long'))
+    page.click('#btn-dict-back')
+    page.wait_for_selector('#scr-setup:not([hidden])')
+    page.wait_for_timeout(200)
+
+    # 2) 게임: 71글자 장문을 입력창에 넣고 제출 — 보드 타일이 줄바꿈해 담는지
+    page.evaluate("window.__ITDA.startGame({level:1, first:'me', startChar:'너', timeLimit:50})")
+    page.wait_for_timeout(450)
+    page.fill('#word-input', ALNUM_LONG)
+    page.click('#btn-submit')
+    page.wait_for_timeout(520)
+    gv = page.evaluate("""() => {
+        const st = window.__ITDA.state();
+        const h = document.querySelector('.stage-word h2');
+        const box = document.querySelector('.stage-word').getBoundingClientRect();
+        const input = document.getElementById('word-input').getBoundingClientRect();
+        const r = h ? h.getBoundingClientRect() : null;
+        return { word: st.chain[0] ? st.chain[0].word : '', need: st.needChar, score: st.scoreMe,
+                 bad: document.getElementById('word-input').classList.contains('bad'),
+                 fits: !!(r && r.top >= box.top - 1 && r.bottom <= box.bottom + 1 && r.left >= 0 && r.right <= innerWidth),
+                 inputIn: input.top >= 0 && input.bottom <= innerHeight,
+                 overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    }""")
+    check(gv['word'] == ALNUM_LONG and gv['need'] == '돌' and not gv['bad'] and gv['fits']
+          and gv['inputIn'] and gv['overflow'] <= 0,
+          f'{tag} 게임: 71글자 장문 제출·보드 표시', json.dumps(gv, ensure_ascii=False)[:200])
+    save(names.get('game'))
+
+    # 3) 봇이 받아치면 장문은 지난 단어 말풍선 타일로 — 그 타일에서도 깨지지 않는지
+    wait_my_turn(page, 12000)
+    page.wait_for_timeout(420)
+    tv = page.evaluate("""() => {
+        const li = document.querySelector('#chain li');
+        if (!li) return null;
+        const w = li.querySelector('.chain-word');
+        const lr = li.getBoundingClientRect();
+        const wr = w.getBoundingClientRect();
+        return { text: w.textContent, inside: wr.left >= lr.left - 1 && wr.right <= lr.right + 1,
+                 overflow: w.scrollWidth - w.clientWidth, left: Math.round(lr.left),
+                 right: Math.round(lr.right), vw: innerWidth };
+    }""")
+    check(bool(tv) and tv['text'] == ALNUM_LONG and tv['inside'] and tv['overflow'] <= 0
+          and tv['left'] >= 0 and tv['right'] <= tv['vw'],
+          f'{tag} 게임: 지난 단어 타일에서 71글자 줄바꿈', json.dumps(tv, ensure_ascii=False)[:180])
+    save(names.get('tile'))
+
+    page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(250)
+    return {'dict': dv, 'dict_long': dl, 'game': gv, 'tile': tv}
 
 
 def human_word(page, cautious=False):
@@ -624,6 +730,12 @@ def main():
         check(page.evaluate("document.getElementById('scr-dict').hidden && !document.getElementById('scr-setup').hidden"),
               '사전 → 돌아가기로 설정 화면')
         summary['dict'] = dview
+
+        # ── 데스크톱: 영·숫자가 섞인 표제어(가락1동 · 71글자 장문) ──
+        summary['alnum'] = alnum_shots(page, '데스크톱', {
+            'dict': 'dict-alnum.png', 'dict_long': 'dict-alnum-long.png',
+            'game': 'game-alnum.png', 'tile': 'game-alnum-tile.png',
+        })
 
         # ── 데스크톱: 첫 제시 글자(플레이어 선공) ─────────────
         page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:20})")
@@ -1032,6 +1144,12 @@ def main():
         page.wait_for_timeout(180)
         page.click('#btn-dict-back')
         page.wait_for_timeout(250)
+
+        # ── 모바일: 영·숫자가 섞인 표제어(가락1동 · 71글자 장문) ──
+        summary['mobile_alnum'] = alnum_shots(page, '모바일', {
+            'dict': 'mobile-dict-alnum.png', 'dict_long': 'mobile-dict-alnum-long.png',
+            'game': 'mobile-game-alnum.png', 'tile': 'mobile-game-alnum-tile.png',
+        })
 
         # ── 모바일: 첫 제시 글자(플레이어 선공) ─────────────
         page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:20})")

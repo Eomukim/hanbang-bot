@@ -12,7 +12,8 @@ Usage:
 
 실제 끄투코리아 일반·어인정 방의 기본 룰과 같게, 이 목록은 **손대지 않고 그대로** 쓴다
 (동사·형용사 사전형과 활용형, 작품명·어인정 표제어도 끝말잇기에서 쓸 수 있는 단어다).
-2글자 미만, 한글이 아닌 표제어만 뺀다.
+2글자 미만, 한글로 시작·끝나지 않거나 한글·숫자·영문자 밖의 글자가 낀 표제어만 뺀다
+(예: `가락1동`, `가디언즈오브더갤럭시볼륨3…` 처럼 중간에 숫자·영문자가 섞인 표제어는 그대로 쓴다).
 
 Out of ./data:
     words.txt   one word per line: "word" or "word<TAB>flag" when flag != 0.
@@ -39,6 +40,10 @@ import datetime
 from collections import deque
 
 HANGUL = re.compile(r"^[가-힣]+$")
+# 사전 표제어 규칙: 한글로 시작해 한글로 끝나고, 중간에는 한글·숫자·영문자를 쓸 수 있다.
+# (끄코 오픈DB에는 `가락1동`, `…볼륨3코스믹어벤저스`, 71글자 `너바나더밴드…17년전으로돌` 처럼
+#  숫자가 섞인 표제어가 1만여 개 있고, 끄투코리아에서도 그대로 쓸 수 있는 단어다.)
+WORD_PATTERN = re.compile(r"^[가-힣][가-힣0-9A-Za-z]*[가-힣]$")
 
 # 원본 데이터의 KOR_FLAG 비트 (지금 원천에는 flag 가 없다 — 호환용으로만 남긴다)
 FLAG_LOANWORD = 1
@@ -270,7 +275,7 @@ def read_wordlist(path):
                 flag = int(flag or 0)
             except ValueError:
                 flag = 0
-            if not HANGUL.match(word) or len(word) < MIN_LEN:
+            if not WORD_PATTERN.match(word) or len(word) < MIN_LEN:
                 continue
             if word in BLOCKED_WORDS:
                 continue
@@ -351,6 +356,8 @@ def main():
     source_samples = pool[::step][:30]
 
     ordered = sorted(words)
+    # 한글로 시작·끝나지만 중간에 숫자·영문자가 섞인 표제어 수(사전 통계·검증용)
+    mixed = sum(1 for w in ordered if not HANGUL.match(w))
     starts = {}
     for w in ordered:
         starts[w[0]] = starts.get(w[0], 0) + 1
@@ -390,6 +397,7 @@ def main():
         "rawRows": raw_count,
         "sourceSamples": source_samples,
         "total": len(ordered),
+        "mixedCount": mixed,
         "maxLen": max(len(w) for w in ordered),
         "starts": len(starts),
         "syllables": dict(sorted(starts.items())),
@@ -412,7 +420,7 @@ def main():
     size = os.path.getsize(words_path)
     print("source        :", args.source)
     print("word rows     :", raw_count)
-    print("valid words   :", len(ordered))
+    print("valid words   :", len(ordered), "(영·숫자 혼합 %d)" % mixed)
     print("start syll.   :", len(starts))
     print("one-shot words:", len(one_shot), one_shot[:8])
     print("induced words :", len(induced), induced[:8])

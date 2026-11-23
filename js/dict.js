@@ -12,11 +12,13 @@
  * 내려간 자리는 ‘← 이전’ 칩으로 되돌아온다.
  */
 
-import { allowedStarts, twoeumOf } from './rules.js';
+import { allowedStarts, normalizeWord, twoeumOf } from './rules.js';
 
 const PAGE_SIZE = 100;
 const SEARCH_DELAY = 110;
-const MAX_QUERY = 12;
+// 검색어 길이 상한. 한글로 시작·끝나는 표제어 중에는 71글자(너바나더밴드…17년전으로돌)처럼
+// 긴 단어도 있어서, 그 단어를 통째로 붙여넣어도 앞부분이 잘리지 않게 넉넉히 둔다.
+const MAX_QUERY = 80;
 
 const SORT_LABEL = {
   hard: '어려움순',
@@ -271,7 +273,7 @@ export class DictPanel {
 
   /* ── 검색 ─────────────────────────────────────────────── */
 
-  /** 입력값을 다듬어(공백·한글 외 제거) 새로 찾는다. 직접 친 검색어는 후속 기록을 비운다. */
+  /** 입력값을 다듬어(공백·제로폭 문자·한글·영숫자 밖 제거) 새로 찾는다. 직접 친 검색어는 후속 기록을 비운다. */
   setQuery(raw) {
     this.history = [];
     this.applyQuery(raw);
@@ -279,7 +281,8 @@ export class DictPanel {
   }
 
   applyQuery(raw) {
-    const cleaned = String(raw || '').replace(/\s+/g, '').replace(/[^가-힣]/g, '').slice(0, MAX_QUERY);
+    // 사전 표제어에는 `가락1동`처럼 숫자가 섞인 단어도 있으므로 영문자·숫자는 남긴다.
+    const cleaned = normalizeWord(raw).replace(/[^가-힣0-9A-Za-z]/g, '').slice(0, MAX_QUERY);
     this.query = cleaned;
     this.renderClear();
     this.search();
