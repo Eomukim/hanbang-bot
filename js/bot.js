@@ -545,7 +545,9 @@ export class Bot {
       const cap = turn <= 2 ? 200 : turn <= 5 ? 60 : 25;
       const floor = turn <= 2 ? 30 : turn <= 5 ? 8 : 1;
       if (turn >= 10 && rng() < 0.25) {
-        const shots = naturalBand(dict, natural.filter((w) => endCount(w) === 0), 3);
+        // 마무리 한방. natural 은 '후속이 남은 단어'만 남긴 목록이라 여기서 쓰면
+        // 늘 비어 있었다(한방 분기가 한 번도 실행되지 않던 자리). 원래 후보에서 고른다.
+        const shots = naturalBand(dict, this.noVerb(this.plain(oneShot)), 3);
         if (shots.length) {
           return { word: pick(shots, rng), delay: delayBetween(700, 1300, rng), kind: 'oneshot' };
         }

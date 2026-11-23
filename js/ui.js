@@ -498,6 +498,14 @@ export class App {
 
     this.hideResult(true);
     this.engine?.destroy();
+    // 앞 판에서 무장해 둔 포기 버튼(첫 누름 '!')과 남아 있던 입력값이 새 판으로 넘어가지 않게 한다.
+    // (예전에는 시간 초과로 결과가 뜬 뒤 다시 대전하면 × 한 번에 바로 포기되고,
+    //  지난 판에 치던 단어가 입력창에 붉은 테두리 그대로 남아 있었다.)
+    clearTimeout(this.quitTimer);
+    this.quitArmed = false;
+    this.el['btn-quit'].textContent = '✕';
+    this.el['word-input'].value = '';
+    this.el['word-input'].classList.remove('bad', 'shake');
     this.el.stage.innerHTML = '<p class="stage-hint" id="stage-hint">첫 단어를 입력하세요</p>';
     // innerHTML 로 새로 만든 노드라 mount()에서 잡아 둔 참조는 이미 떨어졌다.
     this.el['stage-hint'] = $('stage-hint');
@@ -838,6 +846,15 @@ export class App {
     }
     el.className = variant ? `toast ${variant}` : 'toast';
     el.textContent = message;
+    // 대전 중에는 입력 독(이어야 할 글자·타이머)을 가리지 않도록 그 바로 위에 띄운다.
+    // 다른 화면에서는 CSS 기본 자리(화면 아래 112px)를 그대로 쓴다.
+    const panel = this.el['turn-panel'];
+    let bottom = '';
+    if (this.screen === 'game' && panel) {
+      const r = panel.getBoundingClientRect();
+      if (r.height > 0) bottom = `${Math.max(12, Math.round(window.innerHeight - r.top + 10))}px`;
+    }
+    el.style.bottom = bottom;
     el.classList.add('show');
     clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
@@ -936,6 +953,8 @@ export class App {
     const sheet = this.el['ov-result'].querySelector('.result-sheet');
     sheet.classList.toggle('win', payload.win);
     sheet.classList.toggle('lose', !payload.win);
+    // 지난 판에서 배틀 내역을 펼쳐 카드를 스크롤해 두었어도 늘 맨 위부터 보여 준다
+    sheet.scrollTop = 0;
     this.el['result-badge'].textContent = payload.win ? '🏆' : '💀';
     this.el['result-title'].textContent = payload.win ? '승리' : '패배';
     this.el['result-mercy'].hidden = !payload.mercy;

@@ -3313,6 +3313,205 @@ def scenario_mercy(page, tag, report_dir=None):
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 화면 가로 오버플로 0', str(overflow(page)))
 
 
+def scenario_layout_regressions(page, tag):
+    """새 판 초기화 · 짧은 화면(가로 모드·낮은 창) · 스크롤바 톤 · Lv.3 마무리 한방.
+
+    회귀 대상:
+      - 앞 판에서 무장해 둔 포기 버튼(!)과 남은 입력값·붉은 테두리가 새 판에 남던 것
+      - 낮은 화면에서 설정 보드 위아래가 잘려 스크롤로도 닿지 않던 것
+      - 낮은 화면에서 긴 단어 타일·봇 말풍선이 입력 독 뒤로 숨어 버리던 것
+      - 사전·설정·결과 시트에 브라우저 기본 회색 스크롤바(15px·화살표)가 드러나던 것
+      - Lv.3 이 10수 이후에도 한방으로 마무리하지 않던 죽은 분기
+    """
+    orig = page.viewport_size
+
+    # 1) 새 대전 초기화: 포기 버튼 무장과 입력값이 넘어오지 않는다
+    page.evaluate("window.__ITDA.app.hideResult(true); window.__ITDA.app.show('setup')")
+    page.evaluate("window.__ITDA.startGame({level:2, timeLimit:20, first:'me'})")
+    page.wait_for_timeout(350)
+    page.fill('#word-input', '없는단어')
+    page.click('#btn-submit')
+    page.wait_for_timeout(250)
+    page.click('#btn-quit')                      # 한 번 누름 = 무장
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.startGame({level:2, timeLimit:20, first:'me'})")
+    page.wait_for_timeout(350)
+    fresh = page.evaluate("""() => ({
+        armed: window.__ITDA.app.quitArmed,
+        text: document.getElementById('btn-quit').textContent.trim(),
+        value: document.getElementById('word-input').value,
+        bad: document.getElementById('word-input').classList.contains('bad'),
+        phase: window.__ITDA.app.engine.phase,
+    })""")
+    check(fresh['armed'] is False and fresh['text'] == '✕',
+          f'[{tag}] 새 대전에서 포기 버튼 무장 해제', json.dumps(fresh, ensure_ascii=False))
+    check(fresh['value'] == '' and fresh['bad'] is False,
+          f'[{tag}] 새 대전에 지난 판 입력값이 남지 않음', json.dumps(fresh, ensure_ascii=False))
+    page.click('#btn-quit')
+    page.wait_for_timeout(200)
+    one = page.evaluate("window.__ITDA.app.engine.finished")
+    check(one is False, f'[{tag}] 새 대전에서 × 한 번으로 바로 포기되지 않음', str(one))
+    page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(true); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(200)
+
+    # 2) 가로 모드 휴대폰·낮은 창: 설정 보드가 잘리지 않고 대전 시작까지 닿는다
+    for vw, vh in ((844, 390), (1280, 420)):
+        page.set_viewport_size({'width': vw, 'height': vh})
+        page.wait_for_timeout(320)
+        page.evaluate("window.__ITDA.app.hideResult(true); window.__ITDA.app.show('setup')")
+        v = page.evaluate("""() => {
+            const sec = document.getElementById('scr-setup');
+            const brand = document.querySelector('.brand').getBoundingClientRect();
+            const start = () => document.getElementById('btn-start').getBoundingClientRect();
+            sec.scrollTop = 0;
+            const top = { brandTop: Math.round(brand.top), startBottom: Math.round(start().bottom) };
+            sec.scrollTop = sec.scrollHeight;
+            const bottom = { startBottom: Math.round(start().bottom), maxScroll: sec.scrollHeight - sec.clientHeight };
+            sec.scrollTop = 0;
+            return { top, bottom, vh: innerHeight };
+        }""")
+        check(v['top']['brandTop'] >= 0, f'[{tag}] {vw}x{vh} 설정 보드 위가 잘리지 않음',
+              json.dumps(v['top'], ensure_ascii=False))
+        check(v['bottom']['startBottom'] <= v['vh'] + 1,
+              f'[{tag}] {vw}x{vh} 스크롤하면 대전 시작까지 닿음',
+              f"{json.dumps(v['bottom'], ensure_ascii=False)} / 화면 {v['vh']}px")
+        check(sum(overflow(page).values()) <= 0, f'[{tag}] {vw}x{vh} 설정 가로 오버플로 0', str(overflow(page)))
+
+    # 3) 같은 낮은 화면에서 긴 단어 타일·말풍선이 입력 독에 가려지지 않는다
+    for vw, vh in ((844, 390), (390, 420)):
+        page.set_viewport_size({'width': vw, 'height': vh})
+        page.wait_for_timeout(320)
+        longest = page.evaluate("""() => {
+            const app = window.__ITDA.app;
+            app.hideResult(true);
+            app.startGame({level: 2, timeLimit: 30, first: 'me'});
+            const e = app.engine, d = window.__ITDA.dict;
+            const cands = d.candidatesFor(e.needChar, e.used);
+            const word = cands.reduce((a, b) => (b.length > a.length ? b : a), cands[0]);
+            app.renderStage({who: 'me', word, score: 5325}, {char: e.missionChar, hits: 0});
+            app.addChain({who: 'me', word});
+            app.say('좋아, 시작하지. 이번엔 조금 길게 말해 볼까.');
+            return word;
+        }""")
+        page.wait_for_timeout(420)
+        g = page.evaluate("""() => {
+            const r = (s) => { const el = document.querySelector(s); if (!el) return null;
+                const b = el.getBoundingClientRect();
+                return {t: Math.round(b.top), b: Math.round(b.bottom), h: Math.round(b.height)}; };
+            const sec = document.getElementById('scr-game');
+            return {
+                arena: r('#arena'), tile: r('.stage-word'), bubble: r('#bot-bubble'),
+                panel: r('#turn-panel'), input: r('#word-input'),
+                scroll: sec.scrollHeight - sec.clientHeight,
+                vh: innerHeight,
+            };
+        }""")
+        tile_ok = bool(g['tile'] and g['arena'] and g['tile']['t'] >= g['arena']['t'] - 1
+                       and g['tile']['b'] <= g['arena']['b'] + 1)
+        bubble_ok = bool(g['bubble'] and g['arena'] and g['bubble']['b'] <= g['arena']['b'] + 1)
+        input_ok = bool(g['input'] and g['input']['t'] >= 0 and g['input']['b'] <= g['vh'])
+        check(tile_ok, f'[{tag}] {vw}x{vh} {len(longest)}글자 타일이 보드 안에 들어옴',
+              json.dumps({'arena': g['arena'], 'tile': g['tile']}, ensure_ascii=False))
+        check(bubble_ok, f'[{tag}] {vw}x{vh} 봇 말풍선이 입력 독 위에 머뭄',
+              json.dumps({'arena': g['arena'], 'bubble': g['bubble']}, ensure_ascii=False))
+        check(input_ok and g['scroll'] <= 1, f'[{tag}] {vw}x{vh} 입력창이 화면 안 · 세로 스크롤 0',
+              json.dumps({'input': g['input'], 'scroll': g['scroll'], 'vh': g['vh']}, ensure_ascii=False))
+        check(g['panel'] and g['arena'] and g['panel']['t'] >= g['arena']['b'] - 1,
+              f'[{tag}] {vw}x{vh} 보드와 입력 독이 겹치지 않음',
+              json.dumps({'arena': g['arena'], 'panel': g['panel']}, ensure_ascii=False))
+        page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(true); window.__ITDA.app.show('setup')")
+        page.wait_for_timeout(200)
+
+    page.set_viewport_size(orig)
+    page.wait_for_timeout(260)
+
+    # 3b) 대전 중 토스트는 입력 독(이어야 할 글자·타이머)을 가리지 않는다
+    page.evaluate("window.__ITDA.startGame({level:2, timeLimit:30, first:'me'})")
+    page.wait_for_timeout(360)
+    page.evaluate("window.__ITDA.app.toast('배려모드: 첫 5턴은 한방 단어를 쓸 수 없어요', 'mercy')")
+    page.wait_for_timeout(220)
+    tt = page.evaluate("""() => {
+        const t = document.querySelector('.toast').getBoundingClientRect();
+        const panel = document.getElementById('turn-panel').getBoundingClientRect();
+        const need = document.getElementById('need-char').getBoundingClientRect();
+        return { toastBottom: Math.round(t.bottom), panelTop: Math.round(panel.top),
+                 needTop: Math.round(need.top), needBottom: Math.round(need.bottom) };
+    }""")
+    check(tt['toastBottom'] <= tt['panelTop'] and tt['toastBottom'] <= tt['needTop'],
+          f'[{tag}] 대전 중 토스트가 입력 독을 가리지 않음', json.dumps(tt, ensure_ascii=False))
+    page.evaluate("window.__ITDA.app.engine.destroy(); window.__ITDA.app.hideResult(true); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(220)
+
+    # 4) 스크롤바: 기본 회색 막대 대신 얇은 나무색 막대를 쓴다
+    tone = page.evaluate("""() => {
+        const get = (s) => { const el = document.querySelector(s); return el ? getComputedStyle(el).scrollbarWidth : null; };
+        return { chain: get('#chain'), dictBody: get('#dict-body'), setup: get('#scr-setup'), sheet: get('.result-sheet') };
+    }""")
+    check(tone['chain'] == 'none', f'[{tag}] 지난 단어 타일 목록은 스크롤바를 숨김', str(tone))
+    check(tone['dictBody'] == 'thin' and tone['setup'] == 'thin' and tone['sheet'] == 'thin',
+          f'[{tag}] 사전·설정·결과 시트는 얇은 스크롤바', json.dumps(tone, ensure_ascii=False))
+
+    # 실제 스크롤바를 숨기지 않은 상태에서 폭까지 확인(데스크톱에서만 의미가 있다).
+    # 검증 하네스는 기본으로 --hide-scrollbars 로 띄우므로, CDP 로 스크롤바를 다시 켜서 잰다.
+    if orig and orig['width'] >= 820:
+        cdp = None
+        try:
+            cdp = page.context.new_cdp_session(page)
+            cdp.send('Emulation.setScrollbarsHidden', {'hidden': False})
+            page.evaluate("window.__ITDA.app.hideResult(true); window.__ITDA.app.show('setup')")
+            page.click('#btn-dict')
+            page.wait_for_timeout(250)
+            page.fill('#dict-input', '가')
+            page.wait_for_timeout(650)
+            bars = page.evaluate("""() => {
+                const bar = (el) => {
+                    if (!el) return null;
+                    const cs = getComputedStyle(el);
+                    return Math.round(el.offsetWidth - el.clientWidth
+                        - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth));
+                };
+                const body = document.getElementById('dict-body');
+                return {
+                    dict: bar(body),
+                    dictScrolls: body.scrollHeight - body.clientHeight,
+                    setup: bar(document.getElementById('scr-setup')),
+                    setupScrolls: (() => { const s = document.getElementById('scr-setup'); return s.scrollHeight - s.clientHeight; })(),
+                };
+            }""")
+            check(bars['dictScrolls'] > 0 and 0 < bars['dict'] <= 12,
+                  f'[{tag}] 사전 목록 스크롤바 폭 12px 이하(기본 회색 15px 아님)', json.dumps(bars, ensure_ascii=False))
+            check(bars['setupScrolls'] <= 0 and bars['setup'] <= 1,
+                  f'[{tag}] 설정 화면에는 스크롤바가 생기지 않음', json.dumps(bars, ensure_ascii=False))
+            page.click('#btn-dict-back')
+            page.wait_for_timeout(200)
+        except Exception as exc:  # noqa: BLE001 - 스크롤바 계측이 안 돼도 나머지 검사는 계속한다
+            print(f'  skip  [{tag}] 실제 스크롤바 계측 ({str(exc)[:120]})')
+        finally:
+            if cdp is not None:
+                try:
+                    cdp.send('Emulation.setScrollbarsHidden', {'hidden': True})
+                    cdp.detach()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    # 5) Lv.3 마무리 한방: 10수 이후에는 한방으로 끝낼 수 있어야 한다
+    lv3 = page.evaluate("""() => {
+        const d = window.__ITDA.dict, Bot = window.__ITDA.Bot;
+        const last = (w) => w[w.length - 1];
+        for (const ch of ['가', '나', '다', '라', '마', '바', '사', '아', '자', '차', '카', '타', '파', '하', '기', '리', '수', '도', '고', '무']) {
+            const open = d.candidatesFor(ch, new Set());
+            const shots = open.filter((w) => d.countFrom(last(w)) === 0 && !w.endsWith('다'));
+            if (!shots.length) continue;
+            const mv = new Bot({level: 3, dict: d, rng: () => 0}).choose({needChar: ch, used: new Set(), turn: 12, mission: null});
+            if (!mv) continue;
+            return {ch, got: mv.word, kind: mv.kind, oneShot: d.countFrom(last(mv.word)) === 0};
+        }
+        return null;
+    }""")
+    check(bool(lv3 and lv3['oneShot'] and lv3['kind'] == 'oneshot'),
+          f'[{tag}] Lv.3 10수 이후 한방 마무리', json.dumps(lv3, ensure_ascii=False))
+
+
 def start_title_rows(page, levels, count, first):
     """여러 난이도에서 대국을 열어 첫 제시 글자·제시어·안내 문구를 모은다."""
     return page.evaluate("""([levels, count, first]) => {
@@ -3521,6 +3720,7 @@ def run_local(base_url, browser):
         scenario_variety(page, 'local-' + vp_name)
         scenario_legacy(page, 'local-' + vp_name)
         scenario_mercy(page, 'local-' + vp_name, REPORT_DIR)
+        scenario_layout_regressions(page, 'local-' + vp_name)
 
         # 대전 중 스크린샷 (여러 단어가 쌓인 화면)
         page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
@@ -3594,6 +3794,7 @@ def run_live(url, browser):
         scenario_variety(page, 'live-' + vp_name)
         scenario_legacy(page, 'live-' + vp_name)
         scenario_mercy(page, 'live-' + vp_name, REPORT_DIR)
+        scenario_layout_regressions(page, 'live-' + vp_name)
 
         check(not col.errors, f'[{vp_name}] 페이지 에러 0', json.dumps(col.errors, ensure_ascii=False)[:400])
         errs = [c for c in col.console if c['type'] == 'error']
