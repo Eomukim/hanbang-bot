@@ -1271,7 +1271,8 @@ html.mono .confetti { filter: grayscale(1); }
 
 .battle-log {
   margin: 0 0 12px; padding: 9px;
-  max-height: min(32dvh, 236px);
+  /* 화면 높이에 맞춰 함께 줄어든다 — 펼쳐도 다시 대전/난이도 버튼까지 한 화면에 */
+  max-height: clamp(120px, 26dvh, 236px);
   overflow-y: auto; overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--edge);
@@ -1666,6 +1667,137 @@ button.dict-tail:focus-visible { outline: 2px solid var(--sky); outline-offset: 
   .scoreboard .sc b { font-size: 13.5px; }
 }
 
+/* ── 태블릿 · 폴더블 펼침 (600~819px): 한 줄 구성을 넓은 판으로 ─────
+   561~819px 은 폰(≤560)과 데스크톱(≥820) 사이의 빈 구간이었다. 폰 폭 그대로
+   가운데 앉아 좌우로 어정쩡한 여백이 남던 것을, 화면 폭에 맞춰 판을 넓히고
+   로고·난이도 타일·입력 독을 함께 키워 태블릿 화면에 어울리게 한다.
+   사전은 이 구간부터 두 열로 놓아 넓은 화면을 살린다. */
+@media (min-width: 600px) and (max-width: 819px) {
+  /* 설정 */
+  .setup {
+    max-width: 640px;
+    padding: max(28px, env(safe-area-inset-top)) 30px calc(28px + env(safe-area-inset-bottom));
+  }
+  .brand { margin-top: 34px; }
+  .brand-kicker { font-size: 12px; letter-spacing: .42em; text-indent: .42em; }
+  .brand .logo-mark { margin-top: 14px; }
+  .logo-mark .lt { width: 74px; height: 74px; font-size: 40px; border-radius: 17px; padding-bottom: 5px; }
+  .brand-sub { margin-top: 14px; font-size: 12.5px; }
+  .field { margin-top: 30px; gap: 11px; }
+  .field-head span { font-size: 12.5px; letter-spacing: .16em; }
+  .field-head em { font-size: 11.5px; }
+  .levels { gap: 9px; }
+  .level { height: 100px; border-radius: 15px; }
+  .level b { font-size: 15px; margin-top: 6px; }
+  .level small { font-size: 9.5px; }
+  .pips { gap: 4px; }
+  .pips i { width: 6px; height: 6px; }
+  .toggle-card { padding: 15px 18px; }
+  .toggle-card:first-of-type { margin-top: 18px; }
+  .toggle-text b { font-size: 15px; }
+  .toggle-text b i { font-size: 13.5px; }
+  .toggle-text small { font-size: 11px; }
+  .switch { width: 48px; height: 27px; border-radius: 14px; }
+  .switch i { width: 21px; height: 21px; }
+  .toggle-card[aria-checked="true"] .switch i { transform: translateX(21px); }
+  .field-time { margin-top: 24px; }
+  .field-first { margin-top: 20px; }
+  .segmented button { height: 44px; font-size: 13.5px; border-radius: 11px; }
+  .slider { height: 30px; --thumb: 22px; }
+  .range { height: 30px; }
+  .slider-track { height: 12px; border-radius: 6px; }
+  .slider-fill { border-radius: 6px; }
+  .range::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; }
+  .range::-webkit-slider-thumb { margin-top: -5px; }
+  .slider.slider-time { --band: 30px; --track-h: 12px; --tk-end: 15px; --tk-10: 10px; --tk-5: 5.5px; --ends-h: 9.5px; }
+  .slider-ends i { font-size: 10px; }
+  .field-head .time-badge { font-size: 11.5px; padding: 4px 11px 5px; border-radius: 10px; }
+  .field-head .time-badge b { font-size: 17px; }
+  .setup > #btn-start { margin-top: 20px; }
+  .btn.primary.big { height: 62px; font-size: 20px; border-radius: 17px; }
+  .btn.primary.big kbd { right: 16px; font-size: 10px; padding: 4px 8px; }
+  .top-actions { top: max(14px, env(safe-area-inset-top)); right: 20px; gap: 7px; }
+  .top-btn { padding: 9px 14px 10px; font-size: 12px; border-radius: 12px; }
+  .top-btn svg { width: 13px; height: 13px; }
+
+  /* 대전 — 넓은 폰/태블릿 폭에 맞춰 머리·보드·입력 독을 함께 키운다 */
+  .screen-game { max-width: 720px; }
+  .game-top { padding: 15px 20px 13px; gap: 9px; }
+  .game-top-row { gap: 12px; }
+  .bot-info { gap: 10px; }
+  .bot-face { width: 42px; height: 42px; font-size: 20px; border-radius: 12px; }
+  .bot-text b { font-size: 16px; }
+  .bot-text small { font-size: 10.5px; }
+  .scoreboard .sc { padding: 7px 11px 6px; gap: 5px; border-radius: 11px; }
+  .scoreboard .sc i { font-size: 9.5px; }
+  .scoreboard .sc b { font-size: 17px; }
+  .icon-btn { width: 36px; height: 36px; border-radius: 11px; font-size: 13px; }
+  .mercy-badge { font-size: 11.5px; padding: 4px 12px 5px; }
+
+  .arena { padding: 16px 24px 10px; gap: 10px; }
+  .chain { padding: 6px 8px 8px; gap: 9px; }
+  .chain li { max-width: 74%; padding: 8px 16px 10px; border-radius: 14px; }
+  .chain-who { font-size: 9px; }
+  .chain-word { font-size: 21px; }
+  .bot-bubble { max-width: 70%; font-size: 13px; padding: 10px 14px 11px; }
+  .stage-word { padding: 18px 32px 16px; border-radius: 22px; }
+  .stage-word h2 { font-size: clamp(36px, 6.6vw, 52px); }
+  .stage-word h2.long { font-size: clamp(17px, min(3.2vw, 4.2dvh), 26px); }
+  .stage-who { font-size: 10px; }
+  .stage-sub { margin-top: 10px; gap: 6px; }
+  .stage-sub .gain { font-size: 13px; }
+  .stage-sub .tag { font-size: 10px; padding: 3px 9px; }
+  .stage-hint { font-size: 14px; padding: 18px 28px 19px; }
+  .stage-hint b { font-size: 18px; }
+
+  .turn-panel { padding: 16px 22px calc(17px + env(safe-area-inset-bottom)); }
+  .turn-head { gap: 13px; }
+  .need { gap: 9px; }
+  .need-label { font-size: 10.5px; }
+  .need-char b { width: 68px; height: 68px; font-size: 35px; border-radius: 15px; }
+  .need-char em { font-size: 10px; padding: 3px 8px; }
+  .mini { font-size: 11px; padding: 5px 9px; border-radius: 8px; }
+  .countdown { padding-bottom: 7px; }
+  .countdown b { font-size: 28px; }
+  .countdown span { font-size: 10.5px; }
+  .timer { height: 9px; margin: 12px 0 13px; border-radius: 4px; }
+  .composer { gap: 9px; }
+  .composer input { height: 54px; font-size: 17px; border-radius: 15px; padding: 0 16px; }
+  .composer .btn { font-size: 16px; }
+  .composer .btn.go { min-width: 96px; border-radius: 15px; }
+
+  /* 사전 — 두 열 카드, 넓은 검색 바 */
+  .dict { max-width: 760px; padding: max(18px, env(safe-area-inset-top)) 20px calc(14px + env(safe-area-inset-bottom)); gap: 11px; }
+  .dict-top { gap: 14px; }
+  .dict-back { padding: 9px 14px 10px; font-size: 12px; }
+  .dict-title b { font-size: 16px; }
+  .dict-title small { font-size: 11px; }
+  .dict-search { gap: 10px; }
+  .dict-input { height: 52px; font-size: 16px; border-radius: 14px; }
+  .dict-clear { width: 26px; height: 26px; right: 10px; }
+  .dict-twoeum { padding: 0 12px 0 14px; border-radius: 14px; font-size: 12px; }
+  .dict-twoeum .switch { width: 38px; height: 21px; border-radius: 11px; }
+  .dict-twoeum .switch i { width: 17px; height: 17px; }
+  .dict-twoeum[aria-checked="true"] .switch i { transform: translateX(17px); }
+  .dict-sorts { width: 100%; max-width: 560px; align-self: flex-start; }
+  .dict-sorts button { padding: 11px 4px; font-size: 13px; }
+  .dict-meta { font-size: 12px; }
+  .dict-body { gap: 9px; }
+  .dict-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 7px; }
+  .dict-item { padding: 10px 13px; border-radius: 12px; }
+  .dict-word { font-size: 16.5px; }
+  .dict-len, .dict-tail, .dict-chip { font-size: 10px; }
+  .dict-more { padding: 12px; font-size: 13px; }
+  .dict-empty { padding: 34px 18px; }
+  .dict-empty b { font-size: 15px; }
+  .dict-empty small { font-size: 12px; max-width: 340px; }
+  .dict-suggest button { width: 38px; height: 38px; font-size: 16px; }
+
+  /* 시트(결과·설정)도 태블릿 폭에 맞춰 조금 넉넉하게 */
+  .sheet { max-width: 470px; padding: 24px 24px calc(20px + env(safe-area-inset-bottom)); }
+  .settings-sheet { max-width: 440px; }
+}
+
 /* 짧은 세로 화면: 설정 한 화면 유지 · 게임 여백 압축 */
 @media (max-height: 760px) {
   .setup { padding-top: max(18px, env(safe-area-inset-top)); padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
@@ -1732,6 +1864,31 @@ button.dict-tail:focus-visible { outline: 2px solid var(--sky); outline-offset: 
   .composer .btn { height: 40px; }
   /* 키보드가 올라와 높이가 줄어든 화면에서는 긴 단어 타일도 한 단계 더 줄인다 */
   .stage-word h2.long { font-size: clamp(13px, 4.2dvh, 19px); }
+}
+
+/* 아주 낮은 폰 화면(높이 520px 이하 · 폭 599px 이하): 설정도 스크롤 없이
+   대전 시작 버튼까지 한 화면에 — 390×480 같은 분할 화면·키보드 높이 대비 */
+@media (max-height: 520px) {
+  .setup { padding-top: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .brand { margin-top: 10px; }
+  .brand-kicker { font-size: 10px; }
+  .brand .logo-mark { margin-top: 4px; }
+  .logo-mark .lt { width: 42px; height: 42px; font-size: 23px; border-radius: 11px; }
+  .brand-sub { margin-top: 5px; font-size: 10px; }
+  .field { margin-top: 10px; gap: 6px; }
+  .field-time { margin-top: 6px; }
+  .field-first { margin-top: 7px; }
+  .field-head span { font-size: 10.5px; }
+  .level { height: 60px; }
+  .level b { font-size: 11.5px; margin-top: 3px; }
+  .level small { font-size: 7.5px; }
+  .toggle-card { padding: 8px 12px; margin-top: 6px; }
+  .toggle-card:first-of-type { margin-top: 8px; }
+  .toggle-text b { font-size: 12px; }
+  .toggle-text small { font-size: 9px; }
+  .segmented button { height: 31px; }
+  .setup > #btn-start { margin-top: 6px; }
+  .btn.primary.big { height: 42px; font-size: 15.5px; }
 }
 
 @media (min-height: 660px) {
@@ -2003,6 +2160,113 @@ button.dict-tail:focus-visible { outline: 2px solid var(--sky); outline-offset: 
   .result-actions .btn { height: 50px; font-size: 16px; }
 }
 
+/* 세로로 긴 태블릿(820px 이상 · 높이 1000px 이상): 보드를 세로로 더 펼쳐
+   화면 위아래로 크게 남던 여백을 줄인다. */
+@media (min-width: 820px) and (min-height: 1000px) {
+  :root {
+    --board-h: min(980px, calc(var(--vvh, 100dvh) - 60px));
+    /* 설정 판은 내용 높이에 맞춰 둔다 — 세로로 긴 화면에서 판만 늘리면
+       위아래가 크게 비어 오히려 허전해 보인다. */
+    --setup-h: min(700px, calc(var(--vvh, 100dvh) - 60px));
+  }
+}
+
+/* ── 큰 화면: 화면이 커진 만큼 판도 함께 커진다 ───────────
+   보드 폭·높이만 키우면 판 안의 글자가 작아 보이므로, 단계마다
+   단어 타일·난이도 카드·입력 독 같은 중심 요소도 같이 키운다. */
+@media (min-width: 1400px) {
+  :root {
+    --board-w: min(1240px, calc(100vw - 80px));
+    --board-h: min(920px, calc(var(--vvh, 100dvh) - 56px));
+    --setup-h: min(760px, calc(var(--vvh, 100dvh) - 56px));
+  }
+  .logo-mark .lt { width: 96px; height: 96px; font-size: 52px; border-radius: 23px; }
+  .level { height: 168px; }
+  .level b { font-size: 19px; }
+  .level small { font-size: 11.5px; }
+  .setup > #btn-start .btn, .btn.primary.big { height: 72px; font-size: 21px; }
+  .bot-face { width: 52px; height: 52px; font-size: 25px; }
+  .bot-text b { font-size: 19px; }
+  .bot-text small { font-size: 11.5px; }
+  .scoreboard .sc b { font-size: 22px; }
+  .chain li { max-width: 52%; }
+  .chain-word { font-size: 24px; }
+  .bot-bubble { max-width: 54%; font-size: 14.5px; }
+  .stage-word h2 { font-size: clamp(52px, 3.4vw, 76px); }
+  .stage-word h2.long { font-size: clamp(28px, 2vw, 42px); }
+  .stage-who { font-size: 11.5px; }
+  .stage-sub .gain { font-size: 15px; }
+  .need-char b { width: 82px; height: 82px; font-size: 42px; border-radius: 18px; }
+  .need-label { font-size: 11.5px; }
+  .mini { font-size: 12px; padding: 7px 11px; }
+  .countdown b { font-size: 34px; }
+  .turn-panel { padding: 20px 26px 22px; }
+  .composer input { height: 64px; font-size: 18px; border-radius: 17px; }
+  .composer .btn { font-size: 18px; }
+  .composer .btn.go { min-width: 122px; border-radius: 17px; }
+  .dict { padding: 30px 36px 24px; }
+  .dict-input { height: 64px; font-size: 18px; }
+  .dict-list { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .dict-word { font-size: 18px; }
+  .dict-sorts { width: 520px; }
+  .dict-sorts button { padding: 13px 4px; font-size: 14px; }
+  .sheet { max-width: 560px; padding: 28px 32px 26px; }
+  .result-sheet h2 { font-size: 31px; }
+  .result-badge { width: 64px; height: 64px; font-size: 32px; }
+  .result-score .rs b { font-size: 30px; }
+  .result-stats dd { font-size: 20px; }
+  .blog-word { font-size: 19px; }
+  .battle-log { max-height: clamp(140px, 26dvh, 300px); }
+  .result-actions .btn { height: 54px; font-size: 17px; }
+  .settings-sheet { max-width: 430px; padding: 26px 26px 24px; }
+}
+
+@media (min-width: 1800px) {
+  :root {
+    --board-w: min(1420px, calc(100vw - 140px));
+    --board-h: min(960px, calc(var(--vvh, 100dvh) - 72px));
+    --setup-h: min(800px, calc(var(--vvh, 100dvh) - 72px));
+  }
+  .logo-mark .lt { width: 104px; height: 104px; font-size: 56px; }
+  .level { height: 180px; }
+  .level b { font-size: 20px; }
+  .stage-word h2 { font-size: clamp(58px, 3.2vw, 84px); }
+  .stage-word h2.long { font-size: clamp(32px, 1.9vw, 46px); }
+  .need-char b { width: 88px; height: 88px; font-size: 45px; }
+  .composer input { height: 68px; font-size: 19px; }
+  .chain-word { font-size: 25px; }
+  .bot-bubble { font-size: 15px; }
+  .dict-word { font-size: 19px; }
+  .dict-list { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+}
+
+@media (min-width: 2300px) {
+  :root {
+    --board-w: min(1640px, calc(100vw - 220px));
+    --board-h: min(1020px, calc(var(--vvh, 100dvh) - 100px));
+    --setup-h: min(860px, calc(var(--vvh, 100dvh) - 100px));
+  }
+  .setup { padding: 44px 60px 40px; }
+  .logo-mark .lt { width: 116px; height: 116px; font-size: 62px; border-radius: 28px; }
+  .brand-sub { font-size: 14px; }
+  .level { height: 196px; }
+  .level b { font-size: 22px; }
+  .level small { font-size: 12.5px; }
+  .btn.primary.big { height: 78px; font-size: 23px; }
+  .stage-word h2 { font-size: clamp(64px, 3vw, 96px); }
+  .stage-word h2.long { font-size: clamp(36px, 1.8vw, 52px); }
+  .need-char b { width: 94px; height: 94px; font-size: 48px; }
+  .countdown b { font-size: 38px; }
+  .composer input { height: 74px; font-size: 20px; }
+  .chain-word { font-size: 27px; }
+  .bot-bubble { font-size: 16px; }
+  .turn-panel { padding: 22px 30px 24px; }
+  .dict { padding: 34px 44px 28px; }
+  .dict-word { font-size: 20px; }
+  .dict-list { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+  .dict-input { height: 70px; font-size: 19px; }
+}
+
 /* 좁은 데스크톱 창(820~1050px): 보드가 줄어든 만큼 여백·글자를 함께 줄인다 */
 @media (min-width: 820px) and (max-width: 1050px) {
   .setup { padding: 28px 30px 26px; column-gap: 34px; row-gap: 16px; }
@@ -2146,6 +2410,123 @@ button.dict-tail:focus-visible { outline: 2px solid var(--sky); outline-offset: 
   .result-actions .btn { height: 38px; font-size: 13.5px; }
   .settings-sheet { padding: 15px 17px; gap: 10px; }
   .settings-top h2 { font-size: 16px; }
+}
+
+/* 낮은 데스크톱 창(높이 561~680px): 결과 카드의 배틀 내역을 펼쳐도
+   다시 대전 버튼까지 스크롤 없이 한 화면에 들어오게 압축한다. */
+@media (min-width: 820px) and (min-height: 561px) and (max-height: 680px) {
+  .sheet { max-width: 500px; padding: 17px 22px 15px; }
+  .result-badge { width: 44px; height: 44px; margin-bottom: 4px; font-size: 22px; }
+  .result-sheet h2 { font-size: 23px; }
+  .result-level { margin-top: 6px; padding: 4px 11px 5px; font-size: 11px; }
+  .result-level b { font-size: 12px; }
+  .result-reason { margin: 6px 0 9px; font-size: 11.5px; }
+  .result-score { margin: 9px 0; gap: 13px; }
+  .result-score .rs { min-width: 78px; padding: 6px 10px 5px; }
+  .result-score .rs b { font-size: 21px; }
+  .result-stats { gap: 7px; margin-bottom: 9px; }
+  .result-stats div { padding: 6px 6px 7px; }
+  .result-stats dt { font-size: 9px; }
+  .result-stats dd { font-size: 15px; }
+  .battle-log-btn { padding: 8px 10px; font-size: 11.5px; margin-bottom: 8px; }
+  .battle-log { max-height: min(150px, 24dvh); margin-bottom: 8px; padding: 7px; }
+  .blog-word { font-size: 14.5px; }
+  .result-actions .btn { height: 42px; font-size: 14px; }
+}
+
+/* ── 아주 낮은 데스크톱 창 · 가로 모드 폰 (높이 460px 이하) ─────
+   844×390 같은 화면에서 설정 보드가 403px 이 되어 위아래로 잘리거나
+   스크롤됐다. 로고·난이도 타일·여백을 한 단계 더 줄여 한 화면에 앉힌다. */
+@media (min-width: 820px) and (max-height: 460px) {
+  .setup { padding: 14px 26px 12px; column-gap: 28px; row-gap: 8px; }
+  .setup::before { top: 18px; bottom: 18px; left: calc(26px + (100% - 80px) * .58 + 14px); }
+  .brand { margin-top: 0; }
+  .brand-kicker { font-size: 9.5px; }
+  .brand .logo-mark { margin-top: 4px; }
+  .logo-mark .lt { width: 44px; height: 44px; font-size: 23px; border-radius: 11px; margin: 0 3px; }
+  .brand-sub { margin-top: 5px; font-size: 9.5px; }
+  .brand::after { margin-top: 6px; }
+  .field { gap: 5px; }
+  .field-head span { font-size: 10px; letter-spacing: .12em; }
+  .field-head em { font-size: 9.5px; }
+  .levels { gap: 5px; }
+  .level { height: 74px; border-radius: 10px; }
+  .level b { font-size: 11.5px; margin-top: 3px; }
+  .level small { font-size: 7px; }
+  .pips { gap: 3px; }
+  .pips i { width: 4px; height: 4px; }
+  .mercy-card { padding: 7px 11px; }
+  .toggle-text b { font-size: 12px; }
+  .toggle-text b i { font-size: 11px; margin-right: 4px; }
+  .toggle-text small { font-size: 8.5px; }
+  .switch { width: 38px; height: 22px; border-radius: 11px; }
+  .switch i { width: 17px; height: 17px; }
+  .toggle-card[aria-checked="true"] .switch i { transform: translateX(16px); }
+  .field-time { margin-top: 0; }
+  .field-first { margin-top: 0; }
+  .segmented { padding: 2px; }
+  .segmented button { height: 31px; font-size: 11.5px; }
+  .slider { height: 22px; --thumb: 15px; }
+  .range { height: 22px; }
+  .slider-track { height: 8px; border-radius: 4px; }
+  .slider-fill { border-radius: 4px; }
+  .range::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; }
+  .range::-webkit-slider-thumb { margin-top: -3.5px; }
+  .slider.slider-time { --band: 22px; --track-h: 8px; --tk-end: 9px; --tk-10: 6px; --tk-5: 3.5px; --ends-h: 7.5px; }
+  .slider-ends i { font-size: 7.5px; }
+  .field-head .time-badge { font-size: 9.5px; padding: 2px 7px 3px; border-radius: 8px; }
+  .field-head .time-badge b { font-size: 13px; }
+  .btn.primary.big { height: 38px; font-size: 15px; border-radius: 12px; }
+  .btn.primary.big kbd { font-size: 8px; padding: 2px 5px; border-radius: 5px; }
+  .top-actions { top: 8px; right: 12px; gap: 5px; }
+  .top-btn { padding: 5px 9px 6px; font-size: 9.5px; border-radius: 9px; gap: 5px; }
+  .top-btn svg { width: 11px; height: 11px; }
+}
+
+/* ── 아주 낮은 화면(높이 480px 이하): 결과·설정 시트를 한 화면에 ──
+   배틀 내역을 펼치면 카드가 화면보다 길어져 다시 대전/난이도 변경 버튼이
+   스크롤 아래로 밀렸다. 여백·글자를 압축해 버튼까지 한 화면에 남긴다. */
+@media (max-height: 480px) {
+  .overlay { padding: 8px; }
+  .sheet { padding: 10px 14px calc(8px + env(safe-area-inset-bottom)); border-radius: 16px; max-height: calc(var(--vvh, 100dvh) - 16px); }
+  .result-badge { width: 30px; height: 30px; margin-bottom: 2px; font-size: 16px; border-radius: 9px; }
+  .result-sheet h2 { font-size: 17px; }
+  .result-mercy { margin-top: 3px; font-size: 9px; padding: 2px 8px 3px; }
+  .result-mercy small { font-size: 8px; }
+  .result-level { margin-top: 2px; padding: 2px 8px 3px; font-size: 10px; border-radius: 8px; }
+  .result-level i { font-size: 11px; }
+  .result-level b { font-size: 10.5px; }
+  .result-reason { margin: 2px 0 5px; font-size: 10px; line-height: 1.4; }
+  .result-score { margin: 5px 0; gap: 8px; }
+  .result-score .rs { min-width: 56px; padding: 4px 7px 3px; border-radius: 9px; }
+  .result-score .rs i { font-size: 8px; }
+  .result-score .rs b { font-size: 17px; }
+  .result-score .vs { font-size: 12px; }
+  .result-stats { gap: 4px; margin-bottom: 5px; }
+  .result-stats div { padding: 4px 3px 5px; border-radius: 8px; }
+  .result-stats dt { font-size: 8px; margin-bottom: 1px; }
+  .result-stats dd { font-size: 12.5px; }
+  .battle-log-btn { padding: 6px 8px; font-size: 10.5px; margin-bottom: 5px; border-radius: 9px; }
+  .battle-log { max-height: min(72px, 19dvh); margin-bottom: 5px; padding: 6px; border-radius: 10px; }
+  .battle-log-list { gap: 4px; }
+  .blog-body { padding: 4px 7px 5px; border-radius: 9px; }
+  .blog-word { font-size: 12.5px; }
+  .blog-turn { min-width: 17px; height: 17px; font-size: 8.5px; border-radius: 5px; }
+  .blog-who { font-size: 8.5px; }
+  .blog-gain { font-size: 9.5px; }
+  .result-actions { gap: 7px; }
+  .result-actions .btn { height: 32px; font-size: 12.5px; border-radius: 10px; }
+  .settings-sheet { padding: 12px 14px; gap: 8px; }
+  .settings-top h2 { font-size: 15px; }
+  .settings-close { width: 28px; height: 28px; }
+  .settings-block { padding: 9px 11px 10px; gap: 4px; border-radius: 12px; }
+  .settings-head { gap: 7px; }
+  .vol-icon { width: 26px; height: 26px; font-size: 12px; }
+  .settings-label { font-size: 12px; }
+  .settings-value { font-size: 11px; padding: 2px 7px 3px; }
+  .toggle-card { padding: 8px 11px; }
+  .toggle-text b { font-size: 12px; }
+  .toggle-text small { font-size: 8.5px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
