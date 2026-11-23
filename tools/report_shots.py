@@ -13,7 +13,7 @@
 - 별도 설정 창(⚙ 설정): 음량 70% → gain 0.35, 흑백모드로 화면 전체 회색, 화면 안·스크롤 0
   (desktop-settings.png, desktop-settings-mono.png, desktop-mono-home.png,
    mobile-settings.png, mobile-settings-mono.png, mobile-mono-home.png)
-- 제한 시간 1~50초 슬라이더 · 홈에 효과음 행 없음
+- 제한 시간 5~50초(5초 단위) 슬라이더 · 5초 눈금 10개와 양끝 5초·50초 숫자 · 홈에 효과음 행 없음
 - 힌트 삭제(버튼·문구·API 없음)
 - 첫 제시 글자: 플레이어 선공이 제시어(사전의 2~3글자 일상 단어)의 첫 글자를 받고,
   안내 문구·`이어야 할 글자`가 그 글자를 보여 주는지(start-char.png, mobile-start-char.png)
@@ -38,7 +38,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from verify import HELL_PROPS, HELL_PICKS, serve  # noqa: E402
+from verify import HELL_PROPS, HELL_PICKS, serve, time_scale, ticks_ok  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -142,7 +142,17 @@ def settings_shots(page, prefix):
     """설정 창(음량·흑백모드)과 흑백으로 바뀐 화면을 남긴다. 끝나면 컬러·기본값으로 되돌린다."""
     page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
     page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-    page.wait_for_timeout(320)
+    page.wait_for_timeout(160)
+
+    # 제한 시간 눈금: 5초 간격 10개가 썸 중심과 겹치고 양끝 5초·50초가 붙어 있는지
+    scale = time_scale(page)
+    ok, detail = ticks_ok(scale)
+    check(ok, f'{prefix} 제한 시간 5초 눈금 10개가 썸 중심과 정렬', detail)
+    check(scale['overflow'] <= 0 and all(-0.5 <= e['left'] and e['right'] <= scale['width'] + 0.5
+                                         for e in scale['ends']),
+          f'{prefix} 눈금·양끝 숫자가 슬라이더 안·오버플로 0',
+          json.dumps(scale['ends'], ensure_ascii=False))
+
     page.click('#btn-settings')
     page.wait_for_timeout(430)
     page.evaluate("""() => {
@@ -162,6 +172,7 @@ def settings_shots(page, prefix):
             sheetScroll: Math.round(ov.querySelector('.settings-sheet').scrollHeight
                                     - ov.querySelector('.settings-sheet').clientHeight),
             time: { value: t.value, badge: document.getElementById('time-value').textContent,
+                    min: t.min, max: t.max, step: t.step,
                     pct: t.style.getPropertyValue('--pct').trim() },
             vol: document.getElementById('vol-value').textContent,
             gain: window.__ITDA.sfx.master ? Number(window.__ITDA.sfx.master.gain.value.toFixed(3)) : null,
@@ -170,6 +181,9 @@ def settings_shots(page, prefix):
     }""")
     check(view['open'] and view['withinView'] and view['sheetScroll'] <= 1 and view['overflow'] <= 0,
           f'{prefix} 설정 창: 화면 안 · 스크롤 0 · 오버플로 0', json.dumps(view, ensure_ascii=False))
+    check(view['time']['min'] == '5' and view['time']['max'] == '50' and view['time']['step'] == '5'
+          and view['time']['value'] == '15' and view['time']['badge'] == '15',
+          f'{prefix} 제한 시간 5~50초·5초 단위(기본 15초)', json.dumps(view['time'], ensure_ascii=False))
     check(view['vol'] == '70%' and view['gain'] is not None and abs(view['gain'] - 0.35) <= 0.02,
           f'{prefix} 설정 창 음량 70% → gain 0.35', json.dumps(view, ensure_ascii=False))
     page.screenshot(path=os.path.join(OUT, f'{prefix}-settings.png'))

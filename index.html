@@ -72,10 +72,14 @@
           <span>제한 시간</span>
           <em class="time-badge"><b id="time-value">15</b>초</em>
         </div>
-        <div class="slider" id="time-slider">
+        <div class="slider slider-time" id="time-slider">
           <span class="slider-track" aria-hidden="true"><i class="slider-fill" id="time-fill"></i></span>
-          <input class="range" id="time-range" type="range" min="1" max="50" step="1" value="15"
-                 aria-label="제한 시간(1초~50초)" aria-valuetext="15초">
+          <span class="slider-ticks" id="time-ticks" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </span>
+          <span class="slider-ends" aria-hidden="true"><i>5초</i><i>50초</i></span>
+          <input class="range" id="time-range" type="range" min="5" max="50" step="5" value="15"
+                 aria-label="제한 시간(5초~50초)" aria-valuetext="15초">
         </div>
       </div>
 

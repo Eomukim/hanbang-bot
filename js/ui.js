@@ -2,7 +2,7 @@
 
 import { Engine } from './engine.js';
 import { LEVELS, levelInfo, botLine } from './bot.js';
-import { saveSettings, recordResult, TIME_MIN, TIME_MAX, DEFAULT_SETTINGS } from './store.js';
+import { saveSettings, recordResult, TIME_MIN, TIME_MAX, TIME_STEP, normalizeTimeLimit, DEFAULT_SETTINGS } from './store.js';
 import { allowedStarts } from './rules.js';
 import { DictPanel } from './dict.js';
 
@@ -191,22 +191,27 @@ export class App {
     });
   }
 
-  /* ── 제한 시간 슬라이더 (1~50초) ────────────────────── */
+  /* ── 제한 시간 슬라이더 (5~50초 · 5초 단위) ────────────── */
 
   renderTime() {
-    const limit = clampInt(this.settings.timeLimit, TIME_MIN, TIME_MAX, DEFAULT_SETTINGS.timeLimit);
+    const limit = normalizeTimeLimit(this.settings.timeLimit, DEFAULT_SETTINGS.timeLimit);
     this.settings.timeLimit = limit;
     const input = this.el['time-range'];
     input.min = String(TIME_MIN);
     input.max = String(TIME_MAX);
+    input.step = String(TIME_STEP);
     input.value = String(limit);
     this.syncTime();
   }
 
-  /** 슬라이더 채움 비율과 숫자 배지를 지금 값에 맞춘다. */
+  /** 슬라이더 채움 비율과 숫자 배지를 지금 값에 맞춘다.
+   *  드래그는 step=5라 늘 5초 단위지만, 스크립트·옛 저장값으로 5의 배수가 아닌 값이
+   *  들어오면(예: 12) 가장 가까운 5초로 맞춰 슬라이더·배지·저장값을 같게 둔다. */
   syncTime() {
     const input = this.el['time-range'];
-    const limit = Number(input.value);
+    const limit = normalizeTimeLimit(input.value, this.settings.timeLimit);
+    this.settings.timeLimit = limit;
+    if (input.value !== String(limit)) input.value = String(limit);
     this.el['time-value'].textContent = String(limit);
     this.paintSlider(input);
     input.setAttribute('aria-valuetext', `${limit}초`);
@@ -347,10 +352,10 @@ export class App {
   /* ── 이벤트 ────────────────────────────────────────────── */
 
   bindEvents() {
-    // ── 제한 시간 슬라이더 (1~50초) ──
+    // ── 제한 시간 슬라이더 (5~50초 · 5초 단위) ──
     const timeRange = this.el['time-range'];
     timeRange.addEventListener('input', () => {
-      this.settings.timeLimit = clampInt(timeRange.value, TIME_MIN, TIME_MAX, this.settings.timeLimit);
+      this.settings.timeLimit = normalizeTimeLimit(timeRange.value, this.settings.timeLimit);
       this.syncTime();
       this.persist();
     });
@@ -474,7 +479,7 @@ export class App {
     const level = overrides.level ?? this.settings.level;
     const info = levelInfo(level);
     const mercy = overrides.mercy ?? Boolean(this.settings.mercy);
-    const timeLimit = clampInt(overrides.timeLimit ?? this.settings.timeLimit, TIME_MIN, TIME_MAX, DEFAULT_SETTINGS.timeLimit);
+    const timeLimit = normalizeTimeLimit(overrides.timeLimit ?? this.settings.timeLimit, DEFAULT_SETTINGS.timeLimit);
     const first = overrides.first ?? this.settings.first;
 
     this.hideResult(true);

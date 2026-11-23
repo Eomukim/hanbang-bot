@@ -17,9 +17,10 @@ const KEY_RECORD = 'itda.record.v1';
 /** 리브랜딩 전 이름들. 최근 이름이 앞이다(잇다 → 끝말봇 → 한방봇). */
 const LEGACY_NAMES = ['kkeutmalbot', 'hanbang'];
 
-/** 제한 시간은 1초부터 50초까지 1초 단위로 모두 쓴다. */
-export const TIME_MIN = 1;
+/** 제한 시간은 5초부터 50초까지 5초 단위로만 쓴다(5·10·…·50). */
+export const TIME_MIN = 5;
 export const TIME_MAX = 50;
+export const TIME_STEP = 5;
 
 export const DEFAULT_SETTINGS = {
   level: 2,
@@ -29,6 +30,19 @@ export const DEFAULT_SETTINGS = {
   monochrome: false, // 흑백모드
   mercy: false,     // 배려모드: 첫 5수 한방 금지
 };
+
+/** 저장된 제한 시간을 슬라이더가 쓸 수 있는 값(5·10·…·50)으로 맞춘다.
+ *
+ * 예전 버전은 1~50초를 1초 단위로 저장했으므로 `12`·`33` 같은 값이 남아 있을 수 있다.
+ * 그런 값은 가장 가까운 5초로 당겨 오고(12 → 10, 33 → 35), 1~4초는 최소 5초로 올린다.
+ * 그 밖의 범위 밖·숫자가 아닌 값은 fallback(기본 15초)로 시작한다.
+ */
+export function normalizeTimeLimit(value, fallback = DEFAULT_SETTINGS.timeLimit) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 1 || n > TIME_MAX) return fallback;
+  const snapped = Math.round(n / TIME_STEP) * TIME_STEP;
+  return Math.max(TIME_MIN, Math.min(TIME_MAX, snapped));
+}
 
 const clampInt = (value, min, max, fallback) => {
   const n = Math.round(Number(value));
@@ -98,11 +112,10 @@ export function loadSettings() {
   const settings = { ...DEFAULT_SETTINGS };
   // 4단계 시절에 저장한 설정(level 1~4)도 그대로 읽는다. 5단계가 늘었을 뿐 번호는 같다.
   if ([1, 2, 3, 4, 5].includes(saved.level)) settings.level = saved.level;
-  // 예전에는 10·15·20초만 저장했다. 이제는 1~50초 어느 값이든 그대로 읽는다.
-  // 범위를 벗어난 값이 저장돼 있으면 기본값(15초)으로 시작한다.
+  // 예전에는 10·15·20초만 저장했고, 그 뒤 1~50초 1초 단위를 거쳤다.
+  // 지금은 5~50초 5초 단위만 쓰므로 가장 가까운 5초로 맞춘다.
   if (saved.timeLimit != null) {
-    const t = Math.round(Number(saved.timeLimit));
-    if (Number.isFinite(t) && t >= TIME_MIN && t <= TIME_MAX) settings.timeLimit = t;
+    settings.timeLimit = normalizeTimeLimit(saved.timeLimit, DEFAULT_SETTINGS.timeLimit);
   }
   if (saved.first === 'me' || saved.first === 'bot') settings.first = saved.first;
   // 음량: 저장된 volume 이 있으면 그 값, 없으면 예전 효과음 켬/끔에서 옮겨 온다(false → 0%).
@@ -121,7 +134,7 @@ export function loadSettings() {
 export function saveSettings(settings) {
   writeJSON(KEY_SETTINGS, {
     level: settings.level,
-    timeLimit: clampInt(settings.timeLimit, TIME_MIN, TIME_MAX, DEFAULT_SETTINGS.timeLimit),
+    timeLimit: normalizeTimeLimit(settings.timeLimit, DEFAULT_SETTINGS.timeLimit),
     first: settings.first,
     volume: clampInt(settings.volume, 0, 100, DEFAULT_SETTINGS.volume),
     monochrome: Boolean(settings.monochrome),

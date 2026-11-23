@@ -16,8 +16,8 @@
    후속 개수 배지 · 100개씩 더 보기 · ← 돌아가기 · 키보드 높이 레이아웃
  - 별도 설정 창(⚙ 설정): 음량 0~100%(gain 비례·음소거 토글·옛 효과음 끔→0% 이전) ·
    흑백모드(배경·보드·시트·토스트 전체 필터·레이아웃 유지) · 저장/복원
- - 제한 시간 1~50초 슬라이더: 숫자 배지·채움 비율·1~50 전 구간 저장·범위 밖 기본값,
-   1·2·5초에서도 즉시 끝나지 않고 그 초만큼 세다 시간 초과
+ - 제한 시간 5~50초(5초 단위) 슬라이더: 숫자 배지·채움 비율·5초 눈금 10개가 썸 중심과 정렬·
+   5~50 전 구간 저장·범위 밖 기본값·예전 1초 단위 값(12·33)·1~4초 보정, 5초에서도 즉시 끝나지 않고 그 초만큼 세다 시간 초과
  - 내 단어장 삭제(버튼·모달·사전 API 없음, 남은 localStorage 값 무시)
  - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
  - 결과 화면 배틀 내역: 버튼 열기/닫기 · 카드 안 세로 스크롤 · 턴·나/봇·단어·점수·태그 · 0수 종료(포기·시간 초과) · 아주 긴 단어 줄바꿈 · 모바일 오버플로
@@ -845,7 +845,7 @@ def legacy_round(page, tag, old):
         legacyKept: !!localStorage.getItem(old + '.settings.v1'),
     })""", old)
     check(view['checked'] == '4', f'[{tag}] {old} 설정 Lv.4 복원', str(view['checked']))
-    # 예전 '효과음 끔'은 음량 0%로, 제한 시간 15초는 그대로 1~50초 슬라이더에 앉는다.
+    # 예전 '효과음 끔'은 음량 0%로, 제한 시간 15초는 그대로 5~50초 슬라이더에 앉는다.
     check(view['volume'] == '0%' and view['volumeValue'] == '0' and view['sfx'] == 0
           and view['timeLimit'] == '15' and view['timeBadge'] == '15' and view['first'] == 'bot',
           f'[{tag}] {old} 설정 소리(0%)·제한 시간·선공 복원',
@@ -865,8 +865,8 @@ def scenario_legacy(page, tag):
         legacy_round(page, tag, old)
 
     # 새 5단계 전적도 새 키에 쌓이고, 옮겨 온 기록이 남는지
-    page.evaluate("window.__ITDA.startGame({level:5, first:'me', timeLimit:1})")
-    page.wait_for_timeout(1800)
+    page.evaluate("window.__ITDA.startGame({level:5, first:'me', timeLimit:5})")
+    page.wait_for_function("() => !document.getElementById('ov-result').hidden", timeout=9000)
     rec = page.evaluate("JSON.parse(localStorage.getItem('itda.record.v1') || '{}')")
     check('5' in rec and rec['5'].get('plays', 0) >= 1 and '4' in rec,
           f'[{tag}] Lv.5 전적 저장·기존 기록 유지', json.dumps(rec, ensure_ascii=False)[:160])
@@ -1208,8 +1208,8 @@ def scenario_result_level(page, tag):
         shot(page, f'{tag}-13-result-win')
 
     # 2) Lv.3 시간 초과 패배
-    page.evaluate("window.__ITDA.startGame({level:3, first:'me', timeLimit:1})")
-    page.wait_for_timeout(2300)
+    page.evaluate("window.__ITDA.startGame({level:3, first:'me', timeLimit:5})")
+    page.wait_for_function("() => !document.getElementById('ov-result').hidden", timeout=9000)
     lose = result_view(page)
     check(lose['title'] == '패배' and lose['label'] == 'Lv.3 어려움' and lose['lv'] == '3',
           f'[{tag}] 시간 초과 결과에 난이도', json.dumps(lose, ensure_ascii=False)[:160])
@@ -1497,7 +1497,7 @@ def scenario_battle_log(page, tag):
 
     # 6) 첫 수 전 시간 초과(0수)
     page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
-    page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:1})")
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:5})")
     page.wait_for_function("() => !document.getElementById('ov-result').hidden", timeout=8000)
     page.wait_for_timeout(200)
     to = battle_log_view(page)
@@ -1742,6 +1742,46 @@ def settings_view(page):
     }""")
 
 
+def time_scale(page):
+    """제한 시간 슬라이더의 5초 눈금 10개·양끝 숫자(5초·50초)의 자리."""
+    return page.evaluate("""() => {
+        const slider = document.getElementById('time-slider');
+        const sr = slider.getBoundingClientRect();
+        const thumb = parseFloat(getComputedStyle(slider).getPropertyValue('--thumb')) || 18;
+        const track = document.querySelector('#time-slider .slider-track').getBoundingClientRect();
+        const ticks = [...document.querySelectorAll('#time-ticks i')].map((el) => {
+            const r = el.getBoundingClientRect();
+            return { x: +(r.left + r.width / 2 - sr.left).toFixed(2), w: +r.width.toFixed(2),
+                     h: +r.height.toFixed(1), top: +(r.top - sr.top).toFixed(1),
+                     bottom: +(r.bottom - sr.top).toFixed(1),
+                     bg: getComputedStyle(el).backgroundColor };
+        });
+        const want = ticks.map((_, i) => +(thumb * .5 + (sr.width - thumb) * i / 9).toFixed(2));
+        const ends = [...document.querySelectorAll('#time-slider .slider-ends i')].map((el) => {
+            const r = el.getBoundingClientRect();
+            return { text: el.textContent, left: +(r.left - sr.left).toFixed(1),
+                     right: +(r.right - sr.left).toFixed(1), width: +r.width.toFixed(1),
+                     top: +(r.top - sr.top).toFixed(1), bottom: +(r.bottom - sr.top).toFixed(1) };
+        });
+        return { width: +sr.width.toFixed(1), height: +sr.height.toFixed(1), thumb,
+                 track: { top: +(track.top - sr.top).toFixed(1), h: +track.height.toFixed(1) },
+                 ticks, want, ends, vh: innerHeight,
+                 overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    }""")
+
+
+def ticks_ok(scale):
+    """눈금 10개가 5초 간격으로 썸 중심과 맞고, 양끝 숫자(5초·50초)가 붙었는지."""
+    if not scale or len(scale['ticks']) != 10:
+        return False, f"눈금 {len(scale['ticks']) if scale else 0}개"
+    bad = [round(t['x'] - w, 2) for t, w in zip(scale['ticks'], scale['want']) if abs(t['x'] - w) > 1.0]
+    if bad:
+        return False, f'썸 중심에서 벗어남 {bad[:3]}'
+    if [e['text'] for e in scale['ends']] != ['5초', '50초']:
+        return False, f"양끝 숫자 {[e['text'] for e in scale['ends']]}"
+    return True, f"눈금 10개 · 간격 {round(scale['ticks'][1]['x'] - scale['ticks'][0]['x'], 1)}px"
+
+
 def set_range(page, sel, value, change=True):
     """range 입력을 값으로 옮기며 input·change 이벤트를 그대로 일으킨다(사람의 드래그와 같은 경로)."""
     page.evaluate("""([sel, v, fire]) => {
@@ -1753,7 +1793,7 @@ def set_range(page, sel, value, change=True):
 
 
 def scenario_settings(page, tag):
-    """별도 설정 창(음량 · 흑백모드)과 제한 시간 1~50초 슬라이더."""
+    """별도 설정 창(음량 · 흑백모드)과 제한 시간 5~50초(5초 단위) 슬라이더."""
     print(f'  · 설정 창·시간 슬라이더 [{tag}]')
     page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
     page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
@@ -1776,14 +1816,31 @@ def scenario_settings(page, tag):
           f'[{tag}] 설정 버튼이 사전 버튼 옆 같은 줄', json.dumps(near, ensure_ascii=False))
     check(not base['open'], f'[{tag}] 설정 창은 처음에 닫혀 있음', str(base['open']))
 
-    # 2) 제한 시간: 1~50초 슬라이더 · 숫자 배지 · 채움 비율
+    # 2) 제한 시간: 5~50초 5초 단위 슬라이더 · 5초 눈금 · 숫자 배지 · 채움 비율
     t = base['time']
-    check(t['min'] == '1' and t['max'] == '50' and t['step'] == '1',
-          f'[{tag}] 제한 시간 슬라이더 범위 1~50초', json.dumps(t, ensure_ascii=False))
-    check(t['badge'] == t['value'] and '제한' in t['label'],
-          f'[{tag}] 제한 시간 숫자 배지가 라벨 옆에', json.dumps(t, ensure_ascii=False))
+    check(t['min'] == '5' and t['max'] == '50' and t['step'] == '5',
+          f'[{tag}] 제한 시간 슬라이더 범위 5~50초·5초 단위', json.dumps(t, ensure_ascii=False))
+    check(t['badge'] == t['value'] and int(t['value']) % 5 == 0 and 5 <= int(t['value']) <= 50,
+          f'[{tag}] 제한 시간이 5초 단위 중 하나 · 숫자 배지가 라벨 옆에',
+          json.dumps(t, ensure_ascii=False))
+    check('제한' in t['label'], f'[{tag}] 제한 시간 라벨', t['label'])
     check(t['fillW'] > 0 and t['fillW'] < t['trackW'], f'[{tag}] 제한 시간 채움 비율 표시',
           f"{t['fillW']}/{t['trackW']}px · pct {t['pct']}")
+
+    # 2b) 눈금: 5초 간격 10개가 썸이 지나는 자리를 정확히 9등분 · 양끝 숫자 5초/50초
+    scale = time_scale(page)
+    ok, detail = ticks_ok(scale)
+    check(ok, f'[{tag}] 5초 눈금 10개가 썸 중심과 정렬', detail)
+    check(all(-0.5 <= tk['top'] and tk['bottom'] <= scale['height'] + 0.5 for tk in scale['ticks']),
+          f'[{tag}] 눈금이 슬라이더 높이 안에', f"h {scale['height']}px · {scale['ticks'][0]}")
+    check(all(tk['h'] > scale['track']['h'] for tk in scale['ticks']),
+          f'[{tag}] 눈금이 트랙 위아래로 삐져나옴',
+          f"tick {scale['ticks'][0]['h']}px · track {scale['track']['h']}px")
+    check(all(e['left'] >= -0.5 and e['right'] <= scale['width'] + 0.5 for e in scale['ends']),
+          f'[{tag}] 양끝 숫자가 슬라이더 폭 안에', json.dumps(scale['ends'], ensure_ascii=False))
+    check(all(e['top'] >= scale['track']['top'] + scale['track']['h'] for e in scale['ends']),
+          f'[{tag}] 양끝 숫자가 트랙 아래에', json.dumps(scale['ends'], ensure_ascii=False))
+    check(scale['overflow'] <= 0, f'[{tag}] 눈금·양끝 숫자 뒤 가로 오버플로 0', str(scale['overflow']))
 
     # 3) 설정 창 열기: 시트가 화면 안, 세로 스크롤 없음
     page.click('#btn-settings')
@@ -1878,11 +1935,11 @@ def scenario_settings(page, tag):
     page.wait_for_timeout(320)
     check(not settings_view(page)['open'], f'[{tag}] 바깥 누르면 설정 창 닫힘')
 
-    # 7) 1~50초 전 구간이 저장·배지·채움에 그대로
+    # 7) 5~50초 5초 단위 전 구간이 저장·배지·채움에 그대로 · 5의 배수 아닌 값은 가까운 5초로
     sweep = page.evaluate("""() => {
         const r = document.getElementById('time-range');
         const out = [];
-        for (let v = 1; v <= 50; v += 1) {
+        for (let v = 5; v <= 50; v += 5) {
             r.value = String(v);
             r.dispatchEvent(new Event('input', { bubbles: true }));
             const stored = JSON.parse(localStorage.getItem('itda.settings.v1') || '{}');
@@ -1890,23 +1947,40 @@ def scenario_settings(page, tag):
                        live: window.__ITDA.app.settings.timeLimit,
                        stored: stored.timeLimit,
                        badge: document.getElementById('time-value').textContent,
+                       value: r.value,
                        pct: parseFloat(r.style.getPropertyValue('--pct')),
                        ratio: parseFloat(getComputedStyle(document.getElementById('time-slider')).getPropertyValue('--ratio')) });
         }
+        for (const odd of [12, 33, 2]) {
+            r.value = String(odd);
+            r.dispatchEvent(new Event('input', { bubbles: true }));
+            const stored = JSON.parse(localStorage.getItem('itda.settings.v1') || '{}');
+            out.push({ v: odd,
+                       live: window.__ITDA.app.settings.timeLimit,
+                       stored: stored.timeLimit,
+                       badge: document.getElementById('time-value').textContent,
+                       value: r.value });
+        }
         return out;
     }""")
-    bad = [row for row in sweep
+    steps = sweep[:10]
+    bad = [row for row in steps
            if row['live'] != row['v'] or row['stored'] != row['v'] or row['badge'] != str(row['v'])
-           or abs(row['pct'] - (row['v'] - 1) / 49 * 100) > 0.6 or abs(row['ratio'] - (row['v'] - 1) / 49) > 0.01]
-    check(not bad, f'[{tag}] 1~50초 전 구간 저장·배지·채움 일치', json.dumps(bad[:3], ensure_ascii=False))
-    check(sweep[0]['pct'] == 0 and sweep[-1]['pct'] == 100, f'[{tag}] 슬라이더 양끝 0%~100% 채움',
-          f"{sweep[0]['pct']} ~ {sweep[-1]['pct']}")
+           or row['value'] != str(row['v'])
+           or abs(row['pct'] - (row['v'] - 5) / 45 * 100) > 0.6 or abs(row['ratio'] - (row['v'] - 5) / 45) > 0.01]
+    check(not bad and [row['v'] for row in steps] == list(range(5, 51, 5)),
+          f'[{tag}] 5~50초 5초 단위 전 구간 저장·배지·채움 일치', json.dumps(bad[:3], ensure_ascii=False))
+    check(steps[0]['pct'] == 0 and steps[-1]['pct'] == 100, f'[{tag}] 슬라이더 5초=0% · 50초=100% 채움',
+          f"{steps[0]['pct']} ~ {steps[-1]['pct']}")
+    odd = {row['v']: (row['live'], row['stored'], row['badge'], row['value']) for row in sweep[10:]}
+    check(odd == {12: (10, 10, '10', '10'), 33: (35, 35, '35', '35'), 2: (5, 5, '5', '5')},
+          f'[{tag}] 5의 배수 아닌 값(12·33)·1~4초는 가까운 5초로', json.dumps(odd))
 
-    # 8) 저장값 해석: 1~50은 그대로, 범위 밖·이상한 값은 기본 15초
+    # 8) 저장값 해석: 5~50은 그대로, 비-5배수는 가까운 5초, 1~4초는 5초, 범위 밖·이상한 값은 기본 15초
     store = page.evaluate("""async () => {
         const store = await import(new URL('js/store.js', location.href).href);
         const out = {};
-        for (const v of [1, 7, 33, 50, 0, 51, 99, -3, null, 'abc', 12.6]) {
+        for (const v of [5, 10, 15, 25, 33, 35, 50, 12, 13, 7, 48, 1, 2, 4, 0, 51, 99, -3, null, 'abc', 12.6]) {
             localStorage.setItem('itda.settings.v1', JSON.stringify({ timeLimit: v }));
             out[String(v)] = store.loadSettings().timeLimit;
         }
@@ -1921,29 +1995,32 @@ def scenario_settings(page, tag):
         localStorage.setItem('itda.settings.v1', JSON.stringify({ monochrome: true, volume: 60, timeLimit: 33 }));
         return out;
     }""")
-    expect = {'1': 1, '7': 7, '33': 33, '50': 50, '0': 15, '51': 15, '99': 15, '-3': 15,
-              'null': 15, 'abc': 15, '12.6': 13,
+    expect = {'5': 5, '10': 10, '15': 15, '25': 25, '33': 35, '35': 35, '50': 50, '12': 10, '13': 15,
+              '7': 5, '48': 50, '1': 5, '2': 5, '4': 5, '0': 15, '51': 15, '99': 15, '-3': 15,
+              'null': 15, 'abc': 15, '12.6': 15,
               'v0': 0, 'v40': 40, 'v100': 100, 'v-5': 0, 'v130': 100, 'vnull': 100,
               'soundFalse': 0, 'soundTrue': 100}
     wrong = {k: {'got': store.get(k), 'want': v} for k, v in expect.items() if store.get(k) != v}
-    check(not wrong, f'[{tag}] 저장값 해석(1~50 그대로 · 범위 밖 기본값 · 옛 효과음 끔→0%)',
+    check(not wrong, f'[{tag}] 저장값 해석(5초 단위 보정 · 범위 밖 기본값 · 옛 효과음 끔→0%)',
           json.dumps(wrong or store, ensure_ascii=False)[:240])
 
-    # 9) 새 값으로 다시 열었을 때 복원 + 흑백 다시 켜짐
+    # 9) 새 값으로 다시 열었을 때 복원(33초로 저장돼 있던 예전 값도 35초로 보정) + 흑백 다시 켜짐
     page.reload(wait_until='domcontentloaded')
     wait_ready(page)
     page.wait_for_timeout(280)
     restored = settings_view(page)
-    check(restored['time']['value'] == '33' and restored['vol']['value'] == '60'
+    check(restored['time']['value'] == '35' and restored['time']['badge'] == '35'
+          and restored['vol']['value'] == '60'
           and restored['mono']['html'] and 'grayscale(1)' in (restored['mono']['filters']['#app'] or ''),
-          f'[{tag}] 새로 열어도 33초·60%·흑백 복원',
-          json.dumps({'time': restored['time']['value'], 'vol': restored['vol']['value'],
+          f'[{tag}] 새로 열어도 35초(33 보정)·60%·흑백 복원',
+          json.dumps({'time': restored['time']['value'], 'badge': restored['time']['badge'],
+                      'vol': restored['vol']['value'],
                       'mono': restored['mono']['html']}, ensure_ascii=False))
     check(restored['sfx']['volume'] == 60, f'[{tag}] 복원된 음량이 효과음에 반영', str(restored['sfx']))
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 복원 뒤 가로 오버플로 0', str(overflow(page)))
 
-    # 10) 1·2·5초: 바로 끝나지 않고 그 초만큼 세다가 시간 초과
-    for limit in (1, 2, 5):
+    # 10) 5초: 바로 끝나지 않고 그 초만큼 세다가 시간 초과
+    for limit in (5,):
         page.evaluate(f"window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
         t0 = time.time()
         page.evaluate(f"window.__ITDA.startGame({{level:1, first:'me', timeLimit:{limit}}})")
@@ -1980,6 +2057,18 @@ def scenario_settings(page, tag):
         check(limit - 0.35 <= elapsed <= limit + 1.0 and '시간' in reason,
               f'[{tag}] {limit}초 뒤 시간 초과(즉시 아님)', f'{elapsed:.2f}s · {reason}')
         check('scaleX' in (head['fill'] or ''), f'[{tag}] {limit}초 타이머 바 동작', head['fill'])
+
+    # 10b) 5의 배수가 아닌 제한으로 시작해도 슬라이더·엔진은 5초 단위(12 → 10)
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.evaluate("window.__ITDA.startGame({level:1, first:'me', timeLimit:12})")
+    page.wait_for_timeout(220)
+    odd_run = page.evaluate("""() => ({ limit: window.__ITDA.state().timeLimit,
+                                       left: document.getElementById('time-left').textContent })""")
+    check(odd_run['limit'] == 10 and odd_run['left'] == '10',
+          f'[{tag}] 12초로 시작하면 10초로 보정', json.dumps(odd_run, ensure_ascii=False))
+    page.evaluate("window.__ITDA.app.engine.quit()")
+    page.wait_for_timeout(900)
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
 
     # 11) 다음 시나리오를 위해 기본값으로 되돌린다
     page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
@@ -2069,7 +2158,7 @@ def scenario_setup_clean(page, tag):
 
     # 전적 저장 자체는 그대로: 한 판을 끝내면 화면 없이도 localStorage에 쌓인다
     before = page.evaluate("JSON.parse(localStorage.getItem('itda.record.v1') || '{}')")
-    page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:1})")
+    page.evaluate("window.__ITDA.startGame({level:2, first:'me', timeLimit:5})")
     try:
         page.wait_for_function("() => !document.getElementById('ov-result').hidden", timeout=9000)
     except Exception:

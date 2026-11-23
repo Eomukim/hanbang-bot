@@ -343,7 +343,7 @@ button { cursor: pointer; }
 }
 .slider-fill {
   display: block; height: 100%;
-  width: calc((100% - var(--thumb)) * var(--ratio, 0));
+  width: calc(var(--thumb) * .5 + (100% - var(--thumb)) * var(--ratio, 0));
   border-radius: 5px;
   background: linear-gradient(90deg, var(--sl-2, #4DAE8B), var(--sl));
   transition: width .06s linear;
@@ -391,6 +391,48 @@ button { cursor: pointer; }
 .range:focus-visible::-moz-range-thumb {
   box-shadow: 0 0 0 3px var(--sage-soft), 0 2px 0 rgba(120,105,80,.16);
 }
+
+/* ── 제한 시간 슬라이더의 5초 눈금 ───────────────────────────
+   트랙 위아래로 2px씩 삐져나오는 얇은 선 10개를 5·10·…·50초에 둔다.
+   자리는 썸이 움직이는 구간(양끝 썸 반지름만큼 안쪽)을 9등분한 지점이라
+   눈금과 썸 가운데가 언제나 겹친다. 숫자는 양끝에만 작게. */
+.slider-time { height: 38px; }
+.slider-ticks {
+  position: absolute; left: 0; right: 0; top: 50%; height: 0;
+  pointer-events: none;
+}
+.slider-ticks i {
+  position: absolute; top: 50%;
+  left: calc(var(--thumb) * .5);
+  width: 1.5px; height: 14px;
+  border-radius: 1px;
+  background: rgba(46, 41, 35, .22);
+  transform: translate(-50%, -50%);
+}
+.slider-ticks i:nth-child(2) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .1111); }
+.slider-ticks i:nth-child(3) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .2222); }
+.slider-ticks i:nth-child(4) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .3333); }
+.slider-ticks i:nth-child(5) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .4444); }
+.slider-ticks i:nth-child(6) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .5556); }
+.slider-ticks i:nth-child(7) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .6667); }
+.slider-ticks i:nth-child(8) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .7778); }
+.slider-ticks i:nth-child(9) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .8889); }
+.slider-ticks i:nth-child(10) { left: calc(var(--thumb) * .5 + (100% - var(--thumb))); }
+.slider-ends {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 9px;
+  pointer-events: none;
+}
+.slider-ends i {
+  position: absolute; bottom: 0;
+  font-family: var(--display);
+  font-size: 9px; font-weight: 700; line-height: 9px; letter-spacing: .01em;
+  color: var(--mute-2);
+  opacity: .8;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.slider-ends i:first-child { left: calc(var(--thumb) * .5); transform: translateX(-50%); }
+.slider-ends i:last-child { right: calc(var(--thumb) * .5); transform: translateX(50%); }
 
 /* 난이도 타일 5종 — 단계마다 고유한 색 */
 .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
@@ -1548,6 +1590,10 @@ html.mono .confetti { filter: grayscale(1); }
   .btn.primary.big { height: 46px; font-size: 16.5px; }
   .slider { height: 24px; --thumb: 17px; }
   .range { height: 24px; }
+  .slider-time { height: 36px; }
+  .slider-ticks i { height: 13px; }
+  .slider-ends { height: 8.5px; }
+  .slider-ends i { font-size: 8.5px; line-height: 8.5px; }
   .top-btn { padding: 6px 10px 7px; font-size: 10.5px; }
   .top-actions { top: max(8px, env(safe-area-inset-top)); }
 }
@@ -1683,6 +1729,10 @@ html.mono .confetti { filter: grayscale(1); }
   .segmented button { height: 46px; font-size: 13.5px; }
   .slider { height: 30px; --thumb: 22px; }
   .range { height: 30px; }
+  .slider-time { height: 42px; }
+  .slider-ticks i { height: 16px; }
+  .slider-ends { height: 9.5px; }
+  .slider-ends i { font-size: 9.5px; line-height: 9.5px; }
   .slider-track { height: 12px; border-radius: 6px; }
   .slider-fill { border-radius: 6px; }
   .range::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; }
