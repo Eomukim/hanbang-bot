@@ -392,42 +392,70 @@ button { cursor: pointer; }
   box-shadow: 0 0 0 3px var(--sage-soft), 0 2px 0 rgba(120,105,80,.16);
 }
 
-/* ── 제한 시간 슬라이더의 5초 눈금 ───────────────────────────
-   트랙 위아래로 2px씩 삐져나오는 얇은 선 10개를 5·10·…·50초에 둔다.
-   자리는 썸이 움직이는 구간(양끝 썸 반지름만큼 안쪽)을 9등분한 지점이라
-   눈금과 썸 가운데가 언제나 겹친다. 숫자는 양끝에만 작게. */
-.slider-time { height: 38px; }
+/* ── 제한 시간 슬라이더의 0~50초 눈금자 ─────────────────
+   눈금은 트랙을 뚫지 않는다. 트랙 바로 아래에 눈금자를 따로 그리고,
+   왼쪽 끝(0)에 윗변을 가지런히 맞춰 길이만 달라지게 했다.
+     · 0 · 50      가장 굵고 길고 진한 눈금 + 아래 숫자 0초 · 50초
+     · 10의 배수   그 다음으로 굵고 길고 진한 눈금
+     · 5의 배수    가장 얇고 짧고 연한 눈금
+   자리는 썸이 움직이는 구간(양끝 썸 반지름만큼 안쪽)을 10등분한 지점이라
+   값 / 50 위치의 썸 가운데와 눈금이 언제나 겹친다. */
+.slider.slider-time {
+  position: relative;
+  display: block;
+  --band: 26px;        /* 트랙(썸)이 놓이는 위쪽 띠 = .range 높이 */
+  --track-h: 10px;
+  --ruler-gap: 1.5px;  /* 트랙 아래와 눈금 사이 숨 */
+  --tk-end: 13px;
+  --tk-10: 9px;
+  --tk-5: 5px;
+  --ends-h: 9px;
+  height: calc(var(--band) / 2 + var(--track-h) / 2 + var(--ruler-gap)
+              + var(--tk-end) + 2px + var(--ends-h) + 3px);
+}
+.slider.slider-time .slider-track { top: calc(var(--band) / 2); }
+.slider.slider-time .range {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: var(--band);
+}
 .slider-ticks {
-  position: absolute; left: 0; right: 0; top: 50%; height: 0;
+  position: absolute; left: 0; right: 0;
+  top: calc(var(--band) / 2 + var(--track-h) / 2 + var(--ruler-gap));
+  height: var(--tk-end);
   pointer-events: none;
 }
 .slider-ticks i {
-  position: absolute; top: 50%;
+  position: absolute; top: 0;
   left: calc(var(--thumb) * .5);
-  width: 1.5px; height: 14px;
   border-radius: 1px;
-  background: rgba(46, 41, 35, .22);
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
 }
-.slider-ticks i:nth-child(2) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .1111); }
-.slider-ticks i:nth-child(3) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .2222); }
-.slider-ticks i:nth-child(4) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .3333); }
-.slider-ticks i:nth-child(5) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .4444); }
-.slider-ticks i:nth-child(6) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .5556); }
-.slider-ticks i:nth-child(7) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .6667); }
-.slider-ticks i:nth-child(8) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .7778); }
-.slider-ticks i:nth-child(9) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .8889); }
-.slider-ticks i:nth-child(10) { left: calc(var(--thumb) * .5 + (100% - var(--thumb))); }
+/* 5의 배수 ·5·15·25·35·45 — 가장 얇고 짧고 연하다 */
+.slider-ticks i.tk-5 { width: 1.5px; height: var(--tk-5); background: rgba(46, 41, 35, .28); }
+/* 10의 배수 ·10·20·30·40 — 그 다음으로 굵고 길고 진하다 */
+.slider-ticks i.tk-10 { width: 2px; height: var(--tk-10); background: rgba(46, 41, 35, .48); }
+/* 0 · 50 — 가장 굵고 길고 진하다 */
+.slider-ticks i.tk-end { width: 2.5px; height: var(--tk-end); background: var(--ink); }
+.slider-ticks i:nth-child(2) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .1); }
+.slider-ticks i:nth-child(3) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .2); }
+.slider-ticks i:nth-child(4) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .3); }
+.slider-ticks i:nth-child(5) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .4); }
+.slider-ticks i:nth-child(6) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .5); }
+.slider-ticks i:nth-child(7) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .6); }
+.slider-ticks i:nth-child(8) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .7); }
+.slider-ticks i:nth-child(9) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .8); }
+.slider-ticks i:nth-child(10) { left: calc(var(--thumb) * .5 + (100% - var(--thumb)) * .9); }
+.slider-ticks i:nth-child(11) { left: calc(var(--thumb) * .5 + (100% - var(--thumb))); }
 .slider-ends {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 9px;
+  position: absolute; left: 0; right: 0; bottom: 0; height: var(--ends-h);
   pointer-events: none;
 }
 .slider-ends i {
   position: absolute; bottom: 0;
   font-family: var(--display);
-  font-size: 9px; font-weight: 700; line-height: 9px; letter-spacing: .01em;
-  color: var(--mute-2);
-  opacity: .8;
+  font-size: 9.5px; font-weight: 700; line-height: var(--ends-h); letter-spacing: .01em;
+  color: var(--ink-soft);
+  opacity: .85;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -1617,7 +1645,7 @@ button.dict-tail:focus-visible { outline: 2px solid var(--sky); outline-offset: 
   .logo-mark .lt { width: 48px; height: 48px; font-size: 26px; border-radius: 12px; }
   .field { margin-top: 14px; gap: 7px; }
   .level { height: 68px; }
-  .field-time { margin-top: 11px; gap: 6px; }
+  .field-time { margin-top: 8px; gap: 6px; }
   .field-first { margin-top: 9px; }
   .segmented button { height: 33px; font-size: 12px; }
   .toggle-card { padding: 9px 13px; margin-top: 8px; }
@@ -1628,10 +1656,8 @@ button.dict-tail:focus-visible { outline: 2px solid var(--sky); outline-offset: 
   .btn.primary.big { height: 46px; font-size: 16.5px; }
   .slider { height: 24px; --thumb: 17px; }
   .range { height: 24px; }
-  .slider-time { height: 36px; }
-  .slider-ticks i { height: 13px; }
-  .slider-ends { height: 8.5px; }
-  .slider-ends i { font-size: 8.5px; line-height: 8.5px; }
+  .slider.slider-time { --band: 24px; --track-h: 10px; --tk-end: 11px; --tk-10: 7.5px; --tk-5: 4px; --ends-h: 8.5px; }
+  .slider-ends i { font-size: 8.5px; }
   .top-btn { padding: 6px 10px 7px; font-size: 10.5px; }
   .top-actions { top: max(8px, env(safe-area-inset-top)); }
 }
@@ -1767,10 +1793,8 @@ button.dict-tail:focus-visible { outline: 2px solid var(--sky); outline-offset: 
   .segmented button { height: 46px; font-size: 13.5px; }
   .slider { height: 30px; --thumb: 22px; }
   .range { height: 30px; }
-  .slider-time { height: 42px; }
-  .slider-ticks i { height: 16px; }
-  .slider-ends { height: 9.5px; }
-  .slider-ends i { font-size: 9.5px; line-height: 9.5px; }
+  .slider.slider-time { --band: 30px; --track-h: 12px; --tk-end: 15px; --tk-10: 10px; --tk-5: 5.5px; --ends-h: 9.5px; }
+  .slider-ends i { font-size: 9.5px; }
   .slider-track { height: 12px; border-radius: 6px; }
   .slider-fill { border-radius: 6px; }
   .range::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; }

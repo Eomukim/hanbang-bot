@@ -2,7 +2,7 @@
 
 import { Engine } from './engine.js';
 import { LEVELS, levelInfo, botLine } from './bot.js';
-import { saveSettings, recordResult, TIME_MIN, TIME_MAX, TIME_STEP, normalizeTimeLimit, DEFAULT_SETTINGS } from './store.js';
+import { saveSettings, recordResult, TIME_MAX, normalizeTimeLimit, snapTimeLimit, stepTimeLimit, DEFAULT_SETTINGS } from './store.js';
 import { allowedStarts } from './rules.js';
 import { DictPanel } from './dict.js';
 
@@ -192,25 +192,27 @@ export class App {
     });
   }
 
-  /* ── 제한 시간 슬라이더 (5~50초 · 5초 단위) ────────────── */
+  /* ── 제한 시간 슬라이더 (1초 · 5~50초) ────────────────── */
 
+  /** 0~50초 눈금자 위에서 움직인다. 네이티브 range 는 0~50 스케일(step=1)로 두어
+   *  썸 위치가 값 / 50 과 언제나 같고, 값은 1초 또는 5초 단위로 맞춘다. */
   renderTime() {
     const limit = normalizeTimeLimit(this.settings.timeLimit, DEFAULT_SETTINGS.timeLimit);
     this.settings.timeLimit = limit;
     const input = this.el['time-range'];
-    input.min = String(TIME_MIN);
+    input.min = '0';
     input.max = String(TIME_MAX);
-    input.step = String(TIME_STEP);
+    input.step = '1';
     input.value = String(limit);
     this.syncTime();
   }
 
   /** 슬라이더 채움 비율과 숫자 배지를 지금 값에 맞춘다.
-   *  드래그는 step=5라 늘 5초 단위지만, 스크립트·옛 저장값으로 5의 배수가 아닌 값이
-   *  들어오면(예: 12) 가장 가까운 5초로 맞춰 슬라이더·배지·저장값을 같게 둔다. */
+   *  드래그로 0 이나 2~4처럼 허용 밖 값이 들어오면 가장 가까운 허용 값(1·5·10·…)으로
+   *  즉시 당겨 슬라이더·배지·저장값을 같게 둔다. */
   syncTime() {
     const input = this.el['time-range'];
-    const limit = normalizeTimeLimit(input.value, this.settings.timeLimit);
+    const limit = snapTimeLimit(input.value, this.settings.timeLimit);
     this.settings.timeLimit = limit;
     if (input.value !== String(limit)) input.value = String(limit);
     this.el['time-value'].textContent = String(limit);
@@ -353,14 +355,25 @@ export class App {
   /* ── 이벤트 ────────────────────────────────────────────── */
 
   bindEvents() {
-    // ── 제한 시간 슬라이더 (5~50초 · 5초 단위) ──
+    // ── 제한 시간 슬라이더 (1초 · 5~50초) ──
     const timeRange = this.el['time-range'];
     timeRange.addEventListener('input', () => {
-      this.settings.timeLimit = normalizeTimeLimit(timeRange.value, this.settings.timeLimit);
+      this.settings.timeLimit = snapTimeLimit(timeRange.value, this.settings.timeLimit);
       this.syncTime();
       this.persist();
     });
     timeRange.addEventListener('change', () => {
+      this.syncTime();
+      this.persist();
+      this.sfx.play('tap');
+    });
+    // 좌우(위아래) 화살표는 1 ↔ 5 ↔ 10 ↔ … ↔ 50 한 칸씩. 네이티브 1초 이동을 막고 직접 옮긴다.
+    timeRange.addEventListener('keydown', (event) => {
+      const dir = event.key === 'ArrowRight' || event.key === 'ArrowUp' ? 1
+        : event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1 : 0;
+      if (!dir) return;
+      event.preventDefault();
+      timeRange.value = String(stepTimeLimit(timeRange.value, dir));
       this.syncTime();
       this.persist();
       this.sfx.play('tap');

@@ -17,10 +17,13 @@ const KEY_RECORD = 'itda.record.v1';
 /** 리브랜딩 전 이름들. 최근 이름이 앞이다(잇다 → 끝말봇 → 한방봇). */
 const LEGACY_NAMES = ['kkeutmalbot', 'hanbang'];
 
-/** 제한 시간은 5초부터 50초까지 5초 단위로만 쓴다(5·10·…·50). */
-export const TIME_MIN = 5;
+/** 제한 시간: 최소 1초, 그 위로는 5초 단위(1·5·10·…·50). */
+export const TIME_MIN = 1;
 export const TIME_MAX = 50;
 export const TIME_STEP = 5;
+
+/** 슬라이더가 설 수 있는 값들. 1초 다음부터는 5초 간격이다. */
+export const TIME_VALUES = [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
 
 export const DEFAULT_SETTINGS = {
   level: 2,
@@ -31,17 +34,38 @@ export const DEFAULT_SETTINGS = {
   mercy: false,     // 배려모드: 첫 5수 한방 금지
 };
 
-/** 저장된 제한 시간을 슬라이더가 쓸 수 있는 값(5·10·…·50)으로 맞춘다.
+/** 저장된 제한 시간을 슬라이더가 설 수 있는 값(1·5·10·…·50)으로 맞춘다.
  *
- * 예전 버전은 1~50초를 1초 단위로 저장했으므로 `12`·`33` 같은 값이 남아 있을 수 있다.
- * 그런 값은 가장 가까운 5초로 당겨 오고(12 → 10, 33 → 35), 1~4초는 최소 5초로 올린다.
- * 그 밖의 범위 밖·숫자가 아닌 값은 fallback(기본 15초)로 시작한다.
+ * 1초는 그대로 두고, 5~50초는 가장 가까운 5초로 당긴다(12 → 10, 33 → 35).
+ * 1초와 가까운 2는 1초, 3~4는 5초로 올린다(둥근 값이 같으면 위쪽 5초).
+ * 0 이하·51 이상·숫자가 아닌 값은 fallback(기본 15초)로 시작한다.
  */
 export function normalizeTimeLimit(value, fallback = DEFAULT_SETTINGS.timeLimit) {
   const n = Math.round(Number(value));
-  if (!Number.isFinite(n) || n < 1 || n > TIME_MAX) return fallback;
-  const snapped = Math.round(n / TIME_STEP) * TIME_STEP;
-  return Math.max(TIME_MIN, Math.min(TIME_MAX, snapped));
+  if (!Number.isFinite(n) || n < TIME_MIN || n > TIME_MAX) return fallback;
+  if (n === TIME_MIN) return TIME_MIN;
+  return Math.max(TIME_MIN, Math.min(TIME_MAX, Math.round(n / TIME_STEP) * TIME_STEP));
+}
+
+/** 슬라이더를 움직일 때 들어온 값을 허용 값(1·5·10·…·50) 중 가장 가까운 값으로 당긴다.
+ *
+ * 드래그·클릭은 0~50 어느 값이든 들어올 수 있어, 0 이하는 최소 1초로 올리고
+ * 2~4초는 1초 또는 5초 중 가까운 쪽(3·4 → 5)으로 붙인다. 범위 위쪽·숫자가 아닌
+ * 값만 fallback 을 쓴다. 저장값을 읽을 때는 이 함수 대신 normalizeTimeLimit 을 쓴다.
+ */
+export function snapTimeLimit(value, fallback = DEFAULT_SETTINGS.timeLimit) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n > TIME_MAX) return fallback;
+  if (n <= TIME_MIN) return TIME_MIN;
+  return Math.max(TIME_MIN, Math.round(n / TIME_STEP) * TIME_STEP);
+}
+
+/** 제한 시간을 허용 값 한 칸씩 옮긴다(키보드 좌우 화살표). dir 은 -1·+1. */
+export function stepTimeLimit(value, dir) {
+  const cur = normalizeTimeLimit(value, DEFAULT_SETTINGS.timeLimit);
+  const i = TIME_VALUES.indexOf(cur);
+  const next = Math.max(0, Math.min(TIME_VALUES.length - 1, i + Math.sign(dir || 0)));
+  return TIME_VALUES[next];
 }
 
 const clampInt = (value, min, max, fallback) => {
@@ -112,8 +136,8 @@ export function loadSettings() {
   const settings = { ...DEFAULT_SETTINGS };
   // 4단계 시절에 저장한 설정(level 1~4)도 그대로 읽는다. 5단계가 늘었을 뿐 번호는 같다.
   if ([1, 2, 3, 4, 5].includes(saved.level)) settings.level = saved.level;
-  // 예전에는 10·15·20초만 저장했고, 그 뒤 1~50초 1초 단위를 거쳤다.
-  // 지금은 5~50초 5초 단위만 쓰므로 가장 가까운 5초로 맞춘다.
+  // 예전에는 10·15·20초만 저장했고, 그 뒤 5~50초 5초 단위를 거쳤다.
+  // 지금은 1초 또는 5초 단위만 쓰므로 가장 가까운 허용 값으로 맞춘다.
   if (saved.timeLimit != null) {
     settings.timeLimit = normalizeTimeLimit(saved.timeLimit, DEFAULT_SETTINGS.timeLimit);
   }

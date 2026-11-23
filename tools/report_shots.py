@@ -15,7 +15,8 @@
 - 별도 설정 창(⚙ 설정): 음량 70% → gain 0.35, 흑백모드로 화면 전체 회색, 화면 안·스크롤 0
   (desktop-settings.png, desktop-settings-mono.png, desktop-mono-home.png,
    mobile-settings.png, mobile-settings-mono.png, mobile-mono-home.png)
-- 제한 시간 5~50초(5초 단위) 슬라이더 · 5초 눈금 10개와 양끝 5초·50초 숫자 · 홈에 효과음 행 없음
+- 제한 시간 1초·5~50초 슬라이더 · 0~50초 눈금 11개(0·50 / 10의 배수 / 5의 배수 3단계)와
+  양끝 0초·50초 숫자 · 홈에 효과음 행 없음
 - 힌트 삭제(버튼·문구·API 없음)
 - 첫 제시 글자: 플레이어 선공이 제시어(사전의 2~3글자 일상 단어)의 첫 글자를 받고,
   안내 문구·`이어야 할 글자`가 그 글자를 보여 주는지(start-char.png, mobile-start-char.png)
@@ -146,11 +147,12 @@ def settings_shots(page, prefix):
     page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(160)
 
-    # 제한 시간 눈금: 5초 간격 10개가 썸 중심과 겹치고 양끝 5초·50초가 붙어 있는지
+    # 제한 시간 눈금: 0~50초 눈금 11개가 값/50 위치와 겹치고, 0·50 / 10의 배수 / 5의 배수
+    # 3단계로 굵기·길이·진하기가 서고, 양끝 0초·50초가 눈금 아래에 있는지
     scale = time_scale(page)
     ok, detail = ticks_ok(scale)
-    check(ok, f'{prefix} 제한 시간 5초 눈금 10개가 썸 중심과 정렬', detail)
-    check(scale['overflow'] <= 0 and all(-0.5 <= e['left'] and e['right'] <= scale['width'] + 0.5
+    check(ok, f'{prefix} 제한 시간 0~50초 눈금 11개·3단계 계층이 썸 중심과 정렬', detail)
+    check(scale['overflow'] <= 0 and all(-0.5 <= e['left'] and e['right'] <= scale['width'] + 2.5
                                          for e in scale['ends']),
           f'{prefix} 눈금·양끝 숫자가 슬라이더 안·오버플로 0',
           json.dumps(scale['ends'], ensure_ascii=False))
@@ -183,9 +185,9 @@ def settings_shots(page, prefix):
     }""")
     check(view['open'] and view['withinView'] and view['sheetScroll'] <= 1 and view['overflow'] <= 0,
           f'{prefix} 설정 창: 화면 안 · 스크롤 0 · 오버플로 0', json.dumps(view, ensure_ascii=False))
-    check(view['time']['min'] == '5' and view['time']['max'] == '50' and view['time']['step'] == '5'
+    check(view['time']['min'] == '0' and view['time']['max'] == '50' and view['time']['step'] == '1'
           and view['time']['value'] == '15' and view['time']['badge'] == '15',
-          f'{prefix} 제한 시간 5~50초·5초 단위(기본 15초)', json.dumps(view['time'], ensure_ascii=False))
+          f'{prefix} 제한 시간 0~50초 눈금자·1초 단위(기본 15초)', json.dumps(view['time'], ensure_ascii=False))
     check(view['vol'] == '70%' and view['gain'] is not None and abs(view['gain'] - 0.35) <= 0.02,
           f'{prefix} 설정 창 음량 70% → gain 0.35', json.dumps(view, ensure_ascii=False))
     page.screenshot(path=os.path.join(OUT, f'{prefix}-settings.png'))
