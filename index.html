@@ -127,7 +127,10 @@
         <button type="button" role="radio" data-sort="short" aria-checked="false">짧은순</button>
       </div>
 
-      <p class="dict-meta" id="dict-meta" aria-live="polite"></p>
+      <div class="dict-status">
+        <p class="dict-meta" id="dict-meta" aria-live="polite"></p>
+        <button class="dict-back-chip" id="dict-back-chip" type="button" hidden>← <span id="dict-back-word">이전</span></button>
+      </div>
 
       <div class="dict-body" id="dict-body">
         <ol class="dict-list" id="dict-list" aria-label="단어 목록"></ol>

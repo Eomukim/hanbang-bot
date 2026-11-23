@@ -2379,6 +2379,134 @@ def scenario_dict(page, tag):
     page.wait_for_function("() => window.__ITDA.dictPanel.sort === 'hard'")
     page.wait_for_timeout(140)
 
+    # 4b) 단어를 누르면 클립보드로 복사되고 토스트로 알려 준다(목록·검색어는 그대로)
+    try:
+        page.context.grant_permissions(['clipboard-read', 'clipboard-write'],
+                                       origin=page.evaluate('() => location.origin'))
+    except Exception:
+        pass
+    page.evaluate("() => { const t = document.querySelector('.toast'); if (t) t.classList.remove('show'); }")
+    before_copy = dict_view(page)
+    target = page.evaluate("""() => {
+        const li = document.querySelector('#dict-list .dict-item');
+        const btn = li.querySelector('.dict-word');
+        return { word: li.dataset.word, tag: btn.tagName, text: btn.innerText.trim(),
+                 label: btn.getAttribute('aria-label') || '', hover: !!getComputedStyle(btn).cursor };
+    }""")
+    check(target['tag'] == 'BUTTON' and target['word'] in target['label'] and '복사' in target['label'],
+          f'[{tag}] 목록의 단어가 복사 버튼', json.dumps(target, ensure_ascii=False))
+    page.click('#dict-list .dict-item .dict-word')
+    page.wait_for_timeout(280)
+    copied = page.evaluate("""async () => {
+        const t = document.querySelector('.toast');
+        let clip;
+        try { clip = await navigator.clipboard.readText(); } catch (e) { clip = 'ERR:' + e.name; }
+        return { toast: t ? t.textContent : '', shown: t ? t.classList.contains('show') : false,
+                 clip, last: window.__ITDA.dictPanel.lastCopy, info: window.__ITDA.dictPanel.info() };
+    }""")
+    check(copied['shown'] and '복사' in copied['toast'] and target['word'] in copied['toast'],
+          f'[{tag}] 단어 클릭 → 복사 토스트', json.dumps(copied['toast'], ensure_ascii=False))
+    check(copied['clip'] == target['word'], f'[{tag}] 클립보드에 그 단어가 들어감',
+          f"clipboard={copied['clip']!r} / 기대={target['word']!r}")
+    check(copied['last'] and copied['last']['ok'] and copied['last']['word'] == target['word'],
+          f'[{tag}] 복사 결과 기록', json.dumps(copied['last'], ensure_ascii=False))
+    after_copy = dict_view(page)
+    check(after_copy['info']['query'] == before_copy['info']['query']
+          and after_copy['info']['total'] == before_copy['info']['total']
+          and after_copy['items'] == before_copy['items'] and after_copy['meta'] == before_copy['meta'],
+          f'[{tag}] 복사는 목록·검색어를 건드리지 않음',
+          f"{before_copy['info']['query']} {before_copy['info']['total']}개 → {after_copy['info']['query']} {after_copy['info']['total']}개")
+
+    # 4c) ‘후속 O개’를 누르면 그 단어의 끝 글자로 다시 찾고, 지금 정렬·두음 설정을 그대로 따른다
+    prev_query = after_copy['info']['query']
+    idx = page.evaluate("""() => {
+        const items = [...document.querySelectorAll('#dict-list .dict-item')];
+        return items.findIndex((li) => li.querySelector('button.dict-tail'));
+    }""")
+    follow = page.evaluate("""(i) => {
+        const li = document.querySelectorAll('#dict-list .dict-item')[i];
+        const btn = li.querySelector('button.dict-tail');
+        return { word: li.dataset.word, count: Number(li.dataset.count), tail: btn.dataset.tail,
+                 text: btn.innerText.trim(), label: btn.getAttribute('aria-label') || '' };
+    }""", idx)
+    page.locator('#dict-list .dict-item').nth(idx).locator('button.dict-tail').click()
+    page.wait_for_timeout(320)
+    fv = page.evaluate("""() => {
+        const p = window.__ITDA.dictPanel;
+        return { info: p.info(), input: document.getElementById('dict-input').value,
+                 meta: document.getElementById('dict-meta').innerText,
+                 back: document.getElementById('dict-back-chip').hidden ? '' : document.getElementById('dict-back-chip').innerText.trim(),
+                 scrollTop: document.getElementById('dict-body').scrollTop,
+                 prefixBad: p.rows().filter((r) => !r.word.startsWith(p.query.charAt(0))).length,
+                 sort: p.sort, twoeum: p.twoeum };
+    }""")
+    expected_n = page.evaluate("(ch) => window.__ITDA.dict.countFrom(ch)", follow['tail'])
+    check(follow['tail'] and follow['tail'] == follow['word'][-1], f'[{tag}] 후속 칩은 단어의 끝 글자를 갖고 있음',
+          json.dumps(follow, ensure_ascii=False))
+    check(fv['info']['query'] == follow['tail'] and fv['input'] == follow['tail'],
+          f'[{tag}] 후속 클릭 → 끝 글자로 검색', json.dumps({'query': fv['info']['query'], 'input': fv['input']}, ensure_ascii=False))
+    check(fv['info']['total'] == follow['count'] == expected_n and fv['prefixBad'] == 0,
+          f'[{tag}] 후속 개수만큼 그 글자 단어가 나옴',
+          f"칩 {follow['count']} · 검색 {fv['info']['total']} · 규칙 {expected_n}")
+    check(follow['tail'] in fv['meta'] and '어려움순' in fv['meta'],
+          f'[{tag}] 후속 검색 안내문구 · 지금 정렬 유지', fv['meta'])
+    check(fv['info']['history'] == [prev_query], f'[{tag}] 후속 타기 기록', json.dumps(fv['info']['history'], ensure_ascii=False))
+    check(prev_query in fv['back'] and fv['back'].startswith('←'), f'[{tag}] ← 이전 검색어 칩', fv['back'])
+    check(fv['scrollTop'] == 0, f'[{tag}] 후속 검색은 목록 맨 위부터', str(fv['scrollTop']))
+    rows_follow = page.evaluate(DICT_ORDER, 'hard')
+    check(not rows_follow['bad'], f'[{tag}] 후속 결과도 어려움순', json.dumps(rows_follow['bad'][:2], ensure_ascii=False))
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 후속 검색 뒤 가로 오버플로 0', str(overflow(page)))
+
+    # 4d) 후속을 한 번 더 타고 내려간 뒤 정렬을 바꾸고, ← 이전 으로 돌아온다
+    idx2 = page.evaluate("""() => [...document.querySelectorAll('#dict-list .dict-item')]
+        .findIndex((li) => li.querySelector('button.dict-tail'))""")
+    tail2 = page.evaluate("""(i) => {
+        const li = document.querySelectorAll('#dict-list .dict-item')[i];
+        return { tail: li.querySelector('button.dict-tail').dataset.tail, from: window.__ITDA.dictPanel.query };
+    }""", idx2)
+    page.locator('#dict-list .dict-item').nth(idx2).locator('button.dict-tail').click()
+    page.wait_for_timeout(300)
+    chain = page.evaluate("() => window.__ITDA.dictPanel.info()")
+    check(chain['query'] == tail2['tail'] and chain['history'] == [prev_query, tail2['from']],
+          f'[{tag}] 후속을 타고 계속 내려감', json.dumps({'q': chain['query'], 'history': chain['history']}, ensure_ascii=False))
+    page.click('#dict-sorts button[data-sort="long"]')
+    page.wait_for_timeout(200)
+    page.click('#dict-back-chip')
+    page.wait_for_timeout(300)
+    backed = page.evaluate("""() => ({ info: window.__ITDA.dictPanel.info(),
+        input: document.getElementById('dict-input').value, sort: window.__ITDA.dictPanel.sort,
+        backHidden: document.getElementById('dict-back-chip').hidden,
+        meta: document.getElementById('dict-meta').innerText })""")
+    check(backed['info']['query'] == tail2['from'] and backed['input'] == tail2['from']
+          and backed['info']['history'] == [prev_query],
+          f'[{tag}] ← 이전으로 한 단계 돌아가기',
+          json.dumps({'q': backed['info']['query'], 'history': backed['info']['history']}, ensure_ascii=False))
+    check(backed['sort'] == 'long' and '긴순' in backed['meta'] and not backed['backHidden'],
+          f'[{tag}] 돌아가도 정렬·기록 유지', f"{backed['sort']} · {backed['meta']}")
+    page.click('#dict-sorts button[data-sort="hard"]')
+    page.wait_for_timeout(180)
+
+    # 4e) 한방 단어(후속 0개)는 누를 수 있는 후속 칩이 없다
+    dict_search(page, '가')
+    one = page.evaluate("""() => {
+        const li = [...document.querySelectorAll('#dict-list .dict-item')].find((l) => l.classList.contains('oneshot'));
+        if (!li) return null;
+        const tail = li.querySelector('.dict-tail');
+        return { word: li.dataset.word, tag: tail.tagName, text: tail.innerText.trim(),
+                 buttons: tail.tagName === 'BUTTON' };
+    }""")
+    check(one and one['tag'] == 'SPAN' and '한방' in one['text'] and not one['buttons'],
+          f'[{tag}] 한방 단어는 후속 칩을 누를 수 없음', json.dumps(one, ensure_ascii=False))
+    if one:
+        page.evaluate("""() => {
+            const li = [...document.querySelectorAll('#dict-list .dict-item')].find((l) => l.classList.contains('oneshot'));
+            li.querySelector('.dict-tail').click();
+        }""")
+        page.wait_for_timeout(220)
+        check(page.evaluate("() => window.__ITDA.dictPanel.query") == '가',
+              f'[{tag}] 한방 칩을 눌러도 검색어가 바뀌지 않음',
+              page.evaluate("() => window.__ITDA.dictPanel.query"))
+
     # 5) 두음 포함 토글: ‘리’ 하나로 리·이 두 구간을 함께 본다
     dict_search(page, '리')
     both = dict_view(page)

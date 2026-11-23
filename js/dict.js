@@ -6,6 +6,10 @@
  *
  * 사전은 시작 음절마다 연속 구간이라, 검색은 구간 안에서 이진 탐색 + startsWith 로 끝난다.
  * 후속 수는 끝 글자 하나로만 정해지므로 글자별로 한 번만 계산해 캐시한다.
+ *
+ * 목록의 단어를 누르면 그 단어를 클립보드로 복사하고, ‘후속 N개’를 누르면 그 단어의
+ * 끝 글자를 검색어로 다시 찾는다(두음 포함·정렬 4종은 지금 고른 그대로). 후속을 타고
+ * 내려간 자리는 ‘← 이전’ 칩으로 되돌아온다.
  */
 
 import { allowedStarts, twoeumOf } from './rules.js';
@@ -32,6 +36,32 @@ const roFor = (text) => {
   return k >= 0 && k < 11172 && k % 28 ? '으로' : '로';
 };
 
+/** 클립보드에 글자를 넣는다. 보안 컨텍스트·권한이 없으면 옛 방식으로 한 번 더 시도한다. */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* 권한이 없거나 보안 컨텍스트가 아니면 아래 폴백으로 */
+  }
+  try {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0;';
+    document.body.appendChild(area);
+    area.select();
+    area.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(area);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 /** 사전 words[a, b) 안에서 prefix 이상이 처음 나오는 위치. */
 function lowerBound(words, prefix, a, b) {
   let lo = a;
@@ -45,14 +75,19 @@ function lowerBound(words, prefix, a, b) {
 }
 
 export class DictPanel {
-  constructor({ dict, sfx, onBack }) {
+  constructor({ dict, sfx, onBack, toast }) {
     this.dict = dict;
     this.sfx = sfx;
     this.onBack = onBack;
+    this.toast = toast;
 
     this.query = '';
     this.twoeum = true;
     this.sort = 'hard';
+    /** @type {string[]} 후속 단어를 타고 내려오기 전의 검색어들(뒤가 직전) */
+    this.history = [];
+    /** 마지막 복사 결과(검증용) */
+    this.lastCopy = null;
 
     /** @type {string[]} 검색에 걸린 단어 */
     this.words = [];
@@ -94,11 +129,14 @@ export class DictPanel {
       moreCount: $('dict-more-count'),
       back: $('btn-dict-back'),
       total: $('dict-total'),
+      backChip: $('dict-back-chip'),
+      backWord: $('dict-back-word'),
     };
 
     this.el.total.textContent = `${num(this.dict.size)} 단어`;
     this.renderTwoeum();
     this.renderSorts();
+    this.renderHistory();
 
     this.el.back.addEventListener('click', () => this.close());
     this.el.clear.addEventListener('click', () => {
@@ -129,6 +167,25 @@ export class DictPanel {
       this.sfx?.play('tap');
       this.renderPage();
     });
+
+    // 목록에서: 단어를 누르면 복사, ‘후속 O개’를 누르면 그 끝 글자로 다시 찾기
+    this.el.list.addEventListener('click', (event) => {
+      const tail = event.target.closest('.dict-tail');
+      if (tail) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.followTail(tail.dataset.tail);
+        return;
+      }
+      const word = event.target.closest('.dict-word');
+      if (word) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.copyWord(word.closest('.dict-item')?.dataset.word);
+      }
+    });
+
+    this.el.backChip.addEventListener('click', () => this.goBack());
 
     const input = this.el.input;
     input.addEventListener('input', (event) => {
@@ -161,6 +218,7 @@ export class DictPanel {
     this.el.total.textContent = `${num(this.dict.size)} 단어`;   // 사전은 mount 뒤에 불러온다
     this.el.input.value = this.query;
     this.renderClear();
+    this.renderHistory();
     if (!this.query) {
       this.renderEmpty('start');
       this.renderMeta();
@@ -213,12 +271,60 @@ export class DictPanel {
 
   /* ── 검색 ─────────────────────────────────────────────── */
 
-  /** 입력값을 다듬어(공백·한글 외 제거) 다시 찾는다. */
+  /** 입력값을 다듬어(공백·한글 외 제거) 새로 찾는다. 직접 친 검색어는 후속 기록을 비운다. */
   setQuery(raw) {
+    this.history = [];
+    this.applyQuery(raw);
+    this.renderHistory();
+  }
+
+  applyQuery(raw) {
     const cleaned = String(raw || '').replace(/\s+/g, '').replace(/[^가-힣]/g, '').slice(0, MAX_QUERY);
     this.query = cleaned;
     this.renderClear();
     this.search();
+  }
+
+  /** ‘후속 O개’ — 지금 검색어를 기록에 남기고 그 단어의 끝 글자로 다시 찾는다.
+   *  두음 포함·정렬 4종은 지금 고른 상태를 그대로 따른다(사전 검색과 같은 경로). */
+  followTail(char) {
+    const target = String(char || '').slice(0, 1);
+    if (!target) return;
+    if (this.query && this.query !== target) this.history.push(this.query);
+    this.el.input.value = target;
+    this.applyQuery(target);
+    this.renderHistory();
+    this.sfx?.play('tap');
+  }
+
+  /** 기록에 남은 직전 검색어로 돌아간다. */
+  goBack() {
+    const prev = this.history.pop();
+    if (prev == null) return;
+    this.el.input.value = prev;
+    this.applyQuery(prev);
+    this.renderHistory();
+    this.sfx?.play('tap');
+  }
+
+  /** 단어를 클립보드에 넣고 토스트·소리로 알린다. */
+  async copyWord(word) {
+    const text = String(word || '').trim();
+    if (!text) return;
+    const ok = await copyText(text);
+    this.lastCopy = { word: text, ok, at: Date.now() };
+    this.sfx?.play('tap');
+    this.toast?.(ok ? `‘${text}’ 복사됨` : `‘${text}’을 복사하지 못했어요`);
+    return ok;
+  }
+
+  renderHistory() {
+    const prev = this.history.length ? this.history[this.history.length - 1] : null;
+    this.el.backChip.hidden = prev == null;
+    if (prev != null) {
+      this.el.backWord.textContent = prev;
+      this.el.backChip.setAttribute('aria-label', `이전 검색 ‘${prev}’${roFor(prev)} 돌아가기`);
+    }
   }
 
   search() {
@@ -379,15 +485,20 @@ export class DictPanel {
       const oneShot = count === 0;
       const head = esc(word.slice(0, highlight));
       const rest = esc(word.slice(highlight));
+      const lastChar = word.charAt(word.length - 1);
       const chips = [];
       if (tier) chips.push(tier <= 3 ? '<span class="dict-chip easy">일상</span>' : '<span class="dict-chip loan">외래어</span>');
       if (this.alts[i]) chips.push('<span class="dict-chip twoeum">두음</span>');
+      const tail = oneShot
+        ? '<span class="dict-tail shot">🔥 한방</span>'
+        : `<button class="dict-tail" type="button" data-tail="${esc(lastChar)}"`
+          + ` aria-label="‘${esc(word)}’ 끝 글자 ‘${esc(lastChar)}’${roFor(lastChar)} 이어지는 단어 ${num(count)}개 보기">후속 ${num(count)}개</button>`;
       parts.push(`
         <li class="dict-item${oneShot ? ' oneshot' : ''}" data-word="${esc(word)}" data-count="${count}" data-len="${word.length}" data-tier="${tier}">
-          <span class="dict-word">${head ? `<b>${head}</b>` : ''}${rest}</span>
+          <button class="dict-word" type="button" aria-label="‘${esc(word)}’ 복사">${head ? `<b>${head}</b>` : ''}${rest}</button>
           <span class="dict-tags">
             <span class="dict-len">${word.length}글자</span>
-            ${oneShot ? '<span class="dict-tail shot">🔥 한방</span>' : `<span class="dict-tail">후속 ${num(count)}개</span>`}
+            ${tail}
             ${chips.join('')}
           </span>
         </li>`);
@@ -425,6 +536,8 @@ export class DictPanel {
       sort: this.sort,
       total: this.order.length,
       shown: this.shown,
+      history: [...this.history],
+      lastCopy: this.lastCopy,
     };
   }
 }

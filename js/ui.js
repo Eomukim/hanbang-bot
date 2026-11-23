@@ -93,6 +93,7 @@ export class App {
       dict: this.dict,
       sfx: this.sfx,
       onBack: () => this.show('setup'),
+      toast: (message) => this.toast(message),
     });
     this.dictPanel.mount();
 

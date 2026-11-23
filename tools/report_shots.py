@@ -9,6 +9,8 @@
 - 설정 화면 정리: 상단 태그라인·하단 규칙/팁/전적 블록 없음, 대전 시작이 마지막 요소, 세로 스크롤 0
 - 단어 사전: 설정 화면 오른쪽 위 📖 사전 버튼 · ‘이’ 1글자 검색 · 어려움순(한방·후속 수) ·
   쉬움순(일상 먼저) · 100개씩 더 보기 · 돌아가기 (dict.png, dict-easy.png, mobile-dict.png)
+- 사전 단어 클릭 복사(토스트) · ‘후속 O개’ 클릭으로 그 끝 글자 재검색 · ← 이전 칩
+  (dict-copy.png, dict-follow.png, mobile-dict-copy.png, mobile-dict-follow.png)
 - 내 단어장 삭제(버튼·모달·사전 API 없음)
 - 별도 설정 창(⚙ 설정): 음량 70% → gain 0.35, 흑백모드로 화면 전체 회색, 화면 안·스크롤 0
   (desktop-settings.png, desktop-settings-mono.png, desktop-mono-home.png,
@@ -567,6 +569,54 @@ def main():
         page.screenshot(path=os.path.join(OUT, 'dict-easy.png'))
         page.click('#dict-sorts button[data-sort="hard"]')
         page.wait_for_timeout(200)
+
+        # 단어 클릭 복사 → 토스트, ‘후속 O개’ 클릭 → 그 끝 글자로 다시 정렬 검색(← 이전)
+        copied = page.evaluate("""async () => {
+            const li = document.querySelector('#dict-list .dict-item');
+            li.querySelector('.dict-word').click();
+            await new Promise((r) => setTimeout(r, 260));
+            const t = document.querySelector('.toast');
+            let clip = null;
+            try { clip = await navigator.clipboard.readText(); } catch (e) { clip = 'ERR'; }
+            return { word: li.dataset.word, toast: t ? t.textContent : '',
+                     shown: t ? t.classList.contains('show') : false, clip };
+        }""")
+        check(copied['shown'] and copied['word'] in copied['toast'] and '복사' in copied['toast'],
+              '사전: 단어 클릭 → 복사 토스트', json.dumps(copied, ensure_ascii=False))
+        check(copied['clip'] in (None, 'ERR') or copied['clip'] == copied['word'],
+              '사전: 클립보드에 그 단어', f"clipboard={copied['clip']!r}")
+        page.screenshot(path=os.path.join(OUT, 'dict-copy.png'))
+        page.wait_for_timeout(2400)      # 복사 토스트가 사라진 뒤 후속 화면을 찍는다
+        page.click('#dict-sorts button[data-sort="easy"]')   # 일상 단어(후속이 많은)부터 보이게
+        page.wait_for_timeout(260)
+        idx = page.evaluate("""() => [...document.querySelectorAll('#dict-list .dict-item')]
+            .findIndex((li) => li.querySelector('button.dict-tail'))""")
+        tail = page.evaluate("""(i) => {
+            const li = document.querySelectorAll('#dict-list .dict-item')[i];
+            const b = li.querySelector('button.dict-tail');
+            return { word: li.dataset.word, tail: b.dataset.tail, text: b.innerText.trim() };
+        }""", idx)
+        page.locator('#dict-list .dict-item').nth(idx).locator('button.dict-tail').click()
+        page.wait_for_timeout(320)
+        fview = page.evaluate("""() => ({ info: window.__ITDA.dictPanel.info(),
+            input: document.getElementById('dict-input').value,
+            meta: document.getElementById('dict-meta').innerText,
+            back: document.getElementById('dict-back-chip').hidden ? '' : document.getElementById('dict-back-chip').innerText.trim(),
+            bad: window.__ITDA.dictPanel.rows().filter((r) => !r.word.startsWith(window.__ITDA.dictPanel.query.charAt(0))).length })""")
+        check(fview['info']['query'] == tail['tail'] and fview['input'] == tail['tail']
+              and fview['info']['total'] > 0 and fview['bad'] == 0,
+              '사전: 후속 O개 → 끝 글자로 다시 검색',
+              json.dumps({'tail': tail, 'query': fview['info']['query'], 'total': fview['info']['total']}, ensure_ascii=False))
+        check(fview['info']['history'] == ['이'] and '이' in fview['back'],
+              '사전: 후속 타기 기록 · ← 이전 칩', f"{fview['info']['history']} · {fview['back']}")
+        check(fview['info']['sort'] == 'easy' and '쉬움순' in fview['meta'],
+              '사전: 후속으로 넘어가도 정렬 유지', fview['meta'])
+        page.screenshot(path=os.path.join(OUT, 'dict-follow.png'))
+        page.click('#dict-back-chip')
+        page.wait_for_timeout(260)
+        check(page.evaluate("() => window.__ITDA.dictPanel.query") == '이', '사전: ← 이전으로 돌아가기')
+        page.click('#dict-sorts button[data-sort="hard"]')
+        page.wait_for_timeout(200)
         page.click('#btn-dict-back')
         page.wait_for_timeout(250)
         check(page.evaluate("document.getElementById('scr-dict').hidden && !document.getElementById('scr-setup').hidden"),
@@ -941,6 +991,43 @@ def main():
         check(not hits, '모바일 사전 화면 옛 이름 0건', json.dumps(hits, ensure_ascii=False))
         page.screenshot(path=os.path.join(OUT, 'mobile-dict.png'))
         summary['mobile_dict'] = mdict
+
+        # 모바일: 단어 클릭 복사 토스트 · 후속 칩으로 끝 글자 검색
+        mcopy = page.evaluate("""async () => {
+            const li = document.querySelector('#dict-list .dict-item');
+            li.querySelector('.dict-word').click();
+            await new Promise((r) => setTimeout(r, 260));
+            const t = document.querySelector('.toast');
+            return { word: li.dataset.word, toast: t ? t.textContent : '',
+                     shown: t ? t.classList.contains('show') : false };
+        }""")
+        check(mcopy['shown'] and mcopy['word'] in mcopy['toast'] and '복사' in mcopy['toast'],
+              '모바일 사전: 단어 클릭 → 복사 토스트', json.dumps(mcopy, ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'mobile-dict-copy.png'))
+        page.wait_for_timeout(2400)
+        page.click('#dict-sorts button[data-sort="easy"]')
+        page.wait_for_timeout(240)
+        midx = page.evaluate("""() => [...document.querySelectorAll('#dict-list .dict-item')]
+            .findIndex((li) => li.querySelector('button.dict-tail'))""")
+        mtail = page.evaluate("""(i) => {
+            const li = document.querySelectorAll('#dict-list .dict-item')[i];
+            return { tail: li.querySelector('button.dict-tail').dataset.tail };
+        }""", midx)
+        page.locator('#dict-list .dict-item').nth(midx).locator('button.dict-tail').click()
+        page.wait_for_timeout(320)
+        mfollow = page.evaluate("""() => ({ q: window.__ITDA.dictPanel.query,
+            input: document.getElementById('dict-input').value,
+            back: document.getElementById('dict-back-chip').hidden ? '' : document.getElementById('dict-back-chip').innerText.trim(),
+            bad: window.__ITDA.dictPanel.rows().filter((r) => !r.word.startsWith(window.__ITDA.dictPanel.query.charAt(0))).length,
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth })""")
+        check(mfollow['q'] == mtail['tail'] and mfollow['input'] == mtail['tail']
+              and mfollow['bad'] == 0 and mfollow['overflow'] <= 0,
+              '모바일 사전: 후속 O개 → 끝 글자로 다시 검색', json.dumps(mfollow, ensure_ascii=False))
+        page.screenshot(path=os.path.join(OUT, 'mobile-dict-follow.png'))
+        page.click('#dict-back-chip')
+        page.wait_for_timeout(240)
+        page.click('#dict-sorts button[data-sort="hard"]')
+        page.wait_for_timeout(180)
         page.click('#btn-dict-back')
         page.wait_for_timeout(250)
 

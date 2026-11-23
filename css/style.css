@@ -1354,7 +1354,7 @@ html.mono .confetti { filter: grayscale(1); }
   gap: 9px;
 }
 .dict-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.dict-top, .dict-search, .dict-sorts, .dict-meta, .dict-more, .dict-empty { flex: 0 0 auto; }
+.dict-top, .dict-search, .dict-sorts, .dict-status, .dict-meta, .dict-more, .dict-empty { flex: 0 0 auto; }
 .dict-back {
   flex: 0 0 auto;
   padding: 8px 12px 9px;
@@ -1451,11 +1451,28 @@ html.mono .confetti { filter: grayscale(1); }
 
 .dict-meta {
   margin: 0; padding: 0 2px;
+  flex: 1 1 auto; min-width: 0;
   font-size: 11px; color: var(--mute); letter-spacing: 0;
   font-variant-numeric: tabular-nums;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .dict-meta b { color: var(--sky-ink); font-weight: 800; }
+.dict-status { display: flex; align-items: center; gap: 8px; }
+/* 후속 단어를 타고 내려간 자리에서 직전 검색어로 돌아가는 작은 칩 */
+.dict-back-chip {
+  flex: none; max-width: 132px;
+  padding: 3px 8px 4px;
+  border: 1px solid var(--sky-edge); border-radius: 9px;
+  background: var(--sky-soft); color: var(--sky-ink);
+  font-family: var(--display);
+  font-size: 10.5px; font-weight: 800; letter-spacing: .01em; line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .16s ease, transform .12s ease;
+}
+.dict-back-chip:hover { background: #DCEBFB; }
+.dict-back-chip:active { transform: translateY(1px); }
+.dict-back-chip:focus-visible { outline: 2px solid var(--sky); outline-offset: 1px; }
 
 .dict-body {
   flex: 1 1 auto; min-height: 0;
@@ -1473,13 +1490,24 @@ html.mono .confetti { filter: grayscale(1); }
   box-shadow: 0 2px 0 var(--sh), inset 0 1px 0 #fff;
 }
 .dict-item.oneshot { border-color: #F0D6CF; box-shadow: inset 3px 0 0 #EFC4BC, 0 2px 0 var(--sh), inset 0 1px 0 #fff; }
+/* 단어를 누르면 복사 — 글자처럼 보이지만 버튼이다(누를 수 있다는 걸 호버로 알린다) */
 .dict-word {
   flex: 1 1 auto; min-width: 0;
+  display: block;
+  margin: -2px -4px; padding: 2px 4px;
+  border: 0; border-radius: 7px;
+  background: none;
+  text-align: left; cursor: pointer;
   font-family: var(--font); font-weight: 700;
   font-size: 15px; letter-spacing: -.01em; line-height: 1.4;
   color: var(--ink);
   overflow-wrap: anywhere;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .14s ease;
 }
+.dict-word:hover { background: var(--sky-soft); }
+.dict-word:active { background: #DCEBFB; }
+.dict-word:focus-visible { outline: 2px solid var(--sky); outline-offset: 1px; }
 .dict-word b { color: var(--sky-ink); font-weight: 800; background: rgba(61,126,200,.1); border-radius: 4px; padding: 0 1px; }
 .dict-tags { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
 .dict-len { font-size: 10px; font-weight: 700; color: var(--mute-2); letter-spacing: 0; font-variant-numeric: tabular-nums; }
@@ -1489,6 +1517,16 @@ html.mono .confetti { filter: grayscale(1); }
   color: var(--mute); background: var(--fill);
   white-space: nowrap; font-variant-numeric: tabular-nums;
 }
+/* 후속 O개는 버튼: 누르면 그 끝 글자로 후속 단어를 지금 정렬 그대로 다시 찾는다 */
+button.dict-tail {
+  border: 0; cursor: pointer;
+  font-family: var(--font);
+  -webkit-tap-highlight-color: transparent;
+  transition: background .14s ease, color .14s ease, box-shadow .14s ease, transform .12s ease;
+}
+button.dict-tail:hover { color: var(--sky-ink); background: var(--sky-soft); box-shadow: inset 0 0 0 1px var(--sky-edge); }
+button.dict-tail:active { transform: translateY(1px); }
+button.dict-tail:focus-visible { outline: 2px solid var(--sky); outline-offset: 1px; }
 .dict-tail.shot { color: var(--coral-ink); background: var(--coral-soft); }
 .dict-chip { font-size: 9.5px; font-weight: 800; letter-spacing: 0; border-radius: 8px; padding: 3px 6px; white-space: nowrap; }
 .dict-chip.easy { color: var(--sage-ink); background: var(--sage-soft); }
