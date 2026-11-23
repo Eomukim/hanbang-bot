@@ -14,6 +14,10 @@
  - 단어 사전(#scr-dict): 설정 화면 맨 위 오른쪽 📖 사전 버튼(기존 정리 규칙·세로 스크롤 0 유지) ·
    1글자/앞부분 검색 · 두음 포함 토글 · 어려움·쉬움·긴·짧은 4가지 정렬 순서 · 항목의 글자 수와
    후속 개수 배지 · 100개씩 더 보기 · ← 돌아가기 · 키보드 높이 레이아웃
+ - 별도 설정 창(⚙ 설정): 음량 0~100%(gain 비례·음소거 토글·옛 효과음 끔→0% 이전) ·
+   흑백모드(배경·보드·시트·토스트 전체 필터·레이아웃 유지) · 저장/복원
+ - 제한 시간 1~50초 슬라이더: 숫자 배지·채움 비율·1~50 전 구간 저장·범위 밖 기본값,
+   1·2·5초에서도 즉시 끝나지 않고 그 초만큼 세다 시간 초과
  - 내 단어장 삭제(버튼·모달·사전 API 없음, 남은 localStorage 값 무시)
  - 결과 화면(승리·패배·시간 초과·포기) 난이도 배지
  - 결과 화면 배틀 내역: 버튼 열기/닫기 · 카드 안 세로 스크롤 · 턴·나/봇·단어·점수·태그 · 0수 종료(포기·시간 초과) · 아주 긴 단어 줄바꿈 · 모바일 오버플로
@@ -827,9 +831,13 @@ def legacy_round(page, tag, old):
     page.wait_for_timeout(250)
     view = page.evaluate("""(old) => ({
         checked: document.querySelector('.level[aria-checked="true"]')?.dataset.lv,
-        sound: document.getElementById('sound-value').textContent,
-        soundPressed: document.getElementById('btn-sound').getAttribute('aria-pressed'),
+        volume: document.getElementById('vol-value').textContent,
+        volumeValue: document.getElementById('vol-range').value,
+        volumeIcon: document.getElementById('vol-icon').textContent,
+        timeLimit: document.getElementById('time-range').value,
+        timeBadge: document.getElementById('time-value').textContent,
         first: document.querySelector('#first-opts button[aria-checked="true"]')?.dataset.first,
+        sfx: window.__ITDA.sfx.volume,
         record: JSON.parse(localStorage.getItem('itda.record.v1') || '{}'),
         recordDom: !!document.getElementById('record') || !!document.querySelector('#scr-setup .record'),
         migratedSettings: !!localStorage.getItem('itda.settings.v1'),
@@ -837,8 +845,11 @@ def legacy_round(page, tag, old):
         legacyKept: !!localStorage.getItem(old + '.settings.v1'),
     })""", old)
     check(view['checked'] == '4', f'[{tag}] {old} 설정 Lv.4 복원', str(view['checked']))
-    check(view['sound'] == '끔' and view['soundPressed'] == 'false' and view['first'] == 'bot',
-          f'[{tag}] {old} 설정 소리·선공 복원', f"{view['sound']} / {view['first']}")
+    # 예전 '효과음 끔'은 음량 0%로, 제한 시간 15초는 그대로 1~50초 슬라이더에 앉는다.
+    check(view['volume'] == '0%' and view['volumeValue'] == '0' and view['sfx'] == 0
+          and view['timeLimit'] == '15' and view['timeBadge'] == '15' and view['first'] == 'bot',
+          f'[{tag}] {old} 설정 소리(0%)·제한 시간·선공 복원',
+          f"vol {view['volume']}({view['sfx']}) / time {view['timeLimit']} / {('first ' + str(view['first']))}")
     row4 = view['record'].get('4', {})
     check(row4.get('wins') == 3 and row4.get('losses') == 4 and row4.get('bestScore') == 260,
           f'[{tag}] {old} 전적 새 키로 유지(화면엔 미표시)', json.dumps(row4, ensure_ascii=False)[:120])
@@ -1072,18 +1083,26 @@ def scenario_no_custom(page, tag):
           f'[{tag}] 내 단어장 사전·앱 API 없음',
           f"dict={gone['dictApi']} app={gone['appApi']} state={gone['state']}")
 
-    # 버튼이 빠진 설정 행이 빈칸 없이 한 줄을 채우는지 (데스크톱·모바일)
+    # 효과음 행은 별도 설정 창으로 옮겼다: 홈 화면에 남은 행이 없고, 제한 시간 슬라이더가
+    # 설정 칸 폭을 그대로 쓰는지.
     layout = page.evaluate("""() => {
-        const row = document.getElementById('btn-sound').getBoundingClientRect();
-        const box = document.querySelector('.setup-actions').getBoundingClientRect();
-        const btn = document.getElementById('btn-sound');
-        return { rowW: Math.round(row.width), boxW: Math.round(box.width),
-                 fill: row.width > 0 ? Math.round(row.width / box.width * 100) : 0,
-                 sound: document.getElementById('sound-value').textContent,
-                 pressed: btn.getAttribute('aria-pressed'),
-                 cols: getComputedStyle(document.querySelector('.setup-actions')).gridTemplateColumns };
+        const field = document.querySelector('.field-time');
+        const slider = document.getElementById('time-slider').getBoundingClientRect();
+        const box = field.getBoundingClientRect();
+        return { rowW: Math.round(slider.width), boxW: Math.round(box.width),
+                 fill: box.width > 0 ? Math.round(slider.width / box.width * 100) : 0,
+                 soundRow: !!document.getElementById('btn-sound'),
+                 actions: !!document.querySelector('.setup-actions'),
+                 settingRow: document.querySelectorAll('.setting-row').length,
+                 timeSeg: !!document.getElementById('time-opts'),
+                 timeBadge: document.querySelector('.time-badge')?.innerText.trim() || '' };
     }""")
-    check(layout['fill'] >= 99, f'[{tag}] 효과음 설정 행이 폭 전체 사용',
+    check(layout['fill'] >= 99, f'[{tag}] 제한 시간 슬라이더가 설정 칸 폭 전체 사용',
+          json.dumps(layout, ensure_ascii=False))
+    check(not layout['soundRow'] and not layout['actions'] and layout['settingRow'] == 0,
+          f'[{tag}] 홈 화면의 효과음 행 제거(별도 설정 창으로 이동)',
+          json.dumps(layout, ensure_ascii=False))
+    check(not layout['timeSeg'] and layout['timeBadge'], f'[{tag}] 제한 시간 3버튼 → 슬라이더 교체',
           json.dumps(layout, ensure_ascii=False))
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 화면 가로 오버플로 0', str(overflow(page)))
 
@@ -1670,6 +1689,323 @@ def scenario_mission(page, tag, report_dir=None):
     page.evaluate("window.__ITDA.app.engine.destroy()")
     page.wait_for_timeout(900)
     page.evaluate("window.__ITDA.app.hideResult()")
+
+
+def settings_view(page):
+    """설정 창 · 시간 슬라이더 · 음량 · 흑백모드의 현재 상태."""
+    return page.evaluate("""() => {
+        const ov = document.getElementById('ov-settings');
+        const sheet = ov.querySelector('.settings-sheet');
+        const sr = sheet.getBoundingClientRect();
+        const time = document.getElementById('time-range');
+        const vol = document.getElementById('vol-range');
+        const track = document.querySelector('#time-slider .slider-track').getBoundingClientRect();
+        const fill = document.getElementById('time-fill').getBoundingClientRect();
+        const btn = document.getElementById('btn-settings');
+        const br = btn.getBoundingClientRect();
+        const setup = document.querySelector('#scr-setup .setup').getBoundingClientRect();
+        const filters = {};
+        for (const sel of ['.bg', '#app', '#ov-settings', '.toast']) {
+            const el = document.querySelector(sel);
+            filters[sel] = el ? getComputedStyle(el).filter : 'missing';
+        }
+        return {
+            btn: { exists: !!btn, text: btn.innerText.replace(/\\s+/g, ' ').trim(),
+                   top: Math.round(br.top), right: Math.round(br.right),
+                   inView: br.top >= 0 && br.right <= innerWidth && br.width > 0 },
+            setup: { top: Math.round(setup.top), right: Math.round(setup.right) },
+            open: !ov.hidden,
+            sheet: { top: Math.round(sr.top), bottom: Math.round(sr.bottom),
+                     h: Math.round(sr.height), vh: innerHeight,
+                     scroll: sheet.scrollHeight - sheet.clientHeight },
+            time: { min: time.min, max: time.max, step: time.step, value: time.value,
+                    badge: document.getElementById('time-value').textContent,
+                    pct: time.style.getPropertyValue('--pct').trim(),
+                    fillW: Math.round(fill.width), trackW: Math.round(track.width),
+                    label: document.querySelector('.field-time .field-head span').textContent.trim() },
+            vol: { min: vol.min, max: vol.max, step: vol.step, value: vol.value,
+                   text: document.getElementById('vol-value').textContent,
+                   icon: document.getElementById('vol-icon').textContent,
+                   pressed: document.getElementById('btn-vol-icon').getAttribute('aria-pressed'),
+                   fillW: Math.round(document.getElementById('vol-fill').getBoundingClientRect().width),
+                   trackW: Math.round(document.querySelector('#vol-slider .slider-track').getBoundingClientRect().width) },
+            mono: { checked: document.getElementById('btn-mono').getAttribute('aria-checked'),
+                    html: document.documentElement.classList.contains('mono'),
+                    filters },
+            sfx: { volume: window.__ITDA.sfx.volume,
+                   gain: window.__ITDA.sfx.master ? Number(window.__ITDA.sfx.master.gain.value.toFixed(3)) : null },
+            screen: { open: !!ov.querySelector('.settings-sheet'), dict: !document.getElementById('scr-dict').hidden,
+                      setup: !document.getElementById('scr-setup').hidden },
+            overflow: { doc: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                        body: document.body.scrollWidth - document.body.clientWidth },
+        };
+    }""")
+
+
+def set_range(page, sel, value, change=True):
+    """range 입력을 값으로 옮기며 input·change 이벤트를 그대로 일으킨다(사람의 드래그와 같은 경로)."""
+    page.evaluate("""([sel, v, fire]) => {
+        const el = document.querySelector(sel);
+        el.value = String(v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        if (fire) el.dispatchEvent(new Event('change', { bubbles: true }));
+    }""", [sel, value, change])
+
+
+def scenario_settings(page, tag):
+    """별도 설정 창(음량 · 흑백모드)과 제한 시간 1~50초 슬라이더."""
+    print(f'  · 설정 창·시간 슬라이더 [{tag}]')
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(200)
+
+    # 1) 설정 버튼은 사전 버튼 바로 옆, 같은 줄에서 왼쪽
+    base = settings_view(page)
+    near = page.evaluate("""() => {
+        const set = document.getElementById('btn-settings').getBoundingClientRect();
+        const dict = document.getElementById('btn-dict').getBoundingClientRect();
+        return { setTop: Math.round(set.top), setLeft: Math.round(set.left), setRight: Math.round(set.right),
+                 dictTop: Math.round(dict.top), dictLeft: Math.round(dict.left),
+                 sameRow: Math.abs(set.top - dict.top) <= 4,
+                 gap: Math.round(dict.left - set.right),
+                 inView: set.left >= 0 && set.right <= innerWidth && set.top >= 0 };
+    }""")
+    check(base['btn']['exists'] and '설정' in base['btn']['text'], f'[{tag}] ⚙ 설정 버튼 있음',
+          json.dumps(base['btn'], ensure_ascii=False))
+    check(near['inView'] and near['sameRow'] and 0 <= near['gap'] <= 14,
+          f'[{tag}] 설정 버튼이 사전 버튼 옆 같은 줄', json.dumps(near, ensure_ascii=False))
+    check(not base['open'], f'[{tag}] 설정 창은 처음에 닫혀 있음', str(base['open']))
+
+    # 2) 제한 시간: 1~50초 슬라이더 · 숫자 배지 · 채움 비율
+    t = base['time']
+    check(t['min'] == '1' and t['max'] == '50' and t['step'] == '1',
+          f'[{tag}] 제한 시간 슬라이더 범위 1~50초', json.dumps(t, ensure_ascii=False))
+    check(t['badge'] == t['value'] and '제한' in t['label'],
+          f'[{tag}] 제한 시간 숫자 배지가 라벨 옆에', json.dumps(t, ensure_ascii=False))
+    check(t['fillW'] > 0 and t['fillW'] < t['trackW'], f'[{tag}] 제한 시간 채움 비율 표시',
+          f"{t['fillW']}/{t['trackW']}px · pct {t['pct']}")
+
+    # 3) 설정 창 열기: 시트가 화면 안, 세로 스크롤 없음
+    page.click('#btn-settings')
+    page.wait_for_timeout(380)
+    opened = settings_view(page)
+    check(opened['open'] and opened['screen']['open'], f'[{tag}] 설정 창 열림', str(opened['open']))
+    check(opened['sheet']['top'] >= 0 and opened['sheet']['bottom'] <= opened['sheet']['vh']
+          and opened['sheet']['scroll'] <= 1,
+          f'[{tag}] 설정 창이 화면 안·세로 스크롤 없음', json.dumps(opened['sheet'], ensure_ascii=False))
+    check(opened['overflow']['doc'] <= 0 and opened['overflow']['body'] <= 0,
+          f'[{tag}] 설정 창 열어도 가로 오버플로 0', json.dumps(opened['overflow']))
+    check(page.evaluate("document.getElementById('btn-settings').getAttribute('aria-expanded')") == 'true',
+          f'[{tag}] 설정 버튼 aria-expanded')
+
+    # 4) 음량: 0~100% 슬라이더 → 실제 gain 비례, 0%면 무음 아이콘
+    v = opened['vol']
+    check(v['min'] == '0' and v['max'] == '100' and v['step'] == '1' and v['value'] == '100',
+          f'[{tag}] 음량 슬라이더 0~100%', json.dumps(v, ensure_ascii=False))
+    check(v['text'] == '100%' and v['fillW'] >= v['trackW'] - 30,
+          f'[{tag}] 음량 100% 표시·채움', f"{v['text']} · {v['fillW']}/{v['trackW']}px")
+    check(opened['sfx']['gain'] is not None and abs(opened['sfx']['gain'] - 0.5) <= 0.02,
+          f'[{tag}] 100% → master gain 0.5', json.dumps(opened['sfx']))
+
+    set_range(page, '#vol-range', 35)
+    page.wait_for_timeout(180)
+    mid = settings_view(page)
+    check(mid['vol']['text'] == '35%' and mid['sfx']['volume'] == 35
+          and abs((mid['sfx']['gain'] or 0) - 0.175) <= 0.02,
+          f'[{tag}] 음량 35% → gain 0.175', json.dumps({**mid['vol'], **mid['sfx']}, ensure_ascii=False))
+    check(mid['vol']['fillW'] < mid['vol']['trackW'] * 0.55, f'[{tag}] 음량 채움 비율이 값 따라감',
+          f"{mid['vol']['fillW']}/{mid['vol']['trackW']}px")
+    check(page.evaluate("JSON.parse(localStorage.getItem('itda.settings.v1')).volume") == 35,
+          f'[{tag}] 음량 35% 저장')
+
+    set_range(page, '#vol-range', 0)
+    page.wait_for_timeout(200)
+    muted = settings_view(page)
+    check(muted['vol']['icon'] == '🔇' and muted['vol']['text'] == '0%' and muted['vol']['pressed'] == 'true'
+          and muted['sfx']['volume'] == 0 and (muted['sfx']['gain'] or -1) <= 0.001,
+          f'[{tag}] 음량 0% → 음소거 아이콘·완전 무음', json.dumps({**muted['vol'], **muted['sfx']}, ensure_ascii=False))
+    # 아이콘 클릭으로 다시 켜기(직전 35%로 복귀)
+    page.click('#btn-vol-icon')
+    page.wait_for_timeout(200)
+    back = settings_view(page)
+    check(back['vol']['value'] == '35' and back['vol']['pressed'] == 'false' and back['sfx']['volume'] == 35,
+          f'[{tag}] 음소거 해제 → 직전 음량 복귀', json.dumps({**back['vol'], **back['sfx']}, ensure_ascii=False))
+
+    # 5) 흑백모드: 화면 전체 회색 · 레이아웃 그대로
+    before_rect = page.evaluate("""() => {
+        const a = document.getElementById('app').getBoundingClientRect();
+        const s = document.getElementById('btn-start').getBoundingClientRect();
+        return { app: [Math.round(a.left), Math.round(a.top), Math.round(a.width), Math.round(a.height)],
+                 start: [Math.round(s.left), Math.round(s.top), Math.round(s.width), Math.round(s.height)] };
+    }""")
+    page.evaluate("window.__ITDA.app.toast('흑백 확인')")
+    page.wait_for_timeout(120)
+    page.click('#btn-mono')
+    page.wait_for_timeout(320)
+    mono = settings_view(page)
+    after_rect = page.evaluate("""() => {
+        const a = document.getElementById('app').getBoundingClientRect();
+        const s = document.getElementById('btn-start').getBoundingClientRect();
+        return { app: [Math.round(a.left), Math.round(a.top), Math.round(a.width), Math.round(a.height)],
+                 start: [Math.round(s.left), Math.round(s.top), Math.round(s.width), Math.round(s.height)] };
+    }""")
+    filters = mono['mono']['filters']
+    check(mono['mono']['checked'] == 'true' and mono['mono']['html'], f'[{tag}] 흑백모드 켜짐',
+          json.dumps(mono['mono'], ensure_ascii=False))
+    check(all('grayscale(1)' in (filters[k] or '') for k in ('.bg', '#app', '#ov-settings', '.toast')),
+          f'[{tag}] 흑백이 배경·보드·설정 창·토스트 전체에 적용',
+          json.dumps(filters, ensure_ascii=False))
+    check(before_rect == after_rect, f'[{tag}] 흑백 켜도 레이아웃 그대로',
+          f'{before_rect} → {after_rect}')
+    check(mono['overflow']['doc'] <= 0 and mono['overflow']['body'] <= 0,
+          f'[{tag}] 흑백모드 가로 오버플로 0', json.dumps(mono['overflow']))
+    check(page.evaluate("JSON.parse(localStorage.getItem('itda.settings.v1')).monochrome") is True,
+          f'[{tag}] 흑백모드 켬 저장')
+    page.click('#btn-mono')
+    page.wait_for_timeout(260)
+    off = settings_view(page)
+    check(off['mono']['checked'] == 'false' and not off['mono']['html']
+          and 'grayscale' not in (off['mono']['filters']['#app'] or ''),
+          f'[{tag}] 흑백모드 끄면 컬러로', json.dumps(off['mono'], ensure_ascii=False))
+
+    # 6) 설정 창 닫기: Esc·바깥 누르기 모두
+    page.keyboard.press('Escape')
+    page.wait_for_timeout(300)
+    check(not settings_view(page)['open'], f'[{tag}] Esc 로 설정 창 닫힘')
+    page.click('#btn-settings')
+    page.wait_for_timeout(320)
+    page.mouse.click(8, page.viewport_size['height'] - 8)
+    page.wait_for_timeout(320)
+    check(not settings_view(page)['open'], f'[{tag}] 바깥 누르면 설정 창 닫힘')
+
+    # 7) 1~50초 전 구간이 저장·배지·채움에 그대로
+    sweep = page.evaluate("""() => {
+        const r = document.getElementById('time-range');
+        const out = [];
+        for (let v = 1; v <= 50; v += 1) {
+            r.value = String(v);
+            r.dispatchEvent(new Event('input', { bubbles: true }));
+            const stored = JSON.parse(localStorage.getItem('itda.settings.v1') || '{}');
+            out.push({ v,
+                       live: window.__ITDA.app.settings.timeLimit,
+                       stored: stored.timeLimit,
+                       badge: document.getElementById('time-value').textContent,
+                       pct: parseFloat(r.style.getPropertyValue('--pct')),
+                       ratio: parseFloat(getComputedStyle(document.getElementById('time-slider')).getPropertyValue('--ratio')) });
+        }
+        return out;
+    }""")
+    bad = [row for row in sweep
+           if row['live'] != row['v'] or row['stored'] != row['v'] or row['badge'] != str(row['v'])
+           or abs(row['pct'] - (row['v'] - 1) / 49 * 100) > 0.6 or abs(row['ratio'] - (row['v'] - 1) / 49) > 0.01]
+    check(not bad, f'[{tag}] 1~50초 전 구간 저장·배지·채움 일치', json.dumps(bad[:3], ensure_ascii=False))
+    check(sweep[0]['pct'] == 0 and sweep[-1]['pct'] == 100, f'[{tag}] 슬라이더 양끝 0%~100% 채움',
+          f"{sweep[0]['pct']} ~ {sweep[-1]['pct']}")
+
+    # 8) 저장값 해석: 1~50은 그대로, 범위 밖·이상한 값은 기본 15초
+    store = page.evaluate("""async () => {
+        const store = await import(new URL('js/store.js', location.href).href);
+        const out = {};
+        for (const v of [1, 7, 33, 50, 0, 51, 99, -3, null, 'abc', 12.6]) {
+            localStorage.setItem('itda.settings.v1', JSON.stringify({ timeLimit: v }));
+            out[String(v)] = store.loadSettings().timeLimit;
+        }
+        for (const v of [0, 40, 100, -5, 130, null]) {
+            localStorage.setItem('itda.settings.v1', JSON.stringify({ volume: v }));
+            out['v' + String(v)] = store.loadSettings().volume;
+        }
+        localStorage.setItem('itda.settings.v1', JSON.stringify({ sound: false }));
+        out['soundFalse'] = store.loadSettings().volume;
+        localStorage.setItem('itda.settings.v1', JSON.stringify({ sound: true }));
+        out['soundTrue'] = store.loadSettings().volume;
+        localStorage.setItem('itda.settings.v1', JSON.stringify({ monochrome: true, volume: 60, timeLimit: 33 }));
+        return out;
+    }""")
+    expect = {'1': 1, '7': 7, '33': 33, '50': 50, '0': 15, '51': 15, '99': 15, '-3': 15,
+              'null': 15, 'abc': 15, '12.6': 13,
+              'v0': 0, 'v40': 40, 'v100': 100, 'v-5': 0, 'v130': 100, 'vnull': 100,
+              'soundFalse': 0, 'soundTrue': 100}
+    wrong = {k: {'got': store.get(k), 'want': v} for k, v in expect.items() if store.get(k) != v}
+    check(not wrong, f'[{tag}] 저장값 해석(1~50 그대로 · 범위 밖 기본값 · 옛 효과음 끔→0%)',
+          json.dumps(wrong or store, ensure_ascii=False)[:240])
+
+    # 9) 새 값으로 다시 열었을 때 복원 + 흑백 다시 켜짐
+    page.reload(wait_until='domcontentloaded')
+    wait_ready(page)
+    page.wait_for_timeout(280)
+    restored = settings_view(page)
+    check(restored['time']['value'] == '33' and restored['vol']['value'] == '60'
+          and restored['mono']['html'] and 'grayscale(1)' in (restored['mono']['filters']['#app'] or ''),
+          f'[{tag}] 새로 열어도 33초·60%·흑백 복원',
+          json.dumps({'time': restored['time']['value'], 'vol': restored['vol']['value'],
+                      'mono': restored['mono']['html']}, ensure_ascii=False))
+    check(restored['sfx']['volume'] == 60, f'[{tag}] 복원된 음량이 효과음에 반영', str(restored['sfx']))
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 복원 뒤 가로 오버플로 0', str(overflow(page)))
+
+    # 10) 1·2·5초: 바로 끝나지 않고 그 초만큼 세다가 시간 초과
+    for limit in (1, 2, 5):
+        page.evaluate(f"window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+        t0 = time.time()
+        page.evaluate(f"window.__ITDA.startGame({{level:1, first:'me', timeLimit:{limit}}})")
+        page.wait_for_timeout(200)
+        head = page.evaluate("""() => ({
+            left: document.getElementById('time-left').textContent,
+            limit: window.__ITDA.state().timeLimit,
+            phase: window.__ITDA.state().phase,
+            fill: document.getElementById('timer-fill').style.transform,
+        })""")
+        page.wait_for_timeout(max(450, int(limit * 500)))
+        midt = page.evaluate("""() => ({
+            left: document.getElementById('time-left').textContent,
+            fill: document.getElementById('timer-fill').style.transform,
+            phase: window.__ITDA.state().phase,
+        })""")
+        page.wait_for_function("() => window.__ITDA.state() && window.__ITDA.state().phase === 'over'",
+                               timeout=limit * 1000 + 9000)
+        elapsed = time.time() - t0
+        # 결과 시트는 0.5~0.7초 뒤에 뜬다(그사이 짧은 연출). 그 뒤에 실패 이유를 읽는다.
+        try:
+            page.wait_for_function("() => !document.getElementById('ov-result').hidden", timeout=4000)
+        except Exception:
+            pass
+        page.wait_for_timeout(120)
+        reason = page.evaluate("document.getElementById('result-reason').textContent")
+        bar = lambda s: (float(s.split('scaleX(')[1].rstrip(')'))
+                         if s and 'scaleX(' in s else 1.0)
+        check(head['limit'] == limit and head['phase'] == 'me' and head['left'] == str(limit),
+              f'[{tag}] {limit}초 제한 시작·카운트 {limit}', json.dumps(head, ensure_ascii=False))
+        check(midt['phase'] == 'me' and midt['left'].isdigit() and 1 <= int(midt['left']) <= limit
+              and bar(midt['fill']) < bar(head['fill']) - 0.12,
+              f'[{tag}] {limit}초 남은 시간·타이머 바가 줄어듦', json.dumps(midt, ensure_ascii=False))
+        check(limit - 0.35 <= elapsed <= limit + 1.0 and '시간' in reason,
+              f'[{tag}] {limit}초 뒤 시간 초과(즉시 아님)', f'{elapsed:.2f}s · {reason}')
+        check('scaleX' in (head['fill'] or ''), f'[{tag}] {limit}초 타이머 바 동작', head['fill'])
+
+    # 11) 다음 시나리오를 위해 기본값으로 되돌린다
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.evaluate("""() => {
+        const r = document.getElementById('time-range');
+        r.value = '15';
+        r.dispatchEvent(new Event('input', { bubbles: true }));
+        r.dispatchEvent(new Event('change', { bubbles: true }));
+    }""")
+    if settings_view(page)['mono']['html']:
+        page.evaluate("document.getElementById('btn-mono').click()")
+        page.wait_for_timeout(200)
+    page.click('#btn-settings')
+    page.wait_for_timeout(300)
+    set_range(page, '#vol-range', 100)
+    page.wait_for_timeout(150)
+    page.click('#btn-settings-close')
+    page.wait_for_timeout(300)
+    final = settings_view(page)
+    check(final['time']['value'] == '15' and final['vol']['value'] == '100'
+          and not final['mono']['html'] and final['sheet']['vh'] > 0,
+          f'[{tag}] 설정 기본값 복귀',
+          json.dumps({'time': final['time']['value'], 'vol': final['vol']['value'],
+                      'mono': final['mono']['html']}, ensure_ascii=False))
+    check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 시험 뒤 가로 오버플로 0', str(overflow(page)))
+    shot(page, f'{tag}-20-settings')
 
 
 def scenario_setup_clean(page, tag):
@@ -2648,6 +2984,7 @@ def run_local(base_url, browser):
         scenario_start_title(page, 'local-' + vp_name)
         scenario_no_custom(page, 'local-' + vp_name)
         scenario_no_hint(page, 'local-' + vp_name)
+        scenario_settings(page, 'local-' + vp_name)
         scenario_setup_clean(page, 'local-' + vp_name)
         scenario_dict(page, 'local-' + vp_name)
         scenario_result_level(page, 'local-' + vp_name)
@@ -2719,6 +3056,7 @@ def run_live(url, browser):
         scenario_start_title(page, 'live-' + vp_name)
         scenario_no_custom(page, 'live-' + vp_name)
         scenario_no_hint(page, 'live-' + vp_name)
+        scenario_settings(page, 'live-' + vp_name)
         scenario_setup_clean(page, 'live-' + vp_name)
         scenario_dict(page, 'live-' + vp_name)
         scenario_result_level(page, 'live-' + vp_name)

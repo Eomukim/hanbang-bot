@@ -244,40 +244,51 @@ button { cursor: pointer; }
   min-height: 100%;
 }
 
-.dict-open {
+/* ── 화면 위 모서리 버튼: ⚙ 설정 · 📖 사전 ─────────────────── */
+.top-actions {
   position: absolute;
   top: max(11px, env(safe-area-inset-top));
   right: 18px;
-  z-index: 2;
+  z-index: 3;
+  display: flex; align-items: center; gap: 6px;
+}
+.top-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 13px 9px;
   border-radius: 11px;
-  border: 1px solid var(--sky-edge);
-  background: var(--sky-soft);
-  color: var(--sky-ink);
+  border: 1px solid var(--edge-strong);
+  background: var(--fill);
+  color: var(--ink-soft);
+  font-family: var(--display);
   font-size: 11.5px; font-weight: 800; letter-spacing: .03em; line-height: 1;
-  box-shadow: 0 2px 0 #D5E2F4, inset 0 1px 0 #fff;
+  box-shadow: 0 2px 0 var(--sh), inset 0 1px 0 #fff;
   -webkit-tap-highlight-color: transparent;
-  transition: background var(--dur-fast) ease, box-shadow var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
+  transition: background var(--dur-fast) ease, box-shadow var(--dur-fast) ease,
+              border-color var(--dur-fast) ease, color var(--dur-fast) ease,
+              transform var(--dur-fast) var(--ease-out);
 }
-.dict-open svg {
+.top-btn svg {
   width: 12px; height: 12px;
-  stroke: var(--sky); fill: none; stroke-width: 1.3;
-  stroke-linejoin: round;
+  fill: none; stroke-width: 1.3;
+  stroke-linejoin: round; stroke-linecap: round;
 }
-.dict-open:hover { background: #E1EDFA; }
-.dict-open:active { transform: translateY(2px); box-shadow: 0 1px 0 #D5E2F4; }
-.dict-open:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+.top-btn-dict svg { stroke: var(--sky); }
+.top-btn-settings svg { stroke: var(--gold-ink); }
+.top-btn-dict:hover { background: var(--sky-soft); border-color: var(--sky-edge); color: var(--sky-ink); }
+.top-btn-settings:hover,
+.top-btn-settings[aria-expanded="true"] {
+  background: var(--gold-soft); border-color: var(--gold-edge); color: var(--gold-ink);
+}
+.top-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--sh); }
+.top-btn:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
 
 .brand { margin-top: 30px; display: flex; flex-direction: column; align-items: center; }
 .brand .logo-mark { margin-top: 13px; }
 .brand-sub { margin: 12px 0 0; font-size: 11px; color: var(--mute); letter-spacing: .01em; }
 
 .field { display: flex; flex-direction: column; gap: 9px; margin-top: 30px; }
-.field-split {
-  display: grid; grid-template-columns: 1fr 1fr;
-  column-gap: 10px; margin-top: 20px;
-}
+.field-time { margin-top: 22px; }
+.field-first { margin-top: 18px; }
 .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
 .field-head span {
   flex: none;
@@ -289,6 +300,96 @@ button { cursor: pointer; }
   min-width: 0;
   font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--mute);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* 제한 시간 숫자 배지 — 라벨 옆에 지금 고른 초를 또렷하게 */
+.field-head .time-badge {
+  flex: none;
+  display: inline-flex; align-items: baseline; gap: 1px;
+  padding: 3px 9px 4px;
+  border-radius: 9px;
+  border: 1px solid var(--sage-edge);
+  background: var(--sage-soft);
+  color: var(--sage-ink);
+  font-family: var(--display);
+  font-size: 10.5px; font-weight: 800; letter-spacing: .02em;
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 1px 0 #fff;
+  white-space: nowrap; overflow: visible;
+}
+.field-head .time-badge b {
+  font-size: 15px; font-weight: 800; line-height: 1;
+}
+
+/* ── 슬라이더 (제한 시간 · 음량) ────────────────────────────
+   네이티브 range 는 썸만 그리고, 트랙·채움은 아래 깔린 .slider-track 이 맡는다.
+   채움 폭은 --ratio(0~1) 로 계산해 썸 가운데까지 정확히 맞춘다. */
+.slider {
+  position: relative;
+  display: flex; align-items: center;
+  height: 26px;
+  --thumb: 18px;
+  --sl: var(--sage);
+  --sl-sh: var(--sage-sh);
+}
+.slider-track {
+  position: absolute; left: 0; right: 0; top: 50%;
+  height: 10px; transform: translateY(-50%);
+  border-radius: 5px;
+  background: var(--well);
+  box-shadow: inset 0 1px 2px rgba(110,95,70,.16);
+  overflow: hidden;
+  pointer-events: none;
+}
+.slider-fill {
+  display: block; height: 100%;
+  width: calc((100% - var(--thumb)) * var(--ratio, 0));
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--sl-2, #4DAE8B), var(--sl));
+  transition: width .06s linear;
+}
+.range {
+  -webkit-appearance: none; appearance: none;
+  position: relative; z-index: 1;
+  width: 100%; height: 26px; margin: 0;
+  background: transparent;
+  cursor: pointer;
+  --pct: 0%;
+  -webkit-tap-highlight-color: transparent;
+}
+.range::-webkit-slider-runnable-track {
+  height: 10px; border-radius: 5px;
+  background: transparent;
+}
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  box-sizing: border-box;
+  width: var(--thumb); height: var(--thumb);
+  margin-top: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--sl);
+  background: linear-gradient(180deg, #FFFDF8, var(--tile));
+  box-shadow: 0 2px 0 rgba(120,105,80,.16), 0 3px 8px -2px rgba(70,90,76,.32);
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) ease;
+}
+.range::-moz-range-track { height: 10px; border-radius: 5px; background: transparent; }
+.range::-moz-range-progress { background: transparent; }
+.range::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--thumb); height: var(--thumb);
+  border-radius: 50%;
+  border: 2px solid var(--sl);
+  background: linear-gradient(180deg, #FFFDF8, var(--tile));
+  box-shadow: 0 2px 0 rgba(120,105,80,.16), 0 3px 8px -2px rgba(70,90,76,.32);
+}
+.range:hover::-webkit-slider-thumb { box-shadow: 0 2px 0 rgba(120,105,80,.16), 0 5px 12px -3px rgba(70,90,76,.4); }
+.range:active::-webkit-slider-thumb { transform: scale(1.08); }
+.range:focus { outline: none; }
+.range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--sage-soft), 0 2px 0 rgba(120,105,80,.16);
+}
+.range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--sage-soft), 0 2px 0 rgba(120,105,80,.16);
 }
 
 /* 난이도 타일 5종 — 단계마다 고유한 색 */
@@ -388,8 +489,7 @@ button { cursor: pointer; }
 .toggle-card[aria-checked="true"] .switch i { transform: translateX(19px); }
 .toggle-card:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
 
-/* 세그먼트 (제한 시간 · 선공) */
-.opt { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+/* 세그먼트 (선공) */
 .segmented {
   display: flex; gap: 3px; padding: 3px;
   border-radius: 13px;
@@ -416,37 +516,6 @@ button { cursor: pointer; }
   box-shadow: 0 2px 0 var(--sh), inset 0 -2px 0 var(--sage-line), inset 0 1px 0 #fff;
 }
 .segmented button:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; }
-
-/* 효과음 행 */
-.setup-actions { display: grid; gap: 10px; margin-top: 18px; }
-.setting-row {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; width: 100%;
-  padding: 14px 16px;
-  border: 1px solid var(--edge);
-  border-radius: 15px;
-  background: var(--tile);
-  color: var(--ink);
-  box-shadow: 0 2px 0 var(--sh), 0 8px 14px -12px rgba(100,82,56,.4), inset 0 1px 0 #fff;
-  font-family: var(--display); font-size: 13.5px; font-weight: 700;
-  -webkit-tap-highlight-color: transparent;
-  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) ease,
-              background var(--dur-fast) ease, border-color var(--dur-fast) ease;
-}
-.setting-row-name { display: inline-flex; align-items: center; gap: 8px; }
-.setting-row-name i { font-style: normal; font-size: 12.5px; filter: grayscale(1) opacity(.5); transition: filter .2s; }
-.setting-row[aria-pressed="true"] .setting-row-name i { filter: none; }
-.setting-row-value {
-  font-family: var(--font);
-  font-size: 10.5px; font-weight: 800; letter-spacing: .04em;
-  color: var(--mute);
-  background: var(--fill);
-  border-radius: 8px;
-  padding: 4px 9px;
-  transition: color .18s, background .18s;
-}
-.setting-row[aria-pressed="true"] .setting-row-value { color: var(--sage-ink); background: var(--sage-soft); }
-.setting-row:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
 
 .setup > #btn-start { margin-top: 16px; }
 
@@ -948,6 +1017,77 @@ button { cursor: pointer; }
 }
 @keyframes sheetIn { from { opacity: 0; transform: translateY(14px) scale(.985); } }
 
+/* ── 설정 시트: 음량 · 흑백모드 ───────────────────────────── */
+.settings-sheet {
+  max-width: 380px;
+  display: flex; flex-direction: column; gap: 14px;
+  text-align: left;
+}
+.settings-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.settings-top h2 {
+  margin: 0; font-family: var(--display);
+  font-size: 18px; font-weight: 800; letter-spacing: .01em; color: var(--ink);
+}
+.settings-close {
+  flex: none; width: 32px; height: 32px; display: grid; place-items: center;
+  border: 1px solid var(--edge); border-radius: 10px;
+  background: var(--fill); color: var(--mute);
+  box-shadow: 0 2px 0 var(--sh);
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease,
+              transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) ease;
+}
+.settings-close svg {
+  width: 11px; height: 11px;
+  fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round;
+}
+.settings-close:hover { background: var(--well-2); color: var(--ink); }
+.settings-close:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--sh); }
+.settings-close:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+
+.settings-block {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 13px 15px 15px;
+  border: 1px solid var(--edge); border-radius: 15px;
+  background: var(--tile);
+  box-shadow: 0 2px 0 var(--sh), inset 0 1px 0 #fff;
+}
+.settings-head { display: flex; align-items: center; gap: 9px; }
+.settings-label { font-family: var(--display); font-size: 13.5px; font-weight: 800; color: var(--ink); }
+.settings-value {
+  margin-left: auto;
+  padding: 3px 9px 4px; border-radius: 9px;
+  border: 1px solid var(--gold-edge); background: var(--gold-soft); color: var(--gold-ink);
+  font-family: var(--display); font-size: 12.5px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.vol-icon {
+  flex: none; width: 30px; height: 30px; display: grid; place-items: center;
+  border: 1px solid var(--edge); border-radius: 9px; background: var(--fill);
+  font-size: 14px; line-height: 1;
+  box-shadow: inset 0 1px 0 #fff;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease,
+              transform var(--dur-fast) var(--ease-out);
+}
+.vol-icon:hover { background: var(--gold-soft); border-color: var(--gold-edge); }
+.vol-icon:active { transform: translateY(1px); }
+.vol-icon[aria-pressed="true"] { background: var(--gold-soft); border-color: var(--gold-edge); }
+.vol-icon:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+.slider-volume { --sl: var(--gold); --sl-2: #E2B96A; }
+.toggle-card.mono-card { margin-top: 0; }
+
+/* 흑백모드 — html 에 칠한 .mono 하나로 화면 전체를 회색으로 만든다.
+   html/body 에 직접 filter 를 걸면 fixed 요소와 뷰포트 계산이 꼬이므로
+   실제로 보이는 판(.bg · #app)과 그 위에 뜨는 겉포장(.overlay · .toast …)에만 건다. */
+html.mono .bg,
+html.mono #app,
+html.mono .overlay,
+html.mono .toast,
+html.mono .float-score,
+html.mono .ko-splash,
+html.mono .confetti { filter: grayscale(1); }
+
 .result-sheet { text-align: center; }
 .result-badge {
   width: 56px; height: 56px; margin: 0 auto 8px;
@@ -1385,9 +1525,8 @@ button { cursor: pointer; }
   .field { margin-top: 22px; }
   .toggle-card { padding: 11px 14px; }
   .toggle-card:first-of-type { margin-top: 16px; }
-  .field-split { margin-top: 14px; }
-  .setup-actions { margin-top: 12px; }
-  .setting-row { padding: 11px 14px; }
+  .field-time { margin-top: 16px; }
+  .field-first { margin-top: 12px; }
   .setup > #btn-start { margin-top: 12px; }
   .btn.primary.big { height: 52px; }
 }
@@ -1398,17 +1537,19 @@ button { cursor: pointer; }
   .logo-mark .lt { width: 48px; height: 48px; font-size: 26px; border-radius: 12px; }
   .field { margin-top: 14px; gap: 7px; }
   .level { height: 68px; }
-  .field-split { margin-top: 10px; }
+  .field-time { margin-top: 11px; gap: 6px; }
+  .field-first { margin-top: 9px; }
   .segmented button { height: 33px; font-size: 12px; }
   .toggle-card { padding: 9px 13px; margin-top: 8px; }
   .toggle-card:first-of-type { margin-top: 12px; }
   .toggle-text b { font-size: 13px; }
   .toggle-text small { font-size: 9.5px; }
-  .setup-actions { margin-top: 10px; }
-  .setting-row { padding: 9px 13px; }
   .setup > #btn-start { margin-top: 10px; }
   .btn.primary.big { height: 46px; font-size: 16.5px; }
-  .dict-open { padding: 6px 11px 7px; top: max(8px, env(safe-area-inset-top)); }
+  .slider { height: 24px; --thumb: 17px; }
+  .range { height: 24px; }
+  .top-btn { padding: 6px 10px 7px; font-size: 10.5px; }
+  .top-actions { top: max(8px, env(safe-area-inset-top)); }
 }
 
 @media (max-height: 620px) {
@@ -1511,8 +1652,10 @@ button { cursor: pointer; }
     background: linear-gradient(90deg, transparent, var(--edge-strong) 18%, var(--edge-strong) 82%, transparent);
   }
 
-  .setup > .field:not(.field-split) { grid-column: 1; grid-row: 2; margin-top: 0; }
-  .field { gap: 11px; }
+  .field { gap: 11px; margin-top: 0; }
+  .field-levels { grid-column: 1; grid-row: 2; margin-top: 0; }
+  .field-time { grid-column: 2; grid-row: 2; align-self: start; margin-top: 0; }
+  .field-first { grid-column: 2; grid-row: 3; align-self: start; margin-top: 0; }
   .field-head span { font-size: 12px; letter-spacing: .16em; }
   .field-head em { font-size: 11.5px; }
   .levels { gap: 9px; }
@@ -1537,30 +1680,26 @@ button { cursor: pointer; }
   .switch i { width: 21px; height: 21px; }
   .toggle-card[aria-checked="true"] .switch i { transform: translateX(21px); }
 
-  .field-split {
-    grid-column: 2; grid-row: 2;
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 15px; margin-top: 0;
-    align-self: start;
-  }
   .segmented button { height: 46px; font-size: 13.5px; }
-
-  .setup-actions { grid-column: 2; grid-row: 3; margin-top: 0; align-self: start; }
-  .setting-row { padding: 17px 20px; font-size: 15px; }
-  .setting-row:hover { border-color: var(--edge-strong); }
-  .setting-row-name i { font-size: 13.5px; }
-  .setting-row-value { font-size: 11.5px; padding: 5px 11px; border-radius: 9px; }
+  .slider { height: 30px; --thumb: 22px; }
+  .range { height: 30px; }
+  .slider-track { height: 12px; border-radius: 6px; }
+  .slider-fill { border-radius: 6px; }
+  .range::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; }
+  .range::-webkit-slider-thumb { margin-top: -5px; }
+  .field-head .time-badge { font-size: 11.5px; padding: 4px 11px 5px; border-radius: 10px; }
+  .field-head .time-badge b { font-size: 17px; }
 
   .setup > #btn-start { grid-column: 2; grid-row: 4; margin-top: 0; align-self: end; }
   .btn.primary.big { height: 66px; font-size: 20px; border-radius: 18px; }
   .btn.primary.big kbd { right: 18px; font-size: 10.5px; padding: 5px 9px; border-radius: 7px; }
 
-  .dict-open {
-    top: 20px; right: 22px;
+  .top-actions { top: 20px; right: 22px; gap: 8px; }
+  .top-btn {
     padding: 10px 15px 11px; border-radius: 12px;
     font-size: 12.5px; gap: 7px;
   }
-  .dict-open svg { width: 13px; height: 13px; }
+  .top-btn svg { width: 13px; height: 13px; }
 
   /* ── 대전: 넓은 보드 위에 봇·점수, 큰 단어 타일, 넉넉한 입력 독 ── */
   .screen-game {
@@ -1711,7 +1850,6 @@ button { cursor: pointer; }
   .level b { font-size: 13px; margin-top: 6px; }
   .level small { font-size: 8.5px; }
   .segmented button { height: 42px; font-size: 12.5px; }
-  .setting-row { padding: 14px 16px; font-size: 14px; }
   .btn.primary.big { height: 58px; font-size: 18px; }
   .arena { padding: 12px 26px 10px; }
   .turn-panel { margin: 0 12px 12px; padding: 15px 17px 17px; }
@@ -1734,9 +1872,9 @@ button { cursor: pointer; }
   .mercy-card { padding: 13px 16px; }
   .toggle-text b { font-size: 14px; }
   .toggle-text small { font-size: 10px; }
-  .field-split { row-gap: 10px; }
+  .field-time { margin-top: 0; }
+  .field-first { margin-top: 0; }
   .segmented button { height: 40px; font-size: 12.5px; }
-  .setting-row { padding: 12px 16px; font-size: 14px; }
   .btn.primary.big { height: 54px; font-size: 18px; }
   .need-char b { width: 60px; height: 60px; font-size: 30px; }
   .composer input { height: 48px; font-size: 16px; }

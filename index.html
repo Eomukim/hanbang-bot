@@ -36,10 +36,17 @@
   <!-- ────────────── 설정 ────────────── -->
   <section class="screen screen-setup" id="scr-setup" data-screen="setup" hidden>
     <div class="setup">
-      <button class="dict-open" id="btn-dict" type="button" aria-haspopup="true" aria-controls="scr-dict">
-        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.6 2.1h3c.7 0 1.3.6 1.3 1.3v6.5c0-.6-.6-1.1-1.3-1.1h-3zM10.4 2.1h-3c-.7 0-1.3.6-1.3 1.3v6.5c0-.6.6-1.1 1.3-1.1h3z"/></svg>
-        <span>사전</span>
-      </button>
+      <div class="top-actions">
+        <button class="top-btn top-btn-settings" id="btn-settings" type="button"
+                aria-haspopup="dialog" aria-controls="ov-settings" aria-expanded="false">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.9"/><path d="M6 1.5v1.3M6 9.2v1.3M10.5 6H9.2M2.8 6H1.5M9.2 2.8l-.9.9M3.7 8.3l-.9.9M9.2 9.2l-.9-.9M3.7 3.7l-.9-.9"/></svg>
+          <span>설정</span>
+        </button>
+        <button class="top-btn top-btn-dict" id="btn-dict" type="button" aria-haspopup="true" aria-controls="scr-dict">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.6 2.1h3c.7 0 1.3.6 1.3 1.3v6.5c0-.6-.6-1.1-1.3-1.1h-3zM10.4 2.1h-3c-.7 0-1.3.6-1.3 1.3v6.5c0-.6.6-1.1 1.3-1.1h3z"/></svg>
+          <span>사전</span>
+        </button>
+      </div>
 
       <header class="brand">
         <p class="brand-kicker">끝말잇기</p>
@@ -47,7 +54,7 @@
         <p class="brand-sub">말을 타일처럼 이어 붙이는 1:1 대전</p>
       </header>
 
-      <div class="field">
+      <div class="field field-levels">
         <div class="field-head"><span>난이도</span><em id="lv-desc">보통</em></div>
         <div class="levels" id="levels" role="radiogroup" aria-label="난이도"></div>
       </div>
@@ -60,22 +67,21 @@
         <span class="switch" aria-hidden="true"><i></i></span>
       </button>
 
-      <div class="field field-split">
-        <div class="opt">
-          <div class="field-head"><span>제한 시간</span></div>
-          <div class="segmented" id="time-opts" role="radiogroup" aria-label="제한 시간"></div>
+      <div class="field field-time">
+        <div class="field-head">
+          <span>제한 시간</span>
+          <em class="time-badge"><b id="time-value">15</b>초</em>
         </div>
-        <div class="opt">
-          <div class="field-head"><span>선공</span></div>
-          <div class="segmented" id="first-opts" role="radiogroup" aria-label="선공"></div>
+        <div class="slider" id="time-slider">
+          <span class="slider-track" aria-hidden="true"><i class="slider-fill" id="time-fill"></i></span>
+          <input class="range" id="time-range" type="range" min="1" max="50" step="1" value="15"
+                 aria-label="제한 시간(1초~50초)" aria-valuetext="15초">
         </div>
       </div>
 
-      <div class="setup-actions">
-        <button class="setting-row" id="btn-sound" type="button" aria-pressed="true">
-          <span class="setting-row-name"><i id="sound-icon" aria-hidden="true">🔊</i><span>효과음</span></span>
-          <b class="setting-row-value" id="sound-value">켬</b>
-        </button>
+      <div class="field field-first">
+        <div class="field-head"><span>선공</span></div>
+        <div class="segmented" id="first-opts" role="radiogroup" aria-label="선공"></div>
       </div>
 
       <button class="btn primary big" id="btn-start" type="button">
@@ -216,6 +222,41 @@
       <button class="btn primary" id="btn-again" type="button">다시 대전</button>
       <button class="btn ghost" id="btn-tosetup" type="button">난이도 변경</button>
     </div>
+  </div>
+</div>
+
+<!-- ────────────── 설정 (음량 · 흑백모드) ────────────── -->
+<div class="overlay" id="ov-settings" hidden>
+  <div class="sheet settings-sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <header class="settings-top">
+      <h2 id="settings-title">설정</h2>
+      <button class="settings-close" id="btn-settings-close" type="button" aria-label="설정 닫기">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.7 2.7l6.6 6.6M9.3 2.7l-6.6 6.6"/></svg>
+      </button>
+    </header>
+
+    <div class="settings-block">
+      <div class="settings-head">
+        <button class="vol-icon" id="btn-vol-icon" type="button" aria-pressed="false" aria-label="음소거">
+          <span id="vol-icon" aria-hidden="true">🔊</span>
+        </button>
+        <span class="settings-label">음량</span>
+        <b class="settings-value" id="vol-value">100%</b>
+      </div>
+      <div class="slider slider-volume" id="vol-slider">
+        <span class="slider-track" aria-hidden="true"><i class="slider-fill" id="vol-fill"></i></span>
+        <input class="range" id="vol-range" type="range" min="0" max="100" step="1" value="100"
+               aria-label="효과음 음량(0%~100%)" aria-valuetext="100%">
+      </div>
+    </div>
+
+    <button class="toggle-card mono-card" id="btn-mono" type="button" role="switch" aria-checked="false">
+      <span class="toggle-text">
+        <b><i aria-hidden="true">◐</i>흑백모드</b>
+        <small id="mono-desc">끄면 기본 컬러 · 켜면 화면 전체 흑백</small>
+      </span>
+      <span class="switch" aria-hidden="true"><i></i></span>
+    </button>
   </div>
 </div>
 

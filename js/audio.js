@@ -1,10 +1,35 @@
-/** Web Audio 로 만드는 효과음. 음원 파일 없이 오실레이터만 쓴다. */
+/** Web Audio 로 만드는 효과음. 음원 파일 없이 오실레이터만 쓴다.
+ *
+ * 음량은 0~100% 로 다룬다(store.js 의 settings.volume). master gain 은
+ * `volume / 100 * MASTER_BASE` 라서 0% 면 완전히 무음, 100% 면 예전 기본 크기다.
+ */
+
+const MASTER_BASE = 0.5;
+const clampVolume = (v) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
 
 export class Sfx {
-  constructor(enabled = true) {
-    this.enabled = enabled;
+  constructor(volume = 100) {
     this.ctx = null;
     this.master = null;
+    this.volume = clampVolume(volume);
+  }
+
+  /** 음량 0~100%. ctx 가 아직 없으면 다음 unlock 에서 반영된다. */
+  setVolume(value, { immediate = false } = {}) {
+    this.volume = clampVolume(value);
+    if (!this.master) return;
+    const gain = (this.volume / 100) * MASTER_BASE;
+    if (immediate) {
+      this.master.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.master.gain.value = gain;
+    } else {
+      // 손을 떼는 순간 딱 끊기지 않고 20ms 동안 옮겨 간다
+      this.master.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  get muted() {
+    return this.volume <= 0;
   }
 
   unlock() {
@@ -16,13 +41,8 @@ export class Sfx {
     if (!AC) return;
     this.ctx = new AC();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.5;
+    this.master.gain.value = (this.volume / 100) * MASTER_BASE;
     this.master.connect(this.ctx.destination);
-  }
-
-  setEnabled(on) {
-    this.enabled = on;
-    if (this.master) this.master.gain.value = on ? 0.5 : 0;
   }
 
   now() {
@@ -30,7 +50,7 @@ export class Sfx {
   }
 
   tone({ freq, to = null, type = 'sine', dur = 0.12, gain = 0.2, delay = 0, attack = 0.008 }) {
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || this.muted) return;
     const t0 = this.now() + delay;
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
@@ -46,7 +66,7 @@ export class Sfx {
   }
 
   noise({ dur = 0.25, gain = 0.16, delay = 0, from = 1800, to = 200 }) {
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || this.muted) return;
     const rate = this.ctx.sampleRate;
     const len = Math.floor(rate * dur);
     const buffer = this.ctx.createBuffer(1, len, rate);
@@ -66,7 +86,7 @@ export class Sfx {
   }
 
   play(name, opts = {}) {
-    if (!this.enabled || !this.ctx) return;
+    if (!this.ctx || this.muted) return;
     switch (name) {
       case 'tap':
         this.tone({ freq: 640, type: 'triangle', dur: 0.05, gain: 0.08 });

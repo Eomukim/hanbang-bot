@@ -2,7 +2,7 @@
 
 import { Engine } from './engine.js';
 import { LEVELS, levelInfo, botLine } from './bot.js';
-import { saveSettings, recordResult } from './store.js';
+import { saveSettings, recordResult, TIME_MIN, TIME_MAX, DEFAULT_SETTINGS } from './store.js';
 import { allowedStarts } from './rules.js';
 import { DictPanel } from './dict.js';
 
@@ -12,7 +12,14 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 /** 움직임 줄이기 설정이면 스크롤도 부드럽게 굴리지 않는다. */
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const TIME_OPTIONS = [10, 15, 20];
+const clampInt = (v, min, max, fallback) => {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+};
+/** 음량 아이콘: 0%면 음소거, 작을수록 작은 스피커. */
+const volumeIcon = (v) => (v <= 0 ? '🔇' : v < 40 ? '🔈' : v < 75 ? '🔉' : '🔊');
+
 const FIRST_OPTIONS = [
   ['me', '나부터'],
   ['bot', '봇부터'],
@@ -48,6 +55,9 @@ export class App {
     this.quitTimer = null;
     this.rafId = null;
     this.dictPanel = null;
+    /** 음소거를 풀 때 돌아갈 음량(0%에서 아이콘을 다시 누르면 이 값으로) */
+    this.prevVolume = this.settings.volume > 0 ? this.settings.volume : 100;
+    this.settingsCloseTimer = null;
     /** 방금 놓인 단어 타일(이어지는 글자 표시용) */
     this.chainPrev = null;
     /** 보드로 올라간 마지막 수(다음 수가 오면 말풍선으로 내려간다) */
@@ -60,9 +70,13 @@ export class App {
   mount() {
     const ids = [
       'scr-loading', 'scr-setup', 'scr-dict', 'scr-game', 'load-fill', 'load-meta', 'load-error',
-      'levels', 'lv-desc', 'time-opts', 'first-opts',
+      'levels', 'lv-desc', 'first-opts',
+      'time-slider', 'time-range', 'time-fill', 'time-value',
+      'btn-settings', 'ov-settings', 'btn-settings-close',
+      'vol-slider', 'vol-range', 'vol-fill', 'vol-value', 'vol-icon', 'btn-vol-icon',
+      'btn-mono', 'mono-desc',
       'btn-mercy', 'mercy-desc',
-      'btn-sound', 'sound-icon', 'sound-value', 'btn-start', 'btn-dict',
+      'btn-start', 'btn-dict',
       'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit', 'game-mercy',
       'arena', 'stage', 'stage-hint', 'bot-bubble', 'chain',
       'need-char', 'need-alt', 'cand-count', 'chip-mission', 'chip-combo',
@@ -83,9 +97,12 @@ export class App {
     this.dictPanel.mount();
 
     this.renderLevels();
-    this.renderSegments();
+    this.renderFirst();
+    this.renderTime();
     this.renderMercy();
-    this.renderSoundButton();
+    this.renderVolume();
+    this.renderMono();
+    this.applyMonochrome();
 
     this.bindEvents();
     this.show('setup');
@@ -96,6 +113,8 @@ export class App {
 
   show(name) {
     this.screen = name;
+    // 다른 화면으로 옮기면 설정 창은 접는다(설정은 홈 화면 위에만 뜬다)
+    if (name !== 'setup') this.closeSettings(true);
     for (const key of ['scr-loading', 'scr-setup', 'scr-dict', 'scr-game']) {
       this.el[key].hidden = key !== `scr-${name}`;
     }
@@ -152,38 +171,56 @@ export class App {
     });
   }
 
-  renderSegments() {
-    const timeBox = this.el['time-opts'];
-    timeBox.innerHTML = TIME_OPTIONS.map((t) => `<button type="button" role="radio" data-time="${t}">${t}초</button>`).join('');
-    timeBox.querySelectorAll('button').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        this.settings.timeLimit = Number(btn.dataset.time);
-        this.persist();
-        this.syncSegments();
-        this.sfx.play('tap');
-      });
-    });
-
+  renderFirst() {
     const firstBox = this.el['first-opts'];
     firstBox.innerHTML = FIRST_OPTIONS.map(([v, label]) => `<button type="button" role="radio" data-first="${v}">${label}</button>`).join('');
     firstBox.querySelectorAll('button').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.settings.first = btn.dataset.first;
         this.persist();
-        this.syncSegments();
+        this.syncFirst();
         this.sfx.play('tap');
       });
     });
-    this.syncSegments();
+    this.syncFirst();
   }
 
-  syncSegments() {
-    this.el['time-opts'].querySelectorAll('button').forEach((btn) => {
-      btn.setAttribute('aria-checked', String(Number(btn.dataset.time) === this.settings.timeLimit));
-    });
+  syncFirst() {
     this.el['first-opts'].querySelectorAll('button').forEach((btn) => {
       btn.setAttribute('aria-checked', String(btn.dataset.first === this.settings.first));
     });
+  }
+
+  /* ── 제한 시간 슬라이더 (1~50초) ────────────────────── */
+
+  renderTime() {
+    const limit = clampInt(this.settings.timeLimit, TIME_MIN, TIME_MAX, DEFAULT_SETTINGS.timeLimit);
+    this.settings.timeLimit = limit;
+    const input = this.el['time-range'];
+    input.min = String(TIME_MIN);
+    input.max = String(TIME_MAX);
+    input.value = String(limit);
+    this.syncTime();
+  }
+
+  /** 슬라이더 채움 비율과 숫자 배지를 지금 값에 맞춘다. */
+  syncTime() {
+    const input = this.el['time-range'];
+    const limit = Number(input.value);
+    this.el['time-value'].textContent = String(limit);
+    this.paintSlider(input);
+    input.setAttribute('aria-valuetext', `${limit}초`);
+  }
+
+  /** range 입력의 채움 비율(--pct · --ratio)을 현재 값에 맞춘다. */
+  paintSlider(input) {
+    const min = Number(input.min) || 0;
+    const max = Number(input.max) || 100;
+    const val = Number(input.value);
+    const ratio = max > min ? (val - min) / (max - min) : 0;
+    input.style.setProperty('--pct', `${(ratio * 100).toFixed(2)}%`);
+    const wrap = input.closest('.slider');
+    if (wrap) wrap.style.setProperty('--ratio', String(ratio));
   }
 
   /* ── 배려모드 ────────────────────────────────────────── */
@@ -216,13 +253,91 @@ export class App {
       : '🛡️ 배려 해금<small>한방 가능</small>';
   }
 
-  renderSoundButton() {
-    const btn = this.el['btn-sound'];
-    const on = this.settings.sound;
-    btn.setAttribute('aria-pressed', String(on));
-    btn.setAttribute('aria-label', `효과음 ${on ? '켬' : '끔'}`);
-    this.el['sound-icon'].textContent = on ? '🔊' : '🔇';
-    this.el['sound-value'].textContent = on ? '켬' : '끔';
+  /* ── 설정 창: 음량 · 흑백모드 ───────────────────────── */
+
+  renderVolume() {
+    const vol = clampInt(this.settings.volume, 0, 100, DEFAULT_SETTINGS.volume);
+    this.settings.volume = vol;
+    const input = this.el['vol-range'];
+    input.value = String(vol);
+    this.el['vol-value'].textContent = `${vol}%`;
+    this.el['vol-icon'].textContent = volumeIcon(vol);
+    input.setAttribute('aria-valuetext', `${vol}%`);
+    const icon = this.el['btn-vol-icon'];
+    icon.setAttribute('aria-pressed', String(vol === 0));
+    icon.setAttribute('aria-label', vol === 0 ? '음소거 해제' : '음소거');
+    this.paintSlider(input);
+  }
+
+  /** 슬라이더를 움직이는 동안: 값·아이콘·채움만 맞추고 소리는 손을 뗄 때 한 번. */
+  setVolume(value, { persist = true } = {}) {
+    const vol = clampInt(value, 0, 100, DEFAULT_SETTINGS.volume);
+    this.settings.volume = vol;
+    this.sfx.setVolume(vol);
+    if (vol > 0) this.prevVolume = vol;
+    this.renderVolume();
+    if (persist) this.persist();
+  }
+
+  toggleMute() {
+    if (this.settings.volume > 0) {
+      // 음소거: 지금 음량을 기억해 두고 0%로
+      this.prevVolume = this.settings.volume;
+      this.setVolume(0);
+      return;
+    }
+    // 해제: 직전 음량으로 돌아가며 그 크기를 짧게 들려 준다
+    this.sfx.unlock();
+    this.setVolume(this.prevVolume || 100);
+    this.sfx.play('tap');
+  }
+
+  renderMono() {
+    const on = Boolean(this.settings.monochrome);
+    const btn = this.el['btn-mono'];
+    btn.setAttribute('aria-checked', String(on));
+    btn.setAttribute('aria-label', `흑백모드 ${on ? '켬' : '끔'}`);
+    this.el['mono-desc'].textContent = on
+      ? '켜면 화면 전체가 흑백으로 보여요'
+      : '끄면 기본 컬러 · 켜면 화면 전체 흑백';
+  }
+
+  /** 흑백모드는 html 에 .mono 만 붙인다(레이아웃·뷰포트 계산은 건드리지 않는다). */
+  applyMonochrome() {
+    const on = Boolean(this.settings.monochrome);
+    document.documentElement.classList.toggle('mono', on);
+    const tag = document.querySelector('meta[name="theme-color"]');
+    if (tag) tag.setAttribute('content', on ? '#E9E6DF' : '#EFECE4');
+  }
+
+  openSettings() {
+    clearTimeout(this.settingsCloseTimer);
+    const ov = this.el['ov-settings'];
+    ov.hidden = false;
+    ov.classList.remove('ov-out');
+    this.el['btn-settings'].setAttribute('aria-expanded', 'true');
+    this.renderVolume();
+    this.renderMono();
+    this.sfx.play('tap');
+    if (this.isFinePointer()) this.el['btn-settings-close'].focus({ preventScroll: true });
+  }
+
+  /** 설정 창 닫기. instant 면 옅어지는 사이를 기다리지 않는다. */
+  closeSettings(instant = false) {
+    const ov = this.el['ov-settings'];
+    this.el['btn-settings'].setAttribute('aria-expanded', 'false');
+    if (!ov || ov.hidden) return;
+    clearTimeout(this.settingsCloseTimer);
+    if (instant || reduceMotion()) {
+      ov.hidden = true;
+      ov.classList.remove('ov-out');
+      return;
+    }
+    ov.classList.add('ov-out');
+    this.settingsCloseTimer = setTimeout(() => {
+      ov.hidden = true;
+      ov.classList.remove('ov-out');
+    }, 150);
   }
 
   persist() {
@@ -232,15 +347,50 @@ export class App {
   /* ── 이벤트 ────────────────────────────────────────────── */
 
   bindEvents() {
-    this.el['btn-sound'].addEventListener('click', () => {
-      this.settings.sound = !this.settings.sound;
-      this.sfx.setEnabled(this.settings.sound);
-      if (this.settings.sound) {
-        this.sfx.unlock();
-        this.sfx.play('tap');
-      }
+    // ── 제한 시간 슬라이더 (1~50초) ──
+    const timeRange = this.el['time-range'];
+    timeRange.addEventListener('input', () => {
+      this.settings.timeLimit = clampInt(timeRange.value, TIME_MIN, TIME_MAX, this.settings.timeLimit);
+      this.syncTime();
       this.persist();
-      this.renderSoundButton();
+    });
+    timeRange.addEventListener('change', () => {
+      this.syncTime();
+      this.persist();
+      this.sfx.play('tap');
+    });
+
+    // ── 설정 창 ──
+    this.el['btn-settings'].addEventListener('click', () => this.openSettings());
+    this.el['btn-settings-close'].addEventListener('click', () => {
+      this.closeSettings();
+      this.sfx.play('tap');
+    });
+    this.el['ov-settings'].addEventListener('click', (event) => {
+      if (event.target === this.el['ov-settings']) this.closeSettings();
+    });
+
+    // ── 음량 ──
+    const volRange = this.el['vol-range'];
+    volRange.addEventListener('input', () => {
+      this.sfx.unlock();
+      this.setVolume(volRange.value);
+    });
+    volRange.addEventListener('change', () => {
+      // 손을 떼면 지금 음량으로 짧은 시험음을 들려 준다
+      this.sfx.unlock();
+      if (this.settings.volume > 0) this.sfx.play('tap');
+      this.persist();
+    });
+    this.el['btn-vol-icon'].addEventListener('click', () => this.toggleMute());
+
+    // ── 흑백모드 ──
+    this.el['btn-mono'].addEventListener('click', () => {
+      this.settings.monochrome = !this.settings.monochrome;
+      this.applyMonochrome();
+      this.renderMono();
+      this.persist();
+      this.sfx.play('tap');
     });
 
     this.el['btn-start'].addEventListener('click', () => this.startGame());
@@ -275,6 +425,15 @@ export class App {
     });
 
     document.addEventListener('keydown', (e) => {
+      // 설정 창이 열려 있으면 그 창부터 닫는다(뒤에서 대전이 시작되지 않게)
+      if (!this.el['ov-settings'].hidden) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.closeSettings();
+        }
+        if (e.key === 'Enter' && document.activeElement === document.body) e.preventDefault();
+        return;
+      }
       if (e.key === 'Escape' && !this.el['ov-result'].hidden) this.hideResult();
       if (e.key === 'Escape' && this.screen === 'dict') this.closeDict();
       if (e.key === 'Enter' && this.screen === 'setup') {
@@ -287,7 +446,7 @@ export class App {
     // 오디오 잠금 해제 (첫 입력)
     const unlock = () => {
       this.sfx.unlock();
-      this.sfx.setEnabled(this.settings.sound);
+      this.sfx.setVolume(this.settings.volume, { immediate: true });
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('keydown', unlock);
     };
@@ -315,7 +474,7 @@ export class App {
     const level = overrides.level ?? this.settings.level;
     const info = levelInfo(level);
     const mercy = overrides.mercy ?? Boolean(this.settings.mercy);
-    const timeLimit = overrides.timeLimit ?? this.settings.timeLimit;
+    const timeLimit = clampInt(overrides.timeLimit ?? this.settings.timeLimit, TIME_MIN, TIME_MAX, DEFAULT_SETTINGS.timeLimit);
     const first = overrides.first ?? this.settings.first;
 
     this.hideResult(true);

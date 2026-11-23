@@ -10,7 +10,7 @@ async function boot() {
   migrateLegacy();
   const settings = loadSettings();
   const record = loadRecord();
-  const sfx = new Sfx(settings.sound);
+  const sfx = new Sfx(settings.volume);
 
   const dict = new Dictionary();
 
@@ -35,6 +35,7 @@ async function boot() {
   window.__ITDA = {
     app,
     dict,
+    sfx,
     Bot,
     LEVELS,
     naturalness: (w) => naturalness(dict, w),

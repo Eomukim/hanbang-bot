@@ -17,12 +17,23 @@ const KEY_RECORD = 'itda.record.v1';
 /** 리브랜딩 전 이름들. 최근 이름이 앞이다(잇다 → 끝말봇 → 한방봇). */
 const LEGACY_NAMES = ['kkeutmalbot', 'hanbang'];
 
-const DEFAULT_SETTINGS = {
+/** 제한 시간은 1초부터 50초까지 1초 단위로 모두 쓴다. */
+export const TIME_MIN = 1;
+export const TIME_MAX = 50;
+
+export const DEFAULT_SETTINGS = {
   level: 2,
   timeLimit: 15,
   first: 'me',      // 'me' | 'bot'
-  sound: true,
+  volume: 100,      // 효과음 음량 0~100(%). 0이면 무음
+  monochrome: false, // 흑백모드
   mercy: false,     // 배려모드: 첫 5수 한방 금지
+};
+
+const clampInt = (value, min, max, fallback) => {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
 };
 
 function readJSON(key, fallback) {
@@ -87,9 +98,22 @@ export function loadSettings() {
   const settings = { ...DEFAULT_SETTINGS };
   // 4단계 시절에 저장한 설정(level 1~4)도 그대로 읽는다. 5단계가 늘었을 뿐 번호는 같다.
   if ([1, 2, 3, 4, 5].includes(saved.level)) settings.level = saved.level;
-  if ([10, 15, 20].includes(saved.timeLimit)) settings.timeLimit = saved.timeLimit;
+  // 예전에는 10·15·20초만 저장했다. 이제는 1~50초 어느 값이든 그대로 읽는다.
+  // 범위를 벗어난 값이 저장돼 있으면 기본값(15초)으로 시작한다.
+  if (saved.timeLimit != null) {
+    const t = Math.round(Number(saved.timeLimit));
+    if (Number.isFinite(t) && t >= TIME_MIN && t <= TIME_MAX) settings.timeLimit = t;
+  }
   if (saved.first === 'me' || saved.first === 'bot') settings.first = saved.first;
-  if (typeof saved.sound === 'boolean') settings.sound = saved.sound;
+  // 음량: 저장된 volume 이 있으면 그 값, 없으면 예전 효과음 켬/끔에서 옮겨 온다(false → 0%).
+  if (typeof saved.volume === 'number' && Number.isFinite(saved.volume)) {
+    settings.volume = clampInt(saved.volume, 0, 100, DEFAULT_SETTINGS.volume);
+  } else if (saved.sound === false) {
+    settings.volume = 0;
+  } else if (saved.sound === true) {
+    settings.volume = 100;
+  }
+  if (typeof saved.monochrome === 'boolean') settings.monochrome = saved.monochrome;
   if (typeof saved.mercy === 'boolean') settings.mercy = saved.mercy;
   return settings;
 }
@@ -97,9 +121,10 @@ export function loadSettings() {
 export function saveSettings(settings) {
   writeJSON(KEY_SETTINGS, {
     level: settings.level,
-    timeLimit: settings.timeLimit,
+    timeLimit: clampInt(settings.timeLimit, TIME_MIN, TIME_MAX, DEFAULT_SETTINGS.timeLimit),
     first: settings.first,
-    sound: settings.sound,
+    volume: clampInt(settings.volume, 0, 100, DEFAULT_SETTINGS.volume),
+    monochrome: Boolean(settings.monochrome),
     mercy: Boolean(settings.mercy),
   });
 }

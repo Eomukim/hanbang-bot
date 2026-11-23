@@ -9,7 +9,11 @@
 - 설정 화면 정리: 상단 태그라인·하단 규칙/팁/전적 블록 없음, 대전 시작이 마지막 요소, 세로 스크롤 0
 - 단어 사전: 설정 화면 오른쪽 위 📖 사전 버튼 · ‘이’ 1글자 검색 · 어려움순(한방·후속 수) ·
   쉬움순(일상 먼저) · 100개씩 더 보기 · 돌아가기 (dict.png, dict-easy.png, mobile-dict.png)
-- 내 단어장 삭제(버튼·모달·사전 API 없음)와 효과음 설정 행 전체 폭
+- 내 단어장 삭제(버튼·모달·사전 API 없음)
+- 별도 설정 창(⚙ 설정): 음량 70% → gain 0.35, 흑백모드로 화면 전체 회색, 화면 안·스크롤 0
+  (desktop-settings.png, desktop-settings-mono.png, desktop-mono-home.png,
+   mobile-settings.png, mobile-settings-mono.png, mobile-mono-home.png)
+- 제한 시간 1~50초 슬라이더 · 홈에 효과음 행 없음
 - 힌트 삭제(버튼·문구·API 없음)
 - 첫 제시 글자: 플레이어 선공이 제시어(사전의 2~3글자 일상 단어)의 첫 글자를 받고,
   안내 문구·`이어야 할 글자`가 그 글자를 보여 주는지(start-char.png, mobile-start-char.png)
@@ -132,6 +136,80 @@ def brand_hits(page):
         }
         return out;
     }""", list(BAD))
+
+
+def settings_shots(page, prefix):
+    """설정 창(음량·흑백모드)과 흑백으로 바뀐 화면을 남긴다. 끝나면 컬러·기본값으로 되돌린다."""
+    page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(320)
+    page.click('#btn-settings')
+    page.wait_for_timeout(430)
+    page.evaluate("""() => {
+        const r = document.getElementById('vol-range');
+        r.value = '70';
+        r.dispatchEvent(new Event('input', { bubbles: true }));
+        r.dispatchEvent(new Event('change', { bubbles: true }));
+    }""")
+    page.wait_for_timeout(220)
+    view = page.evaluate("""() => {
+        const ov = document.getElementById('ov-settings');
+        const sheet = ov.querySelector('.settings-sheet').getBoundingClientRect();
+        const t = document.getElementById('time-range');
+        return {
+            open: !ov.hidden,
+            withinView: sheet.top >= 0 && sheet.bottom <= innerHeight,
+            sheetScroll: Math.round(ov.querySelector('.settings-sheet').scrollHeight
+                                    - ov.querySelector('.settings-sheet').clientHeight),
+            time: { value: t.value, badge: document.getElementById('time-value').textContent,
+                    pct: t.style.getPropertyValue('--pct').trim() },
+            vol: document.getElementById('vol-value').textContent,
+            gain: window.__ITDA.sfx.master ? Number(window.__ITDA.sfx.master.gain.value.toFixed(3)) : null,
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+    }""")
+    check(view['open'] and view['withinView'] and view['sheetScroll'] <= 1 and view['overflow'] <= 0,
+          f'{prefix} 설정 창: 화면 안 · 스크롤 0 · 오버플로 0', json.dumps(view, ensure_ascii=False))
+    check(view['vol'] == '70%' and view['gain'] is not None and abs(view['gain'] - 0.35) <= 0.02,
+          f'{prefix} 설정 창 음량 70% → gain 0.35', json.dumps(view, ensure_ascii=False))
+    page.screenshot(path=os.path.join(OUT, f'{prefix}-settings.png'))
+    print(f'  shot  {os.path.join(OUT, f"{prefix}-settings.png")}')
+
+    page.click('#btn-mono')
+    page.wait_for_timeout(430)
+    mono = page.evaluate("""() => ({
+        on: document.documentElement.classList.contains('mono'),
+        app: getComputedStyle(document.getElementById('app')).filter,
+        bg: getComputedStyle(document.querySelector('.bg')).filter,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    })""")
+    check(mono['on'] and 'grayscale(1)' in mono['app'] and 'grayscale(1)' in mono['bg'] and mono['overflow'] <= 0,
+          f'{prefix} 흑백모드 적용', json.dumps(mono, ensure_ascii=False))
+    page.screenshot(path=os.path.join(OUT, f'{prefix}-settings-mono.png'))
+    print(f'  shot  {os.path.join(OUT, f"{prefix}-settings-mono.png")}')
+    page.click('#btn-settings-close')
+    page.wait_for_timeout(320)
+    page.screenshot(path=os.path.join(OUT, f'{prefix}-mono-home.png'))
+    print(f'  shot  {os.path.join(OUT, f"{prefix}-mono-home.png")}')
+
+    # 컬러로 되돌리고 음량도 되돌린다(다음 장면들이 컬러로 찍히도록)
+    page.click('#btn-settings')
+    page.wait_for_timeout(320)
+    page.click('#btn-mono')
+    page.wait_for_timeout(220)
+    page.evaluate("""() => {
+        const r = document.getElementById('vol-range');
+        r.value = '100';
+        r.dispatchEvent(new Event('input', { bubbles: true }));
+        r.dispatchEvent(new Event('change', { bubbles: true }));
+    }""")
+    page.wait_for_timeout(160)
+    page.click('#btn-settings-close')
+    page.wait_for_timeout(300)
+    back = page.evaluate("() => ({ mono: document.documentElement.classList.contains('mono'), vol: document.getElementById('vol-range').value })")
+    check(not back['mono'] and back['vol'] == '100', f'{prefix} 설정 창 닫고 컬러·100%로 복귀',
+          json.dumps(back, ensure_ascii=False))
+    return view
 
 
 def wait_my_turn(page, timeout=8000):
@@ -404,6 +482,7 @@ def main():
               '설정 화면이 스크롤 없이 한 화면에', f"{clean['brandTop']}~{clean['startBottom']} / {clean['viewH']}px")
         summary['setup'] = clean
         page.screenshot(path=os.path.join(OUT, 'setup.png'))
+        summary['desktop_settings'] = settings_shots(page, 'desktop')
 
         gone = page.evaluate("""() => ({
             btn: !!document.getElementById('btn-custom'),
@@ -411,13 +490,16 @@ def main():
             text: document.body.innerText.includes('내 단어장'),
             api: ['custom', 'customByStart', 'addCustom', 'removeCustom', 'setCustom', 'customStartCount', 'meanOf']
                 .filter((k) => window.__ITDA.dict[k] !== undefined),
-            row: Math.round(document.getElementById('btn-sound').getBoundingClientRect().width),
-            box: Math.round(document.querySelector('.setup-actions').getBoundingClientRect().width),
+            soundRow: !!document.getElementById('btn-sound') || !!document.querySelector('.setup-actions'),
+            row: Math.round(document.getElementById('time-slider').getBoundingClientRect().width),
+            box: Math.round(document.querySelector('.field-time').getBoundingClientRect().width),
+            badge: document.querySelector('.time-badge').innerText.trim(),
         })""")
         check(not gone['btn'] and not gone['modal'] and not gone['text'] and not gone['api'],
               '내 단어장 삭제(버튼·모달·API·문구 없음)', json.dumps(gone, ensure_ascii=False))
-        check(gone['row'] >= gone['box'] - 1 and gone['row'] > 200,
-              '효과음 설정 행 전체 폭', f"{gone['row']}/{gone['box']}px")
+        check(gone['row'] >= gone['box'] - 1 and gone['row'] > 200 and not gone['soundRow'],
+              '효과음 행은 별도 설정 창으로 · 제한 시간 슬라이더가 폭 전체',
+              f"{gone['row']}/{gone['box']}px · badge {gone['badge']}")
 
         cards = page.evaluate("""() => [...document.querySelectorAll('.level')].map((el) => ({
             lv: el.dataset.lv, name: el.querySelector('b').textContent, label: el.querySelector('small').textContent }))""")
@@ -790,13 +872,16 @@ def main():
         mobile_gone = page.evaluate("""() => ({
             btn: !!document.getElementById('btn-custom'),
             text: document.body.innerText.includes('내 단어장'),
-            row: Math.round(document.getElementById('btn-sound').getBoundingClientRect().width),
-            box: Math.round(document.querySelector('.setup-actions').getBoundingClientRect().width),
+            soundRow: !!document.getElementById('btn-sound') || !!document.querySelector('.setup-actions'),
+            row: Math.round(document.getElementById('time-slider').getBoundingClientRect().width),
+            box: Math.round(document.querySelector('.field-time').getBoundingClientRect().width),
+            badge: document.querySelector('.time-badge').innerText.trim(),
         })""")
         check(not mobile_gone['btn'] and not mobile_gone['text'], '모바일 내 단어장 삭제',
               json.dumps(mobile_gone, ensure_ascii=False))
-        check(mobile_gone['row'] >= mobile_gone['box'] - 1, '모바일 효과음 설정 행 전체 폭',
-              f"{mobile_gone['row']}/{mobile_gone['box']}px")
+        check(mobile_gone['row'] >= mobile_gone['box'] - 1 and not mobile_gone['soundRow'],
+              '모바일 제한 시간 슬라이더 전체 폭 · 효과음 행 없음',
+              f"{mobile_gone['row']}/{mobile_gone['box']}px · badge {mobile_gone['badge']}")
         mobile_clean = page.evaluate("""() => {
             const setup = document.querySelector('#scr-setup .setup');
             const kids = [...setup.children];
@@ -818,6 +903,7 @@ def main():
               '모바일 설정 화면 정리·스크롤 없음', json.dumps(mobile_clean, ensure_ascii=False))
         summary['mobile_setup'] = mobile_clean
         page.screenshot(path=os.path.join(OUT, 'mobile-setup.png'))
+        summary['mobile_settings'] = settings_shots(page, 'mobile')
 
         # ── 모바일: 단어 사전 ────────────────────────────────
         page.click('#btn-dict')
