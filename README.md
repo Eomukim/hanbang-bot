@@ -160,7 +160,7 @@ W면 그 글자로 먼저 두는 쪽(Lv.4)이 완전한 수로 이기고, 후공
 ## 계정 (로그인 · 회원가입)
 
 게임은 로그인 없이 지금처럼 그대로 즐길 수 있고, 계정은 선택이다. 계정이 있으면 홈 오른쪽 위 맨 끝
-`👤 로그인` 버튼이 내 아이디로 바뀌고, 누르면 가입 방식·가입일과 로그아웃이 나온다.
+`👤 로그인` 버튼이 내 아이디로 바뀌고, 누르면 가입 방식·가입일과 로그아웃·계정 삭제가 나온다.
 
 | 방식 | 내용 |
 | --- | --- |
@@ -178,6 +178,7 @@ W면 그 글자로 먼저 두는 쪽(Lv.4)이 완전한 수로 이기고, 후공
 | `POST /api/auth/login` | Turnstile 검증 → 비밀번호 확인 → 세션 발급 |
 | `POST /api/auth/google` | 구글 ID 토큰 검증(대상·발급자·만료) → 기존 계정 조회 또는 자동 가입 → 세션 발급 |
 | `POST /api/auth/logout` | 지금 세션만 지우고 쿠키를 비운다 |
+| `POST /api/auth/delete` | 세션 확인 → 본인 재확인(비밀번호 계정은 현재 비밀번호, 구글 계정은 `삭제`/`@아이디`) → sessions·users 행 영구 삭제 + 쿠키 만료 |
 
 - 세션은 무작위 32바이트 토큰을 `HttpOnly; Secure; SameSite=Lax` 쿠키(30일)로 주고, DB 에는 SHA-256 해시만 남긴다.
 - 비밀번호는 Web Crypto PBKDF2-SHA256(무작위 salt, 반복 15,000회 — Workers 무료 플랜 CPU 한도에 맞춘 값)로 저장한다.
@@ -200,14 +201,15 @@ js/audio.js         Web Audio 효과음(음원 파일 없음)
 js/store.js         localStorage 설정 · 전적
 js/ui.js            화면 조립, 입력, 결과
 js/dict.js          단어 사전 화면(검색 · 두음 포함 · 정렬 4종 · 더 보기)
-js/account.js       계정 창(로그인 · 회원가입 · 내 계정 · 로그아웃)
-functions/api/auth/ 계정 API(Cloudflare Pages Functions) — config · me · register · login · google · logout
+js/account.js       계정 창(로그인 · 회원가입 · 내 계정 · 로그아웃 · 계정 삭제 2단계 확인)
+functions/api/auth/ 계정 API(Cloudflare Pages Functions) — config · me · register · login · google · logout · delete
 functions/_lib/auth.js 비밀번호(PBKDF2)·세션 쿠키·Turnstile 검증·요청 제한 공용 도우미
 db/schema.sql       D1 `itda-db` 스키마(users · sessions · auth_throttle)
 build/build_data.py 단어 원본 → data/words.txt + data/stats.json(+ 음절 대전 그래프, 일상 어휘 단계)
 build/build_easy.py 일상 어휘 목록 → build/easy_words.txt (국립국어원 학습용 + TOPIK 어휘)
 build/collect_kkuko.py 오픈DB(공개 API) 단어 수집
 tools/verify.py     headless Chromium 검증(로컬/라이브)
+tools/delete_check.py 계정 삭제 점검(2단계 확인 · 틀린 비밀번호 거부 · 영구 삭제 · 재로그인 불가)
 tools/bench.mjs     봇 대 봇 승률 벤치마크(Node)
 tools/audit.mjs     난이도별 단어 품질 감사(Node: 동사 편중·일상어 비율·긴 단어·같은 자리 고착)
 tools/ui_tour.py    화면 순회 점검(3화면 크기 × 설정/대전/결과 배틀내역/배려모드)

@@ -28,6 +28,10 @@ const ERROR_TEXT = {
   turnstile_missing: '아래 봇 확인을 먼저 마쳐 주세요.',
   rate_limited: '시도가 너무 많아요. 잠시 후 다시 시도해 주세요.',
   google_failed: '구글 로그인을 확인하지 못했어요. 다시 시도해 주세요.',
+  not_signed_in: '로그인한 상태에서만 계정을 지울 수 있어요.',
+  password_mismatch: '비밀번호가 맞지 않아요. 다시 확인해 주세요.',
+  confirm_required: '확인 문구를 입력해 주세요.',
+  confirm_mismatch: '확인 문구가 맞지 않아요. 입력한 문구를 다시 확인해 주세요.',
   google_disabled: '구글 로그인은 준비 중이에요.',
   not_configured: '계정 서버가 아직 준비되지 않았어요.',
   network: '연결이 잠시 불안정해요. 잠시 후 다시 시도해 주세요.',
@@ -71,6 +75,7 @@ export class AccountPanel {
     this.turnstileId = null;
     this.turnstileLoad = null;
     this.googleReady = false;
+    this.deleteBusy = false;
     this.closeTimers = { auth: null, account: null };
     this.el = {};
   }
@@ -84,6 +89,9 @@ export class AccountPanel {
       'auth-or', 'auth-google-slot', 'auth-google-note',
       'ov-account', 'btn-account-close', 'account-avatar', 'account-name', 'account-handle',
       'account-provider', 'account-joined', 'btn-logout',
+      'account-main', 'account-delete-view', 'btn-delete-account', 'btn-delete-confirm',
+      'btn-delete-cancel', 'account-delete-confirm', 'account-delete-label',
+      'account-delete-hint', 'account-delete-target', 'account-delete-error',
     ];
     for (const id of ids) this.el[id] = $(id);
     this.bind();
@@ -177,6 +185,7 @@ export class AccountPanel {
     if (!this.user) return this.openAuth('login');
     const ov = this.el['ov-account'];
     clearTimeout(this.closeTimers.account);
+    this.hideDeleteConfirm();
     this.fillAccount();
     ov.hidden = false;
     ov.classList.remove('ov-out');
@@ -463,6 +472,134 @@ export class AccountPanel {
     this.toast('로그아웃했어요. 게스트로 이어서 즐길 수 있어요.');
   }
 
+  /* ── 계정 삭제 (2단계 확인) ───────────────────────────── */
+
+  /** 지금 계정이 구글 전용 계정인지(비밀번호가 없는지). */
+  isGoogleAccount() {
+    return this.user?.provider === 'google';
+  }
+
+  /** 구글 계정의 확인 문구가 맞는지: `삭제` 또는 `@아이디`(아이디만도 허용). */
+  deletePhraseOk(value) {
+    const phrase = String(value ?? '').trim();
+    const username = this.user?.username || '';
+    if (!username) return false;
+    return phrase === '삭제' || phrase === `@${username}` || phrase === username;
+  }
+
+  showDeleteConfirm() {
+    if (!this.user || this.deleteBusy) return;
+    const google = this.isGoogleAccount();
+    const input = this.el['account-delete-confirm'];
+    const username = this.user.username;
+    input.type = google ? 'text' : 'password';
+    input.value = '';
+    input.autocomplete = google ? 'off' : 'current-password';
+    input.placeholder = google ? `@${username} 또는 삭제` : '현재 비밀번호';
+    input.setAttribute('aria-label', google ? '확인 문구' : '현재 비밀번호');
+    this.el['account-delete-label'].textContent = google ? '확인 문구' : '현재 비밀번호';
+    this.el['account-delete-hint'].textContent = google
+      ? `본인 확인을 위해 @${username} 또는 삭제 를 그대로 입력해 주세요.`
+      : '본인 확인을 위해 지금 쓰는 비밀번호를 한 번 더 입력해 주세요.';
+    this.el['account-delete-target'].textContent = `@${username} 계정이 영구적으로 지워져요.`;
+    this.clearDeleteError();
+    this.syncDeleteButton();
+    this.el['account-main'].hidden = true;
+    this.el['account-delete-view'].hidden = false;
+    this.sfx?.play('tap');
+    if (window.matchMedia('(pointer: fine)').matches) {
+      setTimeout(() => input.focus({ preventScroll: true }), 60);
+    }
+  }
+
+  hideDeleteConfirm() {
+    if (!this.el['account-delete-view']) return;
+    this.el['account-delete-view'].hidden = true;
+    this.el['account-main'].hidden = false;
+    if (this.el['account-delete-confirm']) this.el['account-delete-confirm'].value = '';
+    this.clearDeleteError();
+    this.setDeleteBusy(false);
+  }
+
+  /** 확인 문구를 알맞게 입력했을 때만 `영구 삭제`가 눌린다. */
+  syncDeleteButton() {
+    const btn = this.el['btn-delete-confirm'];
+    if (!btn) return;
+    const value = this.el['account-delete-confirm'].value;
+    const ready = this.isGoogleAccount() ? this.deletePhraseOk(value) : value.length > 0;
+    btn.disabled = this.deleteBusy || !ready;
+  }
+
+  showDeleteError(message) {
+    const box = this.el['account-delete-error'];
+    if (!box) return;
+    box.hidden = false;
+    box.textContent = message;
+  }
+
+  clearDeleteError() {
+    const box = this.el['account-delete-error'];
+    if (!box) return;
+    box.hidden = true;
+    box.textContent = '';
+  }
+
+  setDeleteBusy(busy) {
+    this.deleteBusy = busy;
+    const btn = this.el['btn-delete-confirm'];
+    if (!btn) return;
+    btn.classList.toggle('busy', busy);
+    btn.textContent = busy ? '지우는 중…' : '영구 삭제';
+    btn.disabled = busy;
+    if (!busy) this.syncDeleteButton();
+  }
+
+  async deleteAccount() {
+    if (!this.user || this.deleteBusy) return;
+    const google = this.isGoogleAccount();
+    const raw = this.el['account-delete-confirm'].value;
+    const phrase = raw.trim();
+    if (google) {
+      if (!this.deletePhraseOk(phrase)) {
+        return this.showDeleteError(`@${this.user.username} 또는 삭제 를 그대로 입력해 주세요.`);
+      }
+    } else if (!raw) {
+      return this.showDeleteError(ERROR_TEXT.password_required);
+    }
+
+    this.setDeleteBusy(true);
+    this.clearDeleteError();
+    try {
+      const res = await fetch('/api/auth/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(google ? { confirm: phrase } : { password: raw }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        this.setDeleteBusy(false);
+        this.showDeleteError(ERROR_TEXT[data?.error] || data?.message || ERROR_TEXT.default);
+        if (data?.error === 'password_mismatch' || data?.error === 'confirm_mismatch') {
+          this.el['account-delete-confirm'].select();
+        }
+        if (data?.error === 'not_signed_in') {
+          this.setUser(null);
+          this.closeAccount();
+        }
+        return;
+      }
+      this.setDeleteBusy(false);
+      this.setUser(null);
+      this.hideDeleteConfirm();
+      this.closeAccount(true);
+      this.toast('계정을 삭제했어요. 게스트로 이어서 즐길 수 있어요.');
+    } catch {
+      this.setDeleteBusy(false);
+      this.showDeleteError(ERROR_TEXT.network);
+    }
+  }
+
   /* ── 이벤트 ───────────────────────────────────────────── */
 
   bind() {
@@ -491,6 +628,21 @@ export class AccountPanel {
     });
     this.el['auth-form'].addEventListener('submit', (event) => this.onSubmit(event));
     this.el['btn-logout'].addEventListener('click', () => this.logout());
+    this.el['btn-delete-account'].addEventListener('click', () => this.showDeleteConfirm());
+    this.el['btn-delete-cancel'].addEventListener('click', () => {
+      this.hideDeleteConfirm();
+      this.sfx?.play('tap');
+    });
+    this.el['btn-delete-confirm'].addEventListener('click', () => this.deleteAccount());
+    this.el['account-delete-confirm'].addEventListener('input', () => {
+      this.clearDeleteError();
+      this.syncDeleteButton();
+    });
+    this.el['account-delete-confirm'].addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      if (!this.el['btn-delete-confirm'].disabled) this.deleteAccount();
+    });
     for (const id of ['auth-username', 'auth-password', 'auth-password2']) {
       this.el[id].addEventListener('input', () => this.clearError());
     }

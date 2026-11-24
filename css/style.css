@@ -1301,6 +1301,57 @@ html.mono .confetti { filter: grayscale(1); }
 }
 .account-logout:hover { background: #F8E3DC; }
 
+.account-main { display: flex; flex-direction: column; gap: 12px; }
+
+/* 위험 영역(계정 삭제) — 실수로 누를 수 없게 로그아웃과 선을 그어 둔다 */
+.account-danger {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 2px; padding-top: 13px;
+  border-top: 1px dashed var(--edge-strong);
+}
+.account-danger-label {
+  margin: 0; font-family: var(--display); font-size: 10px; font-weight: 800;
+  letter-spacing: .12em; color: var(--coral-ink);
+}
+.account-delete {
+  width: 100%; background: var(--tile);
+  color: var(--coral-ink); border-color: var(--coral-edge);
+}
+.account-delete:hover { background: var(--coral-soft); }
+.account-danger-note { margin: 0; font-size: 10.5px; line-height: 1.55; color: var(--mute-2); }
+
+/* 2단계: 본인 재확인 */
+.account-delete-view { display: flex; flex-direction: column; gap: 11px; }
+.account-delete-head { display: flex; align-items: flex-start; gap: 10px; }
+.account-delete-mark {
+  flex: none; width: 30px; height: 30px; display: grid; place-items: center;
+  border-radius: 10px; border: 1px solid var(--coral-edge); background: var(--coral-soft);
+  color: var(--coral-ink); font-family: var(--display); font-size: 15px; font-weight: 800;
+}
+.account-delete-head h3 {
+  margin: 2px 0 3px; font-family: var(--display); font-size: 15px; font-weight: 800; color: var(--ink);
+}
+.account-delete-head p { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--mute); }
+.account-delete-list {
+  margin: 0; padding: 10px 13px 10px 26px; border-radius: 12px;
+  border: 1px solid var(--coral-edge); background: var(--coral-soft);
+  color: var(--ink-soft); font-size: 11.5px; line-height: 1.6;
+}
+.account-delete-list li + li { margin-top: 4px; }
+.account-delete-list b { color: var(--coral-ink); }
+.account-delete-confirm {
+  width: 100%; color: #FFF9F6; background: var(--coral); border-color: #B23F33;
+  box-shadow: 0 2px 0 #A83A2E, inset 0 1px 0 rgba(255,255,255,.22);
+}
+.account-delete-confirm:hover:not(:disabled) { filter: brightness(1.04); }
+.account-delete-confirm:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #A83A2E; }
+.account-delete-confirm:disabled {
+  background: var(--fill); color: var(--mute-2); border-color: var(--edge-strong);
+  box-shadow: 0 2px 0 var(--sh), inset 0 1px 0 #fff; cursor: not-allowed;
+}
+.account-delete-confirm.busy { opacity: .8; }
+.account-delete-view .auth-field input:focus { border-color: var(--coral-edge); box-shadow: 0 0 0 3px var(--coral-soft); }
+
 .result-sheet { text-align: center; }
 .result-badge {
   width: 56px; height: 56px; margin: 0 auto 8px;

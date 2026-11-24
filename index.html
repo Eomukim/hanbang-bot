@@ -298,21 +298,58 @@
       </button>
     </header>
 
-    <div class="account-card">
-      <div class="account-avatar" id="account-avatar" aria-hidden="true">잇</div>
-      <div class="account-name">
-        <b id="account-name">닉네임</b>
-        <small id="account-handle">@아이디</small>
+    <div class="account-main" id="account-main">
+      <div class="account-card">
+        <div class="account-avatar" id="account-avatar" aria-hidden="true">잇</div>
+        <div class="account-name">
+          <b id="account-name">닉네임</b>
+          <small id="account-handle">@아이디</small>
+        </div>
+      </div>
+
+      <dl class="account-info">
+        <div><dt>가입 방식</dt><dd id="account-provider">아이디 + 비밀번호</dd></div>
+        <div><dt>가입일</dt><dd id="account-joined">-</dd></div>
+      </dl>
+
+      <button class="btn ghost account-logout" id="btn-logout" type="button">로그아웃</button>
+      <p class="auth-foot">로그아웃해도 게스트 플레이는 그대로예요.</p>
+
+      <div class="account-danger">
+        <p class="account-danger-label">위험 영역</p>
+        <button class="btn account-delete" id="btn-delete-account" type="button">계정 삭제</button>
+        <p class="account-danger-note">계정을 지우면 아이디와 로그인 정보가 영구적으로 사라져요.</p>
       </div>
     </div>
 
-    <dl class="account-info">
-      <div><dt>가입 방식</dt><dd id="account-provider">아이디 + 비밀번호</dd></div>
-      <div><dt>가입일</dt><dd id="account-joined">-</dd></div>
-    </dl>
+    <!-- 계정 삭제 2단계: 본인 재확인을 마쳐야 영구 삭제가 열린다. -->
+    <div class="account-delete-view" id="account-delete-view" hidden>
+      <div class="account-delete-head">
+        <span class="account-delete-mark" aria-hidden="true">!</span>
+        <div>
+          <h3>정말 계정을 삭제할까요?</h3>
+          <p id="account-delete-target">@아이디 계정이 영구적으로 지워져요.</p>
+        </div>
+      </div>
 
-    <button class="btn ghost account-logout" id="btn-logout" type="button">로그아웃</button>
-    <p class="auth-foot">로그아웃해도 게스트 플레이는 그대로예요.</p>
+      <ul class="account-delete-list">
+        <li>아이디·비밀번호와 로그인 정보가 <b>즉시</b> 사라지고, 지금 로그인된 기기에서도 로그아웃돼요.</li>
+        <li>한 번 지우면 <b>되돌릴 수 없어요</b>. 같은 아이디로 다시 가입하는 것만 가능해요.</li>
+        <li>이 기기에 저장된 설정·전적은 그대로 남아요.</li>
+      </ul>
+
+      <label class="auth-field" id="account-delete-field">
+        <span id="account-delete-label">현재 비밀번호</span>
+        <input id="account-delete-confirm" type="password" autocomplete="current-password"
+               maxlength="72" placeholder="현재 비밀번호" aria-label="현재 비밀번호"
+               aria-describedby="account-delete-hint">
+      </label>
+      <p class="auth-hint" id="account-delete-hint">본인 확인을 위해 지금 쓰는 비밀번호를 한 번 더 입력해 주세요.</p>
+      <p class="auth-error" id="account-delete-error" role="alert" hidden></p>
+
+      <button class="btn account-delete-confirm" id="btn-delete-confirm" type="button" disabled>영구 삭제</button>
+      <button class="btn ghost" id="btn-delete-cancel" type="button">취소</button>
+    </div>
   </div>
 </div>
 
