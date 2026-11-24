@@ -1257,7 +1257,9 @@ html.mono .confetti { filter: grayscale(1); }
 .auth-google { display: flex; justify-content: center; }
 .auth-google:empty { display: none; }
 .auth-note { margin: 0; text-align: center; font-size: 11px; color: var(--mute-2); }
-.auth-foot { margin: 2px 0 0; text-align: center; font-size: 10.5px; color: var(--mute-2); }
+.auth-foot { margin: 2px 0 0; text-align: center; font-size: 10.5px; color: var(--mute-2); line-height: 1.7; }
+.auth-foot a { color: var(--mute); text-decoration: underline; text-underline-offset: 2px; }
+.auth-foot a:hover { color: var(--sage-ink); }
 
 .account-sheet {
   max-width: 360px;

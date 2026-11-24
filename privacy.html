@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>잇다 — 개인정보처리방침</title>
+<meta name="description" content="잇다 계정이 어떤 정보를 저장하고 무엇에 쓰는지 안내합니다.">
+<meta name="theme-color" content="#EFECE4">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='2' y='2' width='60' height='60' rx='14' fill='%23C4503B'/%3E%3Ctext x='32' y='45' font-size='34' font-family='sans-serif' font-weight='800' text-anchor='middle' fill='%23FCF9F2'%3E%EC%9E%87%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body { overflow: auto; }
+  .policy {
+    position: relative; z-index: 1;
+    max-width: 680px; margin: 0 auto;
+    padding: max(28px, env(safe-area-inset-top)) 22px calc(48px + env(safe-area-inset-bottom));
+  }
+  .policy-back {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-bottom: 18px; padding: 8px 13px 9px; border-radius: 11px;
+    border: 1px solid var(--edge-strong); background: var(--fill);
+    color: var(--ink-soft); font-family: var(--display); font-size: 11.5px; font-weight: 800;
+    box-shadow: 0 2px 0 var(--sh), inset 0 1px 0 #fff; text-decoration: none;
+  }
+  .policy-back:hover { background: var(--well-2); color: var(--ink); }
+  .policy-card {
+    background: var(--tile); border: 1px solid var(--edge); border-radius: 20px;
+    padding: 26px 24px 24px;
+    box-shadow: 0 4px 0 var(--sh), 0 30px 54px -28px rgba(70,58,40,.45), inset 0 1px 0 #fff;
+  }
+  .policy-title { margin: 0 0 4px; font-family: var(--display); font-size: 22px; font-weight: 800; color: var(--ink); }
+  .policy-meta { margin: 0 0 18px; font-size: 11.5px; color: var(--mute-2); }
+  .policy h2 {
+    margin: 22px 0 8px; font-family: var(--display); font-size: 14.5px; font-weight: 800; color: var(--ink);
+  }
+  .policy p, .policy li { font-size: 12.8px; line-height: 1.75; color: var(--ink-soft); }
+  .policy p { margin: 0 0 8px; }
+  .policy ul { margin: 0 0 8px; padding-left: 18px; }
+  .policy li { margin-bottom: 4px; }
+  .policy table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; }
+  .policy th, .policy td {
+    text-align: left; vertical-align: top; padding: 8px 10px;
+    font-size: 12px; line-height: 1.6; border-bottom: 1px solid var(--edge); color: var(--ink-soft);
+  }
+  .policy th { font-family: var(--display); font-weight: 800; color: var(--ink); background: var(--fill); }
+  .policy tr:last-child td { border-bottom: 0; }
+  .policy a { color: var(--sage-ink); }
+  .policy-note {
+    margin-top: 18px; padding: 12px 14px; border-radius: 13px;
+    border: 1px solid var(--sage-edge); background: var(--sage-soft); color: var(--sage-ink);
+    font-size: 12px; line-height: 1.65;
+  }
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"></div>
+<main class="policy">
+  <a class="policy-back" href="./">← 잇다로 돌아가기</a>
+  <div class="policy-card">
+    <h1 class="policy-title">개인정보처리방침</h1>
+    <p class="policy-meta">잇다 · 최종 수정 2026년 11월 24일</p>
+
+    <p>잇다는 끝말잇기 게임이고, 계정은 선택 사항입니다. 로그인하지 않아도 게임은 그대로 즐길 수 있으며,
+      이때 서버에는 아무 정보도 저장되지 않습니다(설정·전적은 브라우저 안에만 남습니다).</p>
+
+    <h2>1. 저장하는 정보</h2>
+    <table>
+      <tr><th>항목</th><th>언제</th><th>무엇에 쓰나</th></tr>
+      <tr><td>아이디(닉네임)</td><td>아이디로 회원가입할 때</td><td>계정 식별, 화면 표시</td></tr>
+      <tr><td>비밀번호 해시</td><td>아이디로 회원가입할 때</td><td>로그인 확인 (원래 비밀번호는 저장하지 않아 되살릴 수 없습니다)</td></tr>
+      <tr><td>구글 계정 고유 ID·이름</td><td>구글 로그인을 처음 쓸 때</td><td>같은 구글 계정으로 다시 로그인하기</td></tr>
+      <tr><td>세션 쿠키 값</td><td>로그인한 동안</td><td>로그인 상태 유지 (30일 뒤 자동 만료)</td></tr>
+      <tr><td>가입·수정 시각</td><td>계정을 만들거나 바꿀 때</td><td>계정 관리</td></tr>
+    </table>
+    <p>이메일 주소, 전화번호, 주소, 결제 정보는 받지 않습니다. 광고·추적용 쿠키도 쓰지 않습니다.</p>
+
+    <h2>2. 어디에 보관하나</h2>
+    <p>계정 정보는 Cloudflare의 데이터베이스(D1)에 저장되며, 비밀번호는 PBKDF2-SHA256 해시로만 남습니다.
+      세션 쿠키는 <code>HttpOnly</code> 쿠키로만 오가고 자바스크립트에서 읽을 수 없습니다.</p>
+
+    <h2>3. 무엇에 쓰나</h2>
+    <ul>
+      <li>로그인한 사람을 알아보고 로그인 상태를 유지하는 데만 씁니다.</li>
+      <li>랭킹·광고·마케팅에 쓰지 않고, 제3자에게 판매하거나 넘기지 않습니다.</li>
+    </ul>
+
+    <h2>4. 봇 방지</h2>
+    <p>회원가입과 로그인에는 Cloudflare Turnstile이 쓰입니다. 이 확인은 Cloudflare의 정책에 따라 처리되며,
+      잇다는 확인 결과(통과 여부)만 받습니다.</p>
+
+    <h2>5. 보관 기간과 삭제</h2>
+    <p>세션은 마지막 로그인 뒤 30일이 지나면 만료됩니다. 계정과 관련 정보의 삭제를 원하시면 아래 주소로
+      알려 주세요. 확인되는 대로 지체 없이 삭제합니다.</p>
+
+    <h2>6. 문의</h2>
+    <p>개인정보 관련 문의: <a href="mailto:molphoneyong@gmail.com">molphoneyong@gmail.com</a></p>
+
+    <p class="policy-note">이 방침이 바뀌면 이 페이지에 바뀐 내용과 날짜를 적습니다.</p>
+  </div>
+</main>
+</body>
+</html>
