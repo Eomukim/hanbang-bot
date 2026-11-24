@@ -9,3 +9,9 @@ build/kkuko-raw.jsonl
 build/kkuko-words.txt
 build/tmp/
 build/cache/
+
+wrangler.local.toml
+.wrangler/
+wrangler.toml
+.dev.log
+.nfs*

@@ -2,7 +2,8 @@
 
 말을 이어가는 5단계 봇과의 1:1 끝말잇기. 732,308 단어 사전, 표준 두음법칙, 5단계 난이도.
 
-- 라이브: **https://itda-play.onrender.com**
+- 라이브: **https://itda-play.pages.dev** (Cloudflare Pages, `main` 푸시하면 자동 배포)
+- 이전 주소: https://itda-play.onrender.com (같은 저장소의 Render Static Site — 계정 기능은 Pages 에만 있다)
 - 저장소: https://github.com/Eomukim/itda
 
 ## 무엇이 들어 있나
@@ -156,6 +157,35 @@ W면 그 글자로 먼저 두는 쪽(Lv.4)이 완전한 수로 이기고, 후공
 /workspace/.local/node/bin/node tools/bench.mjs --games 500  --levels punish              # 숨은 한방을 바로 잡는 상대
 ```
 
+## 계정 (로그인 · 회원가입)
+
+게임은 로그인 없이 지금처럼 그대로 즐길 수 있고, 계정은 선택이다. 계정이 있으면 홈 오른쪽 위 맨 끝
+`👤 로그인` 버튼이 내 아이디로 바뀌고, 누르면 가입 방식·가입일과 로그아웃이 나온다.
+
+| 방식 | 내용 |
+| --- | --- |
+| 아이디 + 비밀번호 | 이메일 없이 한글·영문·숫자·밑줄 2~12자 아이디와 6자 이상 비밀번호로 바로 가입/로그인 |
+| 구글 로그인 | 구글 버튼 한 번으로 로그인하거나 처음이면 자동 가입 (`GOOGLE_CLIENT_ID` 가 있을 때만 버튼이 켜진다) |
+| 봇 방지 | 아이디 가입·로그인 모두 **Cloudflare Turnstile** 을 화면에 띄우고, 서버가 `siteverify` 를 통과해야만 통과시킨다 |
+
+서버는 Cloudflare Pages Functions + D1(`itda-db`)이다.
+
+| 경로 | 하는 일 |
+| --- | --- |
+| `GET /api/auth/config` | Turnstile 사이트 키, 구글 클라이언트 ID 같은 공개 설정 |
+| `GET /api/auth/me` | 지금 세션의 사용자(비로그인이면 `null`) |
+| `POST /api/auth/register` | Turnstile 검증 → 아이디 중복 확인 → PBKDF2 해시 저장 → 세션 발급 |
+| `POST /api/auth/login` | Turnstile 검증 → 비밀번호 확인 → 세션 발급 |
+| `POST /api/auth/google` | 구글 ID 토큰 검증(대상·발급자·만료) → 기존 계정 조회 또는 자동 가입 → 세션 발급 |
+| `POST /api/auth/logout` | 지금 세션만 지우고 쿠키를 비운다 |
+
+- 세션은 무작위 32바이트 토큰을 `HttpOnly; Secure; SameSite=Lax` 쿠키(30일)로 주고, DB 에는 SHA-256 해시만 남긴다.
+- 비밀번호는 Web Crypto PBKDF2-SHA256(무작위 salt, 반복 15,000회 — Workers 무료 플랜 CPU 한도에 맞춘 값)로 저장한다.
+  반복 수는 해시 문자열에 함께 남겨 두어, 나중에 올려도 기존 계정은 저장된 값으로 계속 검증된다.
+- 요청 제한: 가입 10회/10분 · 로그인 20회/10분 · 구글 20회/10분(IP 기준). 모든 `/api/*` 응답은 `Cache-Control: no-store`.
+- 환경변수(Pages 프로젝트 `itda-play`): `TURNSTILE_SITE_KEY`(Text) · `TURNSTILE_SECRET_KEY`(Secret) · `GOOGLE_CLIENT_ID` · `DB`(D1 바인딩).
+  Turnstile 위젯 `itda-play-auth` 는 `itda-play.pages.dev` 호스트만 허용한다.
+
 ## 구조
 
 ```
@@ -170,6 +200,10 @@ js/audio.js         Web Audio 효과음(음원 파일 없음)
 js/store.js         localStorage 설정 · 전적
 js/ui.js            화면 조립, 입력, 결과
 js/dict.js          단어 사전 화면(검색 · 두음 포함 · 정렬 4종 · 더 보기)
+js/account.js       계정 창(로그인 · 회원가입 · 내 계정 · 로그아웃)
+functions/api/auth/ 계정 API(Cloudflare Pages Functions) — config · me · register · login · google · logout
+functions/_lib/auth.js 비밀번호(PBKDF2)·세션 쿠키·Turnstile 검증·요청 제한 공용 도우미
+db/schema.sql       D1 `itda-db` 스키마(users · sessions · auth_throttle)
 build/build_data.py 단어 원본 → data/words.txt + data/stats.json(+ 음절 대전 그래프, 일상 어휘 단계)
 build/build_easy.py 일상 어휘 목록 → build/easy_words.txt (국립국어원 학습용 + TOPIK 어휘)
 build/collect_kkuko.py 오픈DB(공개 API) 단어 수집

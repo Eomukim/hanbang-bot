@@ -46,6 +46,11 @@
           <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.6 2.1h3c.7 0 1.3.6 1.3 1.3v6.5c0-.6-.6-1.1-1.3-1.1h-3zM10.4 2.1h-3c-.7 0-1.3.6-1.3 1.3v6.5c0-.6.6-1.1 1.3-1.1h3z"/></svg>
           <span>사전</span>
         </button>
+        <button class="top-btn top-btn-account" id="btn-account" type="button" hidden
+                aria-haspopup="dialog" aria-controls="ov-auth" aria-expanded="false" aria-label="로그인 · 회원가입">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="4" r="2.05"/><path d="M2.15 10.4c.42-2.05 1.95-3.35 3.85-3.35s3.43 1.3 3.85 3.35"/></svg>
+          <span id="account-label">로그인</span>
+        </button>
       </div>
 
       <header class="brand">
@@ -231,6 +236,84 @@
       <button class="btn primary" id="btn-again" type="button">다시 대전</button>
       <button class="btn ghost" id="btn-tosetup" type="button">난이도 변경</button>
     </div>
+  </div>
+</div>
+
+<!-- ────────────── 로그인 · 회원가입 ────────────── -->
+<div class="overlay" id="ov-auth" hidden>
+  <div class="sheet auth-sheet" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <header class="settings-top">
+      <h2 id="auth-title">로그인</h2>
+      <button class="settings-close" id="btn-auth-close" type="button" aria-label="계정 창 닫기">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.7 2.7l6.6 6.6M9.3 2.7l-6.6 6.6"/></svg>
+      </button>
+    </header>
+
+    <div class="auth-tabs" id="auth-tabs" role="tablist" aria-label="로그인 또는 회원가입">
+      <button type="button" role="tab" data-mode="login" aria-selected="true">로그인</button>
+      <button type="button" role="tab" data-mode="signup" aria-selected="false">회원가입</button>
+    </div>
+
+    <form class="auth-form" id="auth-form" novalidate>
+      <label class="auth-field">
+        <span>아이디</span>
+        <input id="auth-username" type="text" name="username" autocomplete="username"
+               maxlength="12" placeholder="2~12자 한글·영문·숫자" aria-label="아이디"
+               autocapitalize="off" autocorrect="off" spellcheck="false">
+      </label>
+      <label class="auth-field">
+        <span>비밀번호</span>
+        <input id="auth-password" type="password" name="password" autocomplete="current-password"
+               maxlength="72" placeholder="6자 이상" aria-label="비밀번호">
+      </label>
+      <label class="auth-field" id="auth-password2-field" hidden>
+        <span>비밀번호 확인</span>
+        <input id="auth-password2" type="password" name="password2" autocomplete="new-password"
+               maxlength="72" placeholder="한 번 더 입력" aria-label="비밀번호 확인">
+      </label>
+
+      <div class="auth-turnstile" id="auth-turnstile"></div>
+      <p class="auth-hint" id="auth-hint">아이디와 비밀번호만 있으면 돼요. 이메일은 받지 않아요.</p>
+      <p class="auth-error" id="auth-error" role="alert" hidden></p>
+
+      <button class="btn primary auth-submit" id="auth-submit" type="submit">
+        <span id="auth-submit-label">로그인</span>
+      </button>
+    </form>
+
+    <div class="auth-or" id="auth-or"><span>또는</span></div>
+    <div class="auth-google" id="auth-google-slot"></div>
+    <p class="auth-note" id="auth-google-note" hidden>구글 로그인은 준비 중이에요.</p>
+
+    <p class="auth-foot">로그인하지 않아도 게스트로 지금처럼 즐길 수 있어요.</p>
+  </div>
+</div>
+
+<!-- ────────────── 내 계정 ────────────── -->
+<div class="overlay" id="ov-account" hidden>
+  <div class="sheet account-sheet" role="dialog" aria-modal="true" aria-labelledby="account-title">
+    <header class="settings-top">
+      <h2 id="account-title">내 계정</h2>
+      <button class="settings-close" id="btn-account-close" type="button" aria-label="계정 정보 닫기">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.7 2.7l6.6 6.6M9.3 2.7l-6.6 6.6"/></svg>
+      </button>
+    </header>
+
+    <div class="account-card">
+      <div class="account-avatar" id="account-avatar" aria-hidden="true">잇</div>
+      <div class="account-name">
+        <b id="account-name">닉네임</b>
+        <small id="account-handle">@아이디</small>
+      </div>
+    </div>
+
+    <dl class="account-info">
+      <div><dt>가입 방식</dt><dd id="account-provider">아이디 + 비밀번호</dd></div>
+      <div><dt>가입일</dt><dd id="account-joined">-</dd></div>
+    </dl>
+
+    <button class="btn ghost account-logout" id="btn-logout" type="button">로그아웃</button>
+    <p class="auth-foot">로그아웃해도 게스트 플레이는 그대로예요.</p>
   </div>
 </div>
 

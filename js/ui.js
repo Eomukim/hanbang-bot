@@ -5,6 +5,7 @@ import { LEVELS, levelInfo, botLine } from './bot.js';
 import { saveSettings, recordResult, TIME_MAX, normalizeTimeLimit, snapTimeLimit, stepTimeLimit, DEFAULT_SETTINGS } from './store.js';
 import { allowedStarts } from './rules.js';
 import { DictPanel } from './dict.js';
+import { AccountPanel } from './account.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -97,6 +98,13 @@ export class App {
     });
     this.dictPanel.mount();
 
+    // 우측 상단 계정 버튼(로그인 · 회원가입 · 내 계정). 계정 API 가 없는 곳에서는 스스로 숨는다.
+    this.accountPanel = new AccountPanel({
+      sfx: this.sfx,
+      toast: (message) => this.toast(message),
+    });
+    this.accountPanel.init();
+
     this.renderLevels();
     this.renderFirst();
     this.renderTime();
@@ -114,8 +122,11 @@ export class App {
 
   show(name) {
     this.screen = name;
-    // 다른 화면으로 옮기면 설정 창은 접는다(설정은 홈 화면 위에만 뜬다)
-    if (name !== 'setup') this.closeSettings(true);
+    // 다른 화면으로 옮기면 설정·계정 창은 접는다(둘 다 홈 화면 위에만 뜨는 창이다)
+    if (name !== 'setup') {
+      this.closeSettings(true);
+      this.accountPanel?.closeAll();
+    }
     for (const key of ['scr-loading', 'scr-setup', 'scr-dict', 'scr-game']) {
       this.el[key].hidden = key !== `scr-${name}`;
     }
@@ -444,6 +455,15 @@ export class App {
     });
 
     document.addEventListener('keydown', (e) => {
+      // 계정 창이 열려 있으면 그 창부터 닫는다(뒤에서 대전이 시작되지 않게)
+      if (this.accountPanel?.isOpen()) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.accountPanel.closeAll();
+        }
+        if (e.key === 'Enter' && document.activeElement === document.body) e.preventDefault();
+        return;
+      }
       // 설정 창이 열려 있으면 그 창부터 닫는다(뒤에서 대전이 시작되지 않게)
       if (!this.el['ov-settings'].hidden) {
         if (e.key === 'Escape') {
