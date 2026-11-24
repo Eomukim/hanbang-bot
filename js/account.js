@@ -77,7 +77,7 @@ export class AccountPanel {
 
   async init() {
     const ids = [
-      'btn-account', 'account-label',
+      'btn-account',
       'ov-auth', 'btn-auth-close', 'auth-title', 'auth-tabs', 'auth-form',
       'auth-username', 'auth-password', 'auth-password2', 'auth-password2-field',
       'auth-turnstile', 'auth-hint', 'auth-error', 'auth-submit', 'auth-submit-label',
@@ -133,10 +133,12 @@ export class AccountPanel {
     const btn = this.el['btn-account'];
     if (!btn) return;
     const signedIn = Boolean(this.user);
+    const name = signedIn ? (this.user.displayName || this.user.username) : '';
+    // 버튼은 아이콘만 두고, 상태는 점(::after)과 aria-label·title 로 알린다.
     btn.classList.toggle('signed-in', signedIn);
-    const name = signedIn ? (this.user.displayName || this.user.username) : '로그인';
-    this.el['account-label'].textContent = name.length > 8 ? `${name.slice(0, 8)}…` : name;
-    btn.setAttribute('aria-label', signedIn ? `내 계정 · ${name}` : '로그인 · 회원가입');
+    const label = signedIn ? `내 계정 · ${name}` : '로그인 · 회원가입';
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', signedIn ? `내 계정 (${name})` : '로그인');
     btn.setAttribute('aria-expanded', 'false');
   }
 

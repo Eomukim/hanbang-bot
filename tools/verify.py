@@ -1714,7 +1714,8 @@ def settings_view(page):
             filters[sel] = el ? getComputedStyle(el).filter : 'missing';
         }
         return {
-            btn: { exists: !!btn, text: btn.innerText.replace(/\\s+/g, ' ').trim(),
+            btn: { exists: !!btn,
+                   text: (btn.innerText || btn.getAttribute('aria-label') || btn.title || '').replace(/\\s+/g, ' ').trim(),
                    top: Math.round(br.top), right: Math.round(br.right),
                    inView: br.top >= 0 && br.right <= innerWidth && br.width > 0 },
             setup: { top: Math.round(setup.top), right: Math.round(setup.right) },
@@ -2371,7 +2372,7 @@ def scenario_dict(page, tag):
         const kids = [...setup.children];
         const start = document.getElementById('btn-start').getBoundingClientRect();
         return {
-            exists: !!btn, text: btn ? btn.innerText.replace(/\\s+/g, ' ').trim() : '',
+            exists: !!btn, text: btn ? (btn.innerText || btn.getAttribute('aria-label') || btn.title || '').replace(/\\s+/g, ' ').trim() : '',
             rect: r ? { top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom),
                         left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) } : null,
             box: { top: Math.round(box.top), right: Math.round(box.right) },

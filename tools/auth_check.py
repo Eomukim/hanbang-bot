@@ -11,6 +11,7 @@ usage:
 import argparse
 import json
 import os
+import shutil
 import random
 import string
 import subprocess
@@ -35,6 +36,19 @@ def check(cond, label, detail=''):
     else:
         FAIL += 1
         print(f'  ✗ {label}' + (f' — {detail}' if detail else ''))
+
+
+def ensure_local_config():
+    """Pages dev 는 표준 이름(wrangler.toml)만 읽는다. 저장소에 커밋하지 않는
+    wrangler.local.toml 을 임시로 복사해 두고, 실행이 끝나면 지운다."""
+    src = os.path.join(ROOT, 'wrangler.local.toml')
+    dst = os.path.join(ROOT, 'wrangler.toml')
+    if os.path.exists(dst):
+        return False
+    if os.path.exists(src):
+        shutil.copy(src, dst)
+        return True
+    raise RuntimeError('wrangler.local.toml 이 없어 로컬 바인딩을 만들 수 없습니다')
 
 
 def start_local():
@@ -108,8 +122,9 @@ def run(url, shot_dir, headless=True, slow=1.0):
         account_btn = page.locator('#btn-account')
         check(account_btn.count() == 1, '계정 버튼이 DOM 에 있음')
         check(account_btn.is_visible(), '계정 버튼이 보임(계정 API 있음)')
-        label = page.inner_text('#account-label')
-        check(label == '로그인', '비로그인 상태 라벨이 "로그인"', label)
+        label = page.get_attribute('#btn-account', 'aria-label') or ''
+        check('로그인' in label, '비로그인 상태 계정 버튼 이름이 로그인', label)
+        check(page.inner_text('#btn-account').strip() == '', '계정 버튼은 아이콘만(글자 없음)', page.inner_text('#btn-account'))
         page.wait_for_timeout(300)
         shot(page, 'local-desktop-home-account' if url.startswith('http://127.') else 'live-desktop-home-account')
         shot(page, 'top-actions', cls='.top-actions')
@@ -144,8 +159,8 @@ def run(url, shot_dir, headless=True, slow=1.0):
             signed_in = False
         err_text = page.inner_text('#auth-error') if page.is_visible('#auth-error') else ''
         check(signed_in, '가입 후 창이 닫힘', err_text)
-        label = page.inner_text('#account-label')
-        check(label.startswith(username[:3]), '가입 뒤 라벨이 아이디', label)
+        label = page.get_attribute('#btn-account', 'aria-label') or ''
+        check(username in label, '가입 뒤 계정 버튼 이름에 아이디', label)
         me = api(page, '/api/auth/me')
         check(me['data'] and me['data'].get('user') and me['data']['user']['username'] == username,
               '/api/auth/me 가 가입한 사용자를 반환', json.dumps(me, ensure_ascii=False))
@@ -162,8 +177,8 @@ def run(url, shot_dir, headless=True, slow=1.0):
         print('· 로그아웃')
         page.click('#btn-logout')
         page.wait_for_timeout(1200)
-        label = page.inner_text('#account-label')
-        check(label == '로그인', '로그아웃 뒤 라벨이 로그인', label)
+        label = page.get_attribute('#btn-account', 'aria-label') or ''
+        check('로그인' in label and '내 계정' not in label, '로그아웃 뒤 버튼이 로그인 상태', label)
         me = api(page, '/api/auth/me')
         check(me['data'] and me['data'].get('user') is None, '로그아웃 뒤 세션이 사라짐', json.dumps(me, ensure_ascii=False))
 
@@ -240,8 +255,10 @@ def main():
     args = ap.parse_args()
 
     proc = None
+    made_config = False
     url = args.url
     if args.local or not url:
+        made_config = ensure_local_config()
         proc = start_local()
         url = 'http://127.0.0.1:8788'
     try:
@@ -250,6 +267,11 @@ def main():
         if proc:
             proc.terminate()
             proc.wait(timeout=10)
+        if made_config:
+            try:
+                os.remove(os.path.join(ROOT, 'wrangler.toml'))
+            except OSError:
+                pass
     sys.exit(code)
 
 

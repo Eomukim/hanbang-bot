@@ -37,19 +37,18 @@
   <section class="screen screen-setup" id="scr-setup" data-screen="setup" hidden>
     <div class="setup">
       <div class="top-actions">
-        <button class="top-btn top-btn-settings" id="btn-settings" type="button"
+        <button class="top-btn top-btn-settings" id="btn-settings" type="button" title="설정" aria-label="설정"
                 aria-haspopup="dialog" aria-controls="ov-settings" aria-expanded="false">
           <svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="1.9"/><path d="M6 1.5v1.3M6 9.2v1.3M10.5 6H9.2M2.8 6H1.5M9.2 2.8l-.9.9M3.7 8.3l-.9.9M9.2 9.2l-.9-.9M3.7 3.7l-.9-.9"/></svg>
-          <span>설정</span>
         </button>
-        <button class="top-btn top-btn-dict" id="btn-dict" type="button" aria-haspopup="true" aria-controls="scr-dict">
+        <button class="top-btn top-btn-dict" id="btn-dict" type="button" title="사전" aria-label="사전"
+                aria-haspopup="true" aria-controls="scr-dict">
           <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.6 2.1h3c.7 0 1.3.6 1.3 1.3v6.5c0-.6-.6-1.1-1.3-1.1h-3zM10.4 2.1h-3c-.7 0-1.3.6-1.3 1.3v6.5c0-.6.6-1.1 1.3-1.1h3z"/></svg>
-          <span>사전</span>
         </button>
         <button class="top-btn top-btn-account" id="btn-account" type="button" hidden
-                aria-haspopup="dialog" aria-controls="ov-auth" aria-expanded="false" aria-label="로그인 · 회원가입">
+                title="로그인" aria-label="로그인 · 회원가입"
+                aria-haspopup="dialog" aria-controls="ov-auth" aria-expanded="false">
           <svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="4" r="2.05"/><path d="M2.15 10.4c.42-2.05 1.95-3.35 3.85-3.35s3.43 1.3 3.85 3.35"/></svg>
-          <span id="account-label">로그인</span>
         </button>
       </div>
 
