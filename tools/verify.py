@@ -2371,8 +2371,12 @@ def scenario_dict(page, tag):
         const sec = document.getElementById('scr-setup');
         const kids = [...setup.children];
         const start = document.getElementById('btn-start').getBoundingClientRect();
+        const actions = document.querySelector('#scr-setup .top-actions');
+        const ar = actions.getBoundingClientRect();
         return {
             exists: !!btn, text: btn ? (btn.innerText || btn.getAttribute('aria-label') || btn.title || '').replace(/\\s+/g, ' ').trim() : '',
+            actionsRight: Math.round(ar.right),
+            inGroup: btn ? actions.contains(btn) : false,
             rect: r ? { top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom),
                         left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) } : null,
             box: { top: Math.round(box.top), right: Math.round(box.right) },
@@ -2394,9 +2398,11 @@ def scenario_dict(page, tag):
         top_gap = view['rect']['top'] if view['rect'] else 10 ** 6
     check(view['rect'] and top_gap <= 40, f'[{tag}] 사전 버튼이 설정 화면 맨 위',
           f"top {view['rect']['top']}px (판 {view['box']['top']}px)" if view['rect'] else 'no button')
-    right_gap = (view['box']['right'] - view['rect']['right']) if view['rect'] else -1
-    check(0 <= right_gap <= 24, f'[{tag}] 사전 버튼이 설정 화면 오른쪽',
-          f"오른쪽 여백 {right_gap}px (열 {view['box']['right']}px)")
+    # 상단 버튼은 설정 · 사전 · 계정 세 개가 한 묶음(.top-actions)으로 오른쪽 모서리에 앉는다.
+    # 사전 버튼은 그 묶음 안에서 설정 옆에 있고, 묶음 자체가 화면 오른쪽에 붙어 있는지 본다.
+    group_gap = (view['box']['right'] - view['actionsRight']) if view['rect'] else -1
+    check(view['inGroup'] and 0 <= group_gap <= 24, f'[{tag}] 사전 버튼이 설정 화면 오른쪽',
+          f"묶음 여백 {group_gap}px (열 {view['box']['right']}px) · 묶음 안 {view['inGroup']}")
     check(view['lastId'] == 'btn-start' and view['scroll'] <= 1 and view['startBottom'] <= view['vh'],
           f'[{tag}] 사전 버튼이 설정 화면 정리 규칙을 깨지 않음',
           f"마지막 {view['lastId']} · 스크롤 {view['scroll']}px · 시작 {view['startBottom']}/{view['vh']}px")
