@@ -11,7 +11,7 @@
 import {
   ok,
   fail,
-  readJsonBody,
+  readJson,
   isSecureRequest,
   verifyPassword,
   currentSession,
@@ -36,8 +36,9 @@ export async function onRequest({ request, env }) {
     });
   }
 
-  const body = await readJsonBody(request);
-  if (!body) return fail(400, 'bad_request', '요청을 이해하지 못했어요.');
+  const parsed = await readJson(request);
+  if (!parsed.ok) return fail(parsed.status, parsed.error, parsed.message);
+  const body = parsed.body;
 
   const ip = clientIp(request);
   const limit = await hitThrottle(env, `delete:${ip}`, 10, 600);

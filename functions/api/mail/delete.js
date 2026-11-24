@@ -5,8 +5,11 @@
  * - 받은 사람이 지우면 deleted_by_recipient, 보낸 사람이 지우면 deleted_by_sender 를 세운다.
  *   그래서 한쪽이 지워도 상대의 메일함은 그대로 남는다.
  * - 양쪽이 모두 지우면 그때 행을 실제로 지운다.
+ *
+ * 권한: `sender_id` 또는 `recipient_id` 가 세션 사용자와 같은 메일만 지운다.
+ *       다른 사람의 메일은 있는지조차 알려 주지 않고 404 로 답한다.
  */
-import { ok, fail, readJsonBody, currentSession } from '../../_lib/auth.js';
+import { ok, fail, readJson, currentSession, hitThrottle } from '../../_lib/auth.js';
 import { parseId } from '../../_lib/mail.js';
 
 export async function onRequestPost({ request, env }) {
@@ -14,8 +17,16 @@ export async function onRequestPost({ request, env }) {
   const session = await currentSession(env, request);
   if (!session) return fail(401, 'not_signed_in', '로그인하면 다른 플레이어와 메일을 주고받을 수 있어요.');
 
-  const body = await readJsonBody(request);
-  if (!body) return fail(400, 'bad_request', '요청을 이해하지 못했어요.');
+  const limit = await hitThrottle(env, `mail:delete:${session.id}`, 120, 60);
+  if (!limit.allowed) {
+    return fail(429, 'rate_limited', '요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.', {
+      'retry-after': String(limit.retryAfter),
+    });
+  }
+
+  const parsed = await readJson(request);
+  if (!parsed.ok) return fail(parsed.status, parsed.error, parsed.message);
+  const body = parsed.body;
   const id = parseId(body.id, 'm');
   if (!id) return fail(400, 'id_required', '어떤 메일인지 알 수 없어요.');
 

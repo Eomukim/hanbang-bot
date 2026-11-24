@@ -62,6 +62,14 @@ function loadScript(src) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** 로그인 상태가 바뀌었다는 신호(다른 탭과 맞추는 용도). */
+const AUTH_PING_KEY = 'itda.auth.ping';
+
+/** 로그인·로그아웃·탈퇴 뒤 다른 탭에 알린다. */
+function pingAuth() {
+  try { localStorage.setItem(AUTH_PING_KEY, String(Date.now())); } catch { /* 저장 못 해도 이 탭은 된다 */ }
+}
+
 export class AccountPanel {
   constructor({ sfx, toast, onUserChange } = {}) {
     this.sfx = sfx;
@@ -79,6 +87,8 @@ export class AccountPanel {
     this.googleReady = false;
     this.deleteBusy = false;
     this.closeTimers = { auth: null, account: null };
+    /** 같은 탭에서 너무 자주 /api/auth/me 를 부르지 않게(창을 오갈 때마다 부르면 빨라진다). */
+    this.lastRefresh = 0;
     this.el = {};
   }
 
@@ -97,7 +107,21 @@ export class AccountPanel {
     ];
     for (const id of ids) this.el[id] = $(id);
     this.bind();
+    this.watchAuth();
     await this.loadServer();
+  }
+
+  /**
+   * 다른 탭에서 로그인·로그아웃했거나 이 탭이 다시 앞으로 나오면 세션을 다시 확인한다.
+   * (한 탭에서 로그아웃했는데 다른 탭은 로그인 상태로 남아 401 만 받던 문제를 없엔다.)
+   */
+  watchAuth() {
+    window.addEventListener('storage', (event) => {
+      if (event.key === AUTH_PING_KEY) void this.refreshUser({ force: true });
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void this.refreshUser();
+    });
   }
 
   /* ── 서버 상태 ─────────────────────────────────────────── */
@@ -124,17 +148,25 @@ export class AccountPanel {
     await this.refreshUser();
   }
 
-  async refreshUser() {
+  async refreshUser({ force = false } = {}) {
+    if (!this.apiReady) return;
+    const now = Date.now();
+    if (!force && now - this.lastRefresh < 8000) return;
+    this.lastRefresh = now;
     try {
       const res = await fetch('/api/auth/me', {
         headers: { accept: 'application/json' },
         credentials: 'same-origin',
         cache: 'no-store',
       });
+      if (res.status === 401) {
+        this.setUser(null);
+        return;
+      }
       const data = await res.json();
       this.setUser(data && data.user ? data.user : null);
     } catch {
-      this.setUser(null);
+      /* 잠깐 끊긴 것뿐이면 지금 화면 상태를 그대로 둔다 */
     }
   }
 
@@ -167,6 +199,9 @@ export class AccountPanel {
     if (!this.apiReady) return;
     this.setMode(mode);
     this.clearError();
+    // 지난번에 치던 비밀번호가 남지 않게 비운다(아이디는 다시 칠 수 있게 남긴다).
+    if (this.el['auth-password']) this.el['auth-password'].value = '';
+    if (this.el['auth-password2']) this.el['auth-password2'].value = '';
     const ov = this.el['ov-auth'];
     clearTimeout(this.closeTimers.auth);
     ov.hidden = false;
@@ -184,7 +219,7 @@ export class AccountPanel {
     this.fadeOut('auth', this.el['ov-auth']);
     this.el['btn-account']?.setAttribute('aria-expanded', 'false');
     this.resetTurnstile();
-    void instant;
+    if (!instant) this.el['btn-account']?.focus({ preventScroll: true });
   }
 
   openAccount() {
@@ -205,13 +240,24 @@ export class AccountPanel {
   closeAccount(instant = false) {
     this.fadeOut('account', this.el['ov-account']);
     this.el['btn-account']?.setAttribute('aria-expanded', 'false');
-    void instant;
+    if (!instant) this.el['btn-account']?.focus({ preventScroll: true });
   }
 
-  /** 화면을 옮기거나 Esc 를 누르면 열린 계정 창을 닫는다. */
+  /** 화면을 옮기면 열린 계정 창을 애니메이션 없이 닫는다. */
   closeAll() {
     this.fadeOut('auth', this.el['ov-auth'], true);
     this.fadeOut('account', this.el['ov-account'], true);
+    this.el['btn-account']?.setAttribute('aria-expanded', 'false');
+  }
+
+  /** Esc 로 닫기 — 애니메이션은 두고 포커스는 계정 버튼으로 돌려준다. */
+  dismiss() {
+    const authOpen = Boolean(this.el['ov-auth'] && !this.el['ov-auth'].hidden);
+    const accountOpen = Boolean(this.el['ov-account'] && !this.el['ov-account'].hidden);
+    if (authOpen) this.fadeOut('auth', this.el['ov-auth']);
+    if (accountOpen) this.fadeOut('account', this.el['ov-account']);
+    if (authOpen || accountOpen) this.el['btn-account']?.focus({ preventScroll: true });
+    this.resetTurnstile();
     this.el['btn-account']?.setAttribute('aria-expanded', 'false');
   }
 
@@ -443,6 +489,7 @@ export class AccountPanel {
     this.setUser(user);
     this.closeAuth();
     this.resetTurnstile();
+    pingAuth();
     this.sfx?.play('tap');
     const name = user?.displayName || user?.username || '';
     this.toast(name ? `${name}님, 반가워요!` : '로그인했어요.');
@@ -475,6 +522,7 @@ export class AccountPanel {
     this.setBusy(false);
     this.setUser(null);
     this.closeAccount();
+    pingAuth();
     this.toast('로그아웃했어요. 게스트로 이어서 즐길 수 있어요.');
   }
 
@@ -599,6 +647,7 @@ export class AccountPanel {
       this.setUser(null);
       this.hideDeleteConfirm();
       this.closeAccount(true);
+      pingAuth();
       this.toast('계정을 삭제했어요. 게스트로 이어서 즐길 수 있어요.');
     } catch {
       this.setDeleteBusy(false);

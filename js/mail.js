@@ -83,6 +83,7 @@ export class MailPanel {
     this.notices = [];
     this.current = null;
     this.busy = false;
+    this.deleting = false;
     this.loadingTab = null;
     this.closeTimer = null;
     this.armed = null;
@@ -131,7 +132,20 @@ export class MailPanel {
     const res = await fetch(path, init);
     let data = null;
     try { data = await res.json(); } catch { data = null; }
+    // 세션이 만료됐거나 다른 탭에서 로그아웃됐다 — 화면을 바로 게스트로 정리한다.
+    if (res.status === 401) this.handleAuthLost();
     return { ok: res.ok && Boolean(data && data.ok !== false), status: res.status, data };
+  }
+
+  /**
+   * 401 을 받았을 때: 꼬인 로그인 상태를 남기지 않고 게스트로 돌리고 한 번만 알린다.
+   * (예전에는 메일만 빈 목록이 되고 상단 계정 아이콘은 로그인 상태로 남아 있었다.)
+   */
+  handleAuthLost() {
+    if (!this.user) return;
+    this.setUser(null);
+    this.toast('로그인이 풀렸어요. 다시 로그인하면 메일을 이어서 볼 수 있어요.');
+    this.account?.refreshUser?.({ force: true });
   }
 
   errorText(data) {
@@ -155,20 +169,17 @@ export class MailPanel {
     void this.refreshSummary();
   }
 
-  /** 서버 요약의 로그인 상태를 화면 쪽 사용자와 맞춘다. */
+  /**
+   * 서버 요약의 로그인 상태를 화면 쪽 사용자와 맞춘다.
+   * 로그인이 풀린 것을 요약(60초 주기)이 먼저 알아챈 경우에도 계정 아이콘까지 게스트로 정리한다.
+   */
   syncUser(data) {
     const signedIn = Boolean(data.signedIn);
     if (signedIn && !this.user) {
       this.user = { username: data.username || '' };
       if (this.isOpen()) this.reloadTab();
     } else if (!signedIn && this.user) {
-      this.user = null;
-      this.mails = { inbox: [], sent: [] };
-      if (this.tab !== 'notices') {
-        this.tab = 'notices';
-        if (this.isOpen()) this.showList('notices');
-        else this.renderEmptyForTab();
-      }
+      this.handleAuthLost();
     }
   }
 
@@ -242,12 +253,15 @@ export class MailPanel {
     setTimeout(() => this.el['btn-mail-close']?.focus({ preventScroll: true }), 60);
   }
 
-  close(instant = false) {
+  close(instant = false, { restoreFocus = false } = {}) {
     const ov = this.el['ov-mail'];
     if (!ov || ov.hidden) return;
     this.el['btn-mail']?.setAttribute('aria-expanded', 'false');
     clearTimeout(this.closeTimer);
     this.cancelArmed();
+    this.showView('list');
+    // 포커스가 사라진 채로 남으면 다음 Enter 가 뒤의 `대전 시작` 을 누를 수 있다 — 버튼으로 돌려준다.
+    if (restoreFocus) this.el['btn-mail']?.focus({ preventScroll: true });
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (instant || reduce) {
       ov.hidden = true;
@@ -273,6 +287,10 @@ export class MailPanel {
       btn.setAttribute('aria-selected', String(btn.dataset.mailTab === this.tab));
     });
     this.el['mail-caption'].textContent = TAB_CAPTION[this.tab];
+    // 창을 오갈 때 남은 오류 문구·입력값·스크롤이 따라오지 않게 한다.
+    this.clearComposeError();
+    this.showNoticeError('');
+    this.setStatus('');
     this.showView('list');
     this.syncComposeAvailability();
     this.reloadTab();
@@ -288,6 +306,8 @@ export class MailPanel {
       const node = this.el[id];
       if (node) node.hidden = key !== name;
     }
+    const body = this.el['mail-body'];
+    if (body) body.scrollTop = 0;
     this.cancelArmed();
   }
 
@@ -492,6 +512,7 @@ export class MailPanel {
     this.el['mail-delete-btn'].hidden = false;
     this.el['mail-delete-btn'].textContent = '삭제';
     this.showView('detail');
+    this.el['mail-detail-back']?.focus({ preventScroll: true });
     this.sfx?.play('tap');
 
     if (kind === 'inbox' && !mail.isRead) {
@@ -514,6 +535,7 @@ export class MailPanel {
     this.el['mail-delete-btn'].hidden = !(this.user && this.summary?.isAdmin);
     this.el['mail-delete-btn'].textContent = '삭제';
     this.showView('detail');
+    this.el['mail-detail-back']?.focus({ preventScroll: true });
     this.sfx?.play('tap');
   }
 
@@ -569,7 +591,9 @@ export class MailPanel {
   replyToCurrent() {
     const { kind, mail } = this.current || {};
     if (!mail || kind !== 'inbox') return;
-    const subject = /^re:/i.test(mail.subject) ? mail.subject : `Re: ${mail.subject}`;
+    // 제목 상한(80자)을 넘으면 서버가 거절하므로, 답장 제목도 80자 안으로 맞춘다.
+    const base = String(mail.subject || '');
+    const subject = (/^re:/i.test(base) ? base : `Re: ${base}`).slice(0, 80);
     this.openCompose({
       to: mail.senderUsername,
       subject,
@@ -669,6 +693,10 @@ export class MailPanel {
     const { kind, mail } = this.current || {};
     if (!mail) return;
     if (kind === 'notices') return this.deleteNotice(mail);
+    if (this.deleting) return;   // 연타·더블 클릭 차단(응답이 올 때까지 한 번만)
+    this.deleting = true;
+    const btn = this.el['mail-delete-btn'];
+    if (btn) btn.disabled = true;
     try {
       const res = await this.api('/api/mail/delete', { method: 'POST', body: { id: mail.id } });
       if (!res.ok) {
@@ -677,14 +705,20 @@ export class MailPanel {
       }
       this.toast('메일을 지웠어요.');
       this.mails[kind] = this.mails[kind].filter((item) => item.id !== mail.id);
+      this.current = null;
       this.showList(kind);
       void this.refreshSummary();
     } catch {
       this.toast(ERROR_TEXT.network);
+    } finally {
+      this.deleting = false;
+      if (btn) btn.disabled = false;
     }
   }
 
   async deleteNotice(notice) {
+    if (this.deleting) return;
+    this.deleting = true;
     try {
       const res = await this.api('/api/mail/notices', { method: 'DELETE', body: { id: notice.id } });
       if (!res.ok) {
@@ -693,10 +727,13 @@ export class MailPanel {
       }
       this.toast('공지를 지웠어요.');
       this.notices = this.notices.filter((item) => item.id !== notice.id);
+      this.current = null;
       this.showList('notices');
       void this.refreshSummary();
     } catch {
       this.toast(ERROR_TEXT.network);
+    } finally {
+      this.deleting = false;
     }
   }
 
@@ -780,11 +817,11 @@ export class MailPanel {
       else this.open();
     });
     this.el['btn-mail-close'].addEventListener('click', () => {
-      this.close();
+      this.close(false, { restoreFocus: true });
       this.sfx?.play('tap');
     });
     this.el['ov-mail'].addEventListener('click', (event) => {
-      if (event.target === this.el['ov-mail']) this.close();
+      if (event.target === this.el['ov-mail']) this.close(false, { restoreFocus: true });
     });
     this.el['mail-tabs'].addEventListener('click', (event) => {
       const tab = event.target.closest('[data-mail-tab]');

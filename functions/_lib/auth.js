@@ -49,15 +49,84 @@ export function fail(status, error, message, headers = {}) {
   return json({ ok: false, error, message }, status, headers);
 }
 
-export async function readJsonBody(request) {
-  const type = request.headers.get('content-type') || '';
-  if (!type.includes('application/json')) return null;
-  try {
-    const body = await request.json();
-    return body && typeof body === 'object' ? body : null;
-  } catch {
-    return null;
+/** 요청 본문 상한(바이트). 공지 본문 5,000자(≈15KB)까지 넉넉히 담고 폭주는 막는다. */
+export const JSON_MAX_BYTES = 32 * 1024;
+
+function payloadTooLarge() {
+  return {
+    ok: false,
+    status: 413,
+    error: 'payload_too_large',
+    message: '보낸 내용이 너무 커요. 조금 짧게 줄여 주세요.',
+  };
+}
+
+function bodyUnreadable() {
+  return { ok: false, status: 400, error: 'bad_request', message: '요청을 이해하지 못했어요.' };
+}
+
+/**
+ * 본문을 max 바이트까지만 읽는다. 넘으면 null(그리고 스트림을 끊는다).
+ * Content-Length 를 속이거나 아예 없이 보내는 폭주도 여기서 막힌다.
+ */
+async function readCappedText(request, max) {
+  const body = request.body;
+  if (!body || typeof body.getReader !== 'function') {
+    const text = await request.text();
+    return new TextEncoder().encode(text).byteLength > max ? null : text;
   }
+  const reader = body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > max) {
+      try { await reader.cancel(); } catch { /* 이미 끊긴 스트림이면 그대로 */ }
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * JSON 본문을 크기 제한과 함께 읽는다.
+ *   성공: { ok: true, body }
+ *   실패: { ok: false, status, error, message }  → 그대로 fail() 에 넘기면 된다.
+ * 32KB 를 넘는 본문은 읽기 전에(또는 읽는 도중에) 413 으로 끊어 Workers 메모리·CPU 소모를 막는다.
+ */
+export async function readJson(request) {
+  const type = request.headers.get('content-type') || '';
+  if (!type.includes('application/json')) return bodyUnreadable();
+
+  const declared = Number(request.headers.get('content-length') || NaN);
+  if (Number.isFinite(declared) && declared > JSON_MAX_BYTES) return payloadTooLarge();
+
+  let text;
+  try {
+    text = await readCappedText(request, JSON_MAX_BYTES);
+  } catch {
+    return bodyUnreadable();
+  }
+  if (text == null) return payloadTooLarge();
+
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return bodyUnreadable();
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return bodyUnreadable();
+  return { ok: true, body };
 }
 
 export function isSecureRequest(request) {
@@ -282,10 +351,33 @@ export function clientIp(request) {
   return forwarded.split(',')[0].trim();
 }
 
+/** 창이 끝난 지 이만큼(초) 지난 기록은 청소한다(가장 긴 창 1시간보다 넉넉히). */
+const THROTTLE_KEEP_SEC = 7200;
+/** 요청 수 카운터 — 25번째마다 한 번씩 오래된 행을 지운다(확률 청소와 함께). */
+let throttleHits = 0;
+
+/**
+ * auth_throttle 에 쌓인 만료 행을 정리한다. 창이 지난 기록은 어차피 다시 쓰이지 않으므로
+ * 지워도 진행 중인 제한은 그대로다. 정리 실패가 요청을 막지는 않는다.
+ */
+export async function cleanThrottle(env, now = Math.floor(Date.now() / 1000)) {
+  if (!env.DB) return 0;
+  try {
+    const result = await env.DB.prepare('DELETE FROM auth_throttle WHERE window_start < ?')
+      .bind(now - THROTTLE_KEEP_SEC).run();
+    return Number(result?.meta?.changes || 0);
+  } catch {
+    return 0;
+  }
+}
+
 /** 창(window) 안에서 허용 횟수를 넘으면 allowed:false. 넘긴 기록도 세어 둔다. */
 export async function hitThrottle(env, key, limit, windowSec) {
   if (!env.DB) return { allowed: true };
   const now = Math.floor(Date.now() / 1000);
+  // 오래된 행이 무한히 쌓이지 않게 이따금 청소한다(25번째마다 · 그리고 2% 확률).
+  throttleHits += 1;
+  if (throttleHits % 25 === 0 || Math.random() < 0.02) await cleanThrottle(env, now);
   const row = await env.DB.prepare('SELECT count, window_start FROM auth_throttle WHERE key = ?').bind(key).first();
   if (!row || now - Number(row.window_start) >= windowSec) {
     await env.DB.prepare(
@@ -299,6 +391,17 @@ export async function hitThrottle(env, key, limit, windowSec) {
   }
   await env.DB.prepare('UPDATE auth_throttle SET count = count + 1 WHERE key = ?').bind(key).run();
   return { allowed: true };
+}
+
+/**
+ * 조회(GET) API 폭주 방지. 화면은 요약을 60초에 한 번, 목록을 탭을 열 때만 부르므로
+ * 정상 사용자는 분당 몇 번 수준이다. 그보다 훨씬 잦은 반복 조회만 429 로 막는다.
+ * 통과하면 null, 막아야 하면 { retryAfter } 를 돌려준다.
+ */
+export async function checkReadRate(env, request, name, limit = 150, windowSec = 60) {
+  const ip = clientIp(request) || 'unknown';
+  const result = await hitThrottle(env, `read:${name}:${ip}`, limit, windowSec);
+  return result.allowed ? null : { retryAfter: result.retryAfter || windowSec };
 }
 
 /* ── 구글 로그인 ──────────────────────────────────────── */

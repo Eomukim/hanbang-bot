@@ -6,7 +6,7 @@
 import {
   ok,
   fail,
-  readJsonBody,
+  readJson,
   isSecureRequest,
   startSession,
   sessionCookie,
@@ -22,8 +22,9 @@ export async function onRequestPost({ request, env }) {
   if (!env.DB) return fail(503, 'not_configured', '계정 서버가 아직 준비되지 않았어요.');
   if (!env.GOOGLE_CLIENT_ID) return fail(503, 'google_disabled', '구글 로그인은 아직 준비 중이에요.');
 
-  const body = await readJsonBody(request);
-  if (!body) return fail(400, 'bad_request', '요청을 이해하지 못했어요.');
+  const parsed = await readJson(request);
+  if (!parsed.ok) return fail(parsed.status, parsed.error, parsed.message);
+  const body = parsed.body;
 
   const ip = clientIp(request);
   const limit = await hitThrottle(env, `google:${ip}`, 20, 600);

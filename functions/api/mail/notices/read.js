@@ -4,7 +4,7 @@
  *
  * body: { id }  한 건, { ids: [...] } 여러 건, { all: true } 지금 있는 공지 전부
  */
-import { ok, fail, readJsonBody, currentSession } from '../../../_lib/auth.js';
+import { ok, fail, readJson, currentSession, hitThrottle } from '../../../_lib/auth.js';
 import { parseId } from '../../../_lib/mail.js';
 
 export async function onRequestPost({ request, env }) {
@@ -12,8 +12,16 @@ export async function onRequestPost({ request, env }) {
   const session = await currentSession(env, request);
   if (!session) return fail(401, 'not_signed_in', '로그인하면 공지 읽음 상태가 기기에 상관없이 유지돼요.');
 
-  const body = await readJsonBody(request);
-  if (!body) return fail(400, 'bad_request', '요청을 이해하지 못했어요.');
+  const limit = await hitThrottle(env, `notice:read:${session.id}`, 120, 60);
+  if (!limit.allowed) {
+    return fail(429, 'rate_limited', '요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.', {
+      'retry-after': String(limit.retryAfter),
+    });
+  }
+
+  const parsed = await readJson(request);
+  if (!parsed.ok) return fail(parsed.status, parsed.error, parsed.message);
+  const body = parsed.body;
   const now = Date.now();
 
   if (body.all === true) {

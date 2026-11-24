@@ -5,7 +5,7 @@
  * - 로그인: 안 읽은 받은 메일 수 + 아직 안 읽은 공지 수(notice_reads 기준)
  * - 게스트: 공지는 로컬 기록으로 판단하므로 최신 공지 시각(latestNoticeAt)만 내려 준다
  */
-import { ok, currentSession } from '../../_lib/auth.js';
+import { ok, fail, currentSession, checkReadRate } from '../../_lib/auth.js';
 import { isAdmin } from '../../_lib/mail.js';
 
 export async function onRequestGet({ request, env }) {
@@ -17,6 +17,13 @@ export async function onRequestGet({ request, env }) {
       latestNoticeAt: 0,
       noticeCount: 0,
       isAdmin: false,
+    });
+  }
+
+  const limited = await checkReadRate(env, request, 'summary', 180, 60);
+  if (limited) {
+    return fail(429, 'rate_limited', '요청이 너무 잦아요. 잠시 후 다시 열어 주세요.', {
+      'retry-after': String(limited.retryAfter),
     });
   }
 

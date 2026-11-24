@@ -8,7 +8,7 @@
  *
  * 스팸 방지로 사용자별 분당 10통·시간당 60통 제한을 둔다(auth_throttle 표).
  */
-import { ok, fail, readJsonBody, currentSession, hitThrottle } from '../../_lib/auth.js';
+import { ok, fail, readJson, currentSession, hitThrottle } from '../../_lib/auth.js';
 import { validateMail, newMailId } from '../../_lib/mail.js';
 
 export async function onRequestPost({ request, env }) {
@@ -16,8 +16,9 @@ export async function onRequestPost({ request, env }) {
   const session = await currentSession(env, request);
   if (!session) return fail(401, 'not_signed_in', '로그인하면 다른 플레이어와 메일을 주고받을 수 있어요.');
 
-  const body = await readJsonBody(request);
-  if (!body) return fail(400, 'bad_request', '요청을 이해하지 못했어요.');
+  const parsed = await readJson(request);
+  if (!parsed.ok) return fail(parsed.status, parsed.error, parsed.message);
+  const body = parsed.body;
 
   const perMinute = await hitThrottle(env, `mail:min:${session.id}`, 10, 60);
   if (!perMinute.allowed) {

@@ -358,6 +358,8 @@ export class App {
     this.el['btn-settings'].setAttribute('aria-expanded', 'false');
     if (!ov || ov.hidden) return;
     clearTimeout(this.settingsCloseTimer);
+    // 포커스가 사라진 채로 남으면 다음 Enter 가 뒤의 `대전 시작` 을 누를 수 있다.
+    if (!instant) this.el['btn-settings'].focus({ preventScroll: true });
     if (instant || reduceMotion()) {
       ov.hidden = true;
       ov.classList.remove('ov-out');
@@ -470,7 +472,7 @@ export class App {
       if (this.mailPanel?.isOpen()) {
         if (e.key === 'Escape') {
           e.preventDefault();
-          this.mailPanel.close();
+          this.mailPanel.close(false, { restoreFocus: true });
         }
         if (e.key === 'Enter' && document.activeElement === document.body) e.preventDefault();
         return;
@@ -479,7 +481,7 @@ export class App {
       if (this.accountPanel?.isOpen()) {
         if (e.key === 'Escape') {
           e.preventDefault();
-          this.accountPanel.closeAll();
+          this.accountPanel.dismiss();
         }
         if (e.key === 'Enter' && document.activeElement === document.body) e.preventDefault();
         return;
@@ -495,8 +497,13 @@ export class App {
       }
       if (e.key === 'Escape' && !this.el['ov-result'].hidden) this.hideResult();
       if (e.key === 'Escape' && this.screen === 'dict') this.closeDict();
+      if (e.key === 'Enter' && this.screen === 'setup' && this.anyPanelOpen()) {
+        // 창이 접히는 중(사라지는 애니메이션)에 뒤의 `대전 시작` 이 눌리지 않게 한 번 더 막는다.
+        e.preventDefault();
+        return;
+      }
       if (e.key === 'Enter' && this.screen === 'setup') {
-        if (document.activeElement && ['INPUT', 'BUTTON'].includes(document.activeElement.tagName)) return;
+        if (document.activeElement && ['INPUT', 'BUTTON', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
         e.preventDefault();
         this.startGame();
       }
@@ -511,6 +518,15 @@ export class App {
     };
     window.addEventListener('pointerdown', unlock, { once: true });
     window.addEventListener('keydown', unlock, { once: true });
+  }
+
+  /** 홈 화면 위에 떠 있는 창(설정·계정·메일함)이 하나라도 열려 있는가. */
+  anyPanelOpen() {
+    return Boolean(
+      !this.el['ov-settings'].hidden
+      || this.mailPanel?.isOpen()
+      || this.accountPanel?.isOpen(),
+    );
   }
 
   /* ── 단어 사전 ────────────────────────────────────────── */

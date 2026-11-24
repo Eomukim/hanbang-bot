@@ -221,6 +221,33 @@ W면 그 글자로 먼저 두는 쪽(Lv.4)이 완전한 수로 이기고, 후공
 - 계정을 지우면 그 사람의 보낸·받은 메일과 공지 읽음 기록도 함께 정리한다.
 - 표: `mails`(발신·수신 아이디와 아이디 스냅숏, `reply_to_id`, 읽음/삭제 표시), `notices`, `notice_reads`(사용자·공지 복합 키).
 
+## 보안 · 폭주 방어
+
+계정·메일함 API 는 `functions/_middleware.js` 를 먼저 지난다. 미들웨어는 `/api/*` 의 상태 변경 요청(POST·DELETE …)의 **출처**를 검사해
+다른 사이트에서 보낸 교차 요청(CSRF)을 **403 `forbidden_origin`** 으로 막고, 모든 응답(정적 파일 포함)에 `X-Content-Type-Options: nosniff` ·
+`Referrer-Policy: same-origin` · `X-Frame-Options: DENY` 를 붙인다(정적 자산은 `_headers` 도 같은 값을 적어 둔다).
+
+- **허용 출처** — 이 요청이 도착한 주소(운영 `https://itda-play.pages.dev`·미리보기 주소), 같은 호스트(http↔https), 로컬 개발(`http://127.0.0.1:*`·`http://localhost:*`),
+  환경변수 `ALLOWED_ORIGINS`(쉼표 구분). `Origin: null`(샌드박스 iframe·data URL)은 막는다.
+- **헤더가 없는 요청**은 막지 않는다 — 서버·도구·앱 클라이언트용이고, 세션 쿠키가 `SameSite=Lax` + `HttpOnly` 라서 다른 사이트가 끼어들 수 없다.
+- **조회(GET)는 출처를 보지 않는다** — 남의 요약을 읽는 것은 무해하고, 그림·링크로도 열리기 때문이다.
+
+| 방어 | 값 |
+| --- | --- |
+| 요청 본문 크기 | `readJson()` 이 **32KB** 를 넘으면 **413 `payload_too_large`**. `Content-Length` 를 속이거나 없이 보내는 청크도 스트림을 읽다가 끊는다(Workers 메모리·CPU 보호) |
+| 쓰기 요청 제한 | `register` 10회/10분·IP, `login`·`google` 20회/10분·IP, 계정 삭제 10회/10분·IP, 메일 발송 분당 10통·시간당 60통, 메일 삭제 120회/분·사용자, 메일 읽음 240회/분·IP, 공지 쓰기/삭제 20회/10분·관리자, 공지 읽음 120회/분·사용자 |
+| 조회 요청 제한 | 요약 180회/분·IP, 받은/보낸 메일 150회/분·IP, 공지 목록 150회/분·IP — 화면은 요약을 60초에 한 번만 부르므로 정상 사용자는 걸리지 않는다 |
+| 429 응답 | `Retry-After`(초)와 `error: rate_limited` 를 함께 준다 |
+| 스로틀 표 청소 | `auth_throttle` 은 요청 25번째·2% 확률로 `window_start` 가 2시간 넘은 행만 지운다(진행 중인 창은 그대로라 제한이 풀리지 않는다) |
+
+권한은 경로마다 다시 확인한다 — 읽음 처리는 `recipient_id = 세션 사용자` 인 행만 바꾸고(`updated` 0), 삭제는 보낸·받은 사람만(다른 사람 메일은 **404**),
+답장 연결(`replyToId`)은 본인이 참여한 메일만(아니면 400 `reply_invalid`, 존재 여부도 알려 주지 않는다), 공지 작성·삭제는 `ADMIN_USERNAMES` 만(아니면 403).
+
+프런트는 서버에서 온 글자를 `textContent`/`esc()` 로만 넣고(innerHTML 에 값이 들어가는 곳 없음), 로그인·가입·삭제·발송·메일 삭제·공지 작성은
+요청이 도는 동안 버튼을 잠가 **연타해도 한 번만** 나간다. 메일함·계정 API 가 **401** 을 주면 화면을 즉시 게스트로 정리하고(`로그인이 풀렸어요` 안내)
+상단 계정 아이콘까지 맞춘다. 다른 탭에서 로그인·로그아웃하면 `itda.auth.ping`(localStorage)으로 알려 탭끼리 상태가 어긋나지 않는다.
+설정·계정·메일함 창이 열려 있으면 `Enter` 는 뒤의 `대전 시작` 을 누르지 않고, 창을 닫으면 포커스가 그 버튼으로 돌아온다.
+
 ## 구조
 
 ```
@@ -237,13 +264,16 @@ js/ui.js            화면 조립, 입력, 결과
 js/dict.js          단어 사전 화면(검색 · 두음 포함 · 정렬 4종 · 더 보기)
 js/account.js       계정 창(로그인 · 회원가입 · 내 계정 · 로그아웃 · 계정 삭제 2단계 확인)
 functions/api/auth/ 계정 API(Cloudflare Pages Functions) — config · me · register · login · google · logout · delete
-functions/_lib/auth.js 비밀번호(PBKDF2)·세션 쿠키·Turnstile 검증·요청 제한 공용 도우미
+functions/_middleware.js 모든 요청의 출처(CSRF) 검사 · 보안 헤더
+functions/_lib/guard.js 출처 허용 범위 판단 · 보안 헤더
+functions/_lib/auth.js 비밀번호(PBKDF2)·세션 쿠키·Turnstile 검증·본문 크기 제한·요청 제한 공용 도우미
 db/schema.sql       D1 `itda-db` 스키마(users · sessions · auth_throttle)
 build/build_data.py 단어 원본 → data/words.txt + data/stats.json(+ 음절 대전 그래프, 일상 어휘 단계)
 build/build_easy.py 일상 어휘 목록 → build/easy_words.txt (국립국어원 학습용 + TOPIK 어휘)
 build/collect_kkuko.py 오픈DB(공개 API) 단어 수집
 tools/verify.py     headless Chromium 검증(로컬/라이브)
 tools/delete_check.py 계정 삭제 점검(2단계 확인 · 틀린 비밀번호 거부 · 영구 삭제 · 재로그인 불가)
+tools/security_audit.py 보안·부하 감사(CSRF 출처 · 소유권 · SQLi/XSS · 413 · 429 · 스로틀 청소 · 키보드/연타/401/모바일/흑백)
 tools/bench.mjs     봇 대 봇 승률 벤치마크(Node)
 tools/audit.mjs     난이도별 단어 품질 감사(Node: 동사 편중·일상어 비율·긴 단어·같은 자리 고착)
 tools/ui_tour.py    화면 순회 점검(3화면 크기 × 설정/대전/결과 배틀내역/배려모드)
@@ -275,7 +305,9 @@ python3 build/build_data.py --easy-only                 # easy_words.txt 만 바
 
 ```bash
 python3 tools/verify.py --local
-python3 tools/verify.py --url https://itda-play.onrender.com
+python3 tools/mail_check.py --local
+python3 tools/security_audit.py --local
+python3 tools/verify.py --url https://itda-play.pages.dev
 ```
 
 로컬/라이브 모두에서 콘솔·페이지 에러 0, 가로 오버플로 0, 두음법칙 입력, 중복 차단,
