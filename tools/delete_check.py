@@ -145,6 +145,19 @@ def wait_turnstile(page, timeout=45):
         return False
 
 
+def solve_turnstile(page, timeout=45):
+    """Turnstile 토큰을 기다리고, 사람 확인 위젯이 떠 있으면 한 번 눌러 본다."""
+    if wait_turnstile(page, timeout=8):
+        return True
+    try:
+        box = page.locator('#auth-turnstile').bounding_box()
+        if box and box['height'] > 10:
+            page.mouse.click(box['x'] + 28, box['y'] + box['height'] / 2)
+    except Exception:
+        pass
+    return wait_turnstile(page, timeout=timeout)
+
+
 def signup(page, username, password):
     page.click('#btn-account')
     page.wait_for_selector('#ov-auth:not([hidden])', timeout=8000)
@@ -152,7 +165,7 @@ def signup(page, username, password):
     page.fill('#auth-username', username)
     page.fill('#auth-password', password)
     page.fill('#auth-password2', password)
-    ok_token = wait_turnstile(page)
+    ok_token = solve_turnstile(page)
     page.click('#auth-submit')
     try:
         page.wait_for_function("() => document.getElementById('ov-auth').hidden === true", timeout=30000)
@@ -193,6 +206,16 @@ def run(url, shot_dir, local):
         check(token_ok, 'Turnstile 확인을 마침')
         check(signed_up, f'점검 계정({username}) 가입',
               page.inner_text('#auth-error') if page.is_visible('#auth-error') else '')
+        if not signed_up:
+            print('  ! 로그인 세션을 만들지 못해(봇 확인) 나머지 점검을 건너뜁니다.')
+            try:
+                page.screenshot(path=os.path.join(shot_dir, 'signup-blocked.png'))
+                page.locator('#auth-turnstile').screenshot(path=os.path.join(shot_dir, 'turnstile-widget.png'))
+            except Exception:
+                pass
+            browser.close()
+            print(f'\n결과: {PASS} 통과 · {FAIL} 실패')
+            return 1
         page.click('#btn-account')
         page.wait_for_selector('#ov-account:not([hidden])', timeout=8000)
         page.wait_for_timeout(500)
@@ -256,7 +279,7 @@ def run(url, shot_dir, local):
         page.wait_for_selector('#ov-auth:not([hidden])', timeout=8000)
         page.fill('#auth-username', username)
         page.fill('#auth-password', password)
-        wait_turnstile(page)
+        solve_turnstile(page)
         page.click('#auth-submit')
         page.wait_for_timeout(3000)
         err = page.inner_text('#auth-error') if page.is_visible('#auth-error') else ''
@@ -285,7 +308,7 @@ def run(url, shot_dir, local):
             page.fill('#auth-username', 'test1')
             page.fill('#auth-password', 'probe-Password-1')
             page.fill('#auth-password2', 'probe-Password-1')
-            wait_turnstile(page)
+            solve_turnstile(page)
             page.click('#auth-submit')
             page.wait_for_timeout(3000)
             err = page.inner_text('#auth-error') if page.is_visible('#auth-error') else ''
