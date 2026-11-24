@@ -332,6 +332,15 @@ def run(url, shot_dir, local):
         mobile.close()
 
         if local:
+            print('· 다른 계정은 남는지(짝 계정 보존)')
+            now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+            d1(f"""INSERT OR REPLACE INTO users (id, username, password_hash, google_sub, display_name, stats_json, created_at, updated_at)
+                   VALUES ('u_delcheck_bystander', 'test1', NULL, 'delcheck-bystander', 'test1', '{{}}', '{now}', '{now}')""")
+            keep_token = b64url(os.urandom(32))
+            keep_hash = b64url(hashlib.sha256(keep_token.encode()).digest())
+            d1(f"""INSERT OR REPLACE INTO sessions (token_hash, user_id, expires_at, created_at)
+                   VALUES ('{keep_hash}', 'u_delcheck_bystander', {int(time.time() * 1000) + 86400000}, '{now}')""")
+
             print('· 구글 전용 계정(확인 문구) 경로')
             guser = {'id': 'u_delcheck_google', 'username': '삭제구글' + suffix, 'sub': 'delcheck-' + suffix}
             token = b64url(os.urandom(32))
@@ -384,6 +393,15 @@ def run(url, shot_dir, local):
             scount = sessions[0]['results'][0]['n'] if sessions and sessions[0].get('results') else -1
             check(scount == 0, 'D1 sessions 행도 지워짐', str(scount))
             gctx.close()
+
+            rows = d1("SELECT COUNT(*) AS n FROM users WHERE id = 'u_delcheck_bystander'")
+            count = rows[0]['results'][0]['n'] if rows and rows[0].get('results') else -1
+            check(count == 1, '삭제 뒤에도 다른 계정(test1) 행은 그대로', str(count))
+            rows = d1("SELECT COUNT(*) AS n FROM sessions WHERE user_id = 'u_delcheck_bystander'")
+            count = rows[0]['results'][0]['n'] if rows and rows[0].get('results') else -1
+            check(count == 1, '다른 계정의 세션도 그대로', str(count))
+            d1("DELETE FROM sessions WHERE user_id = 'u_delcheck_bystander'")
+            d1("DELETE FROM users WHERE id = 'u_delcheck_bystander'")
 
         if errors:
             real = [e for e in errors if 'Failed to load resource' not in e]
