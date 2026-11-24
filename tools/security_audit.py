@@ -788,6 +788,21 @@ def audit_ui(names, cookie_a, cookie_admin):
             ui.shot(page, 'audit-mobile-%s-mail-compose' % name)
             ctx.close()
 
+        # ── E5. 요약 API 가 429 를 줘도 메일 버튼·창이 살아 있는지 ──
+        d1('DELETE FROM auth_throttle')
+        burst = Http()
+        for _ in range(200):
+            burst.request('/api/mail/summary')
+        ctx, page = ui.page()
+        page.wait_for_timeout(1400)
+        check(page.is_visible('#btn-mail'), '요약이 429 여도 메일 버튼이 사라지지 않음')
+        page.click('#btn-mail')
+        page.wait_for_timeout(1200)
+        check(page.is_visible('#mail-view-list'), '429 상태에서도 메일함이 열린다')
+        ui.shot(page, 'audit-desktop-mail-rate-limited')
+        ctx.close()
+        d1('DELETE FROM auth_throttle')
+
         # ── F. 콘솔·404 ──────────────────────────────────────
         errors = [(lv, text) for lv, text in ui.console
                   if lv == 'error' and not any(skip in text for skip in CONSOLE_IGNORE)]
@@ -956,8 +971,9 @@ def run_live():
     finally:
         injector.request('/api/auth/delete', 'POST', {'password': PASSWORD})
     audit_live_ownership()
-    audit_live_dos()
+    # 화면 스모크를 먼저(조회 폭주 점검이 이 IP 의 창을 채우기 전에), 폭주 점검은 맨 마지막에.
     audit_live_ui(BASE)
+    audit_live_dos()
 
 
 def main():

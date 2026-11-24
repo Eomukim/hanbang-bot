@@ -186,12 +186,17 @@ export class MailPanel {
   async refreshSummary() {
     try {
       const res = await this.api('/api/mail/summary');
-      if (!res.ok || !res.data) throw new Error('summary');
-      this.apiReady = true;
-      if (this.el['btn-mail']) this.el['btn-mail'].hidden = false;
-      this.applySummary(res.data);
+      if (res.ok && res.data) {
+        this.apiReady = true;
+        if (this.el['btn-mail']) this.el['btn-mail'].hidden = false;
+        this.applySummary(res.data);
+        return;
+      }
+      // 메일 API 가 없는 곳(예전 정적 주소)에서만 버튼을 숨긴다.
+      // 잠깐의 429·5xx·시간 초과로 버튼을 감추면, 요청이 몰린 사용자에게 메일함이 사라져 버린다.
+      if (!this.apiReady && (res.status === 404 || res.status === 405)
+        && this.el['btn-mail']) this.el['btn-mail'].hidden = true;
     } catch {
-      // 메일 API 가 없는 곳(예전 Render 주소)에서는 버튼만 조용히 숨긴다.
       if (!this.apiReady && this.el['btn-mail']) this.el['btn-mail'].hidden = true;
     }
   }
