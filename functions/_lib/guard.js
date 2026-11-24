@@ -58,6 +58,34 @@ function forbiddenOrigin() {
   );
 }
 
+export function payloadTooLarge() {
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      error: 'payload_too_large',
+      message: '보낸 내용이 너무 커요. 조금 짧게 줄여 주세요.',
+    }),
+    {
+      status: 413,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+        ...SECURITY_HEADERS,
+      },
+    },
+  );
+}
+
+/**
+ * `Content-Length` 가 상한을 넘는 요청을 라우팅 전에 413 으로 끊는다.
+ * (Content-Length 를 속이거나 없이 보내는 청크는 각 API 의 readJson() 이 스트림을 읽다가 끊는다.)
+ */
+export function guardPayload(request) {
+  const declared = Number(request.headers.get('content-length') || NaN);
+  if (Number.isFinite(declared) && declared > JSON_MAX_BYTES) return payloadTooLarge();
+  return null;
+}
+
 /** 환경변수 `ALLOWED_ORIGINS`(쉼표 구분)에 적어 둔 추가 주소. */
 function extraOrigins(env) {
   return String(env?.ALLOWED_ORIGINS || '')
