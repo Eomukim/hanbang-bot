@@ -389,6 +389,7 @@ def main():
     global BASE
     ap = argparse.ArgumentParser()
     ap.add_argument('--only', default=None, help='쉼표로 구분한 뷰포트 이름')
+    ap.add_argument('--url', default=None, help='라이브 URL(없으면 로컬 파일 서버)')
     ap.add_argument('--shots', default=OUT)
     ap.add_argument('--json', default=None)
     args = ap.parse_args()
@@ -401,8 +402,12 @@ def main():
             print('해당 뷰포트 없음:', want)
             return 1
 
-    httpd, port = serve(ROOT)
-    BASE = f'http://127.0.0.1:{port}/index.html'
+    httpd = None
+    if args.url:
+        BASE = args.url
+    else:
+        httpd, port = serve(ROOT)
+        BASE = f'http://127.0.0.1:{port}/index.html'
     report = []
     fails = 0
     with sync_playwright() as p:
@@ -419,7 +424,8 @@ def main():
                 for it in items:
                     print(f'       · [{screen}] {it}')
         browser.close()
-    httpd.shutdown()
+    if httpd:
+        httpd.shutdown()
 
     os.makedirs(args.shots, exist_ok=True)
     out_json = args.json or os.path.join(args.shots, 'audit.json')
