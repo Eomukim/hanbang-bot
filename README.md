@@ -215,8 +215,9 @@ W면 그 글자로 먼저 두는 쪽(Lv.4)이 완전한 수로 이기고, 후공
 | `POST /api/mail/notices/read` | 공지 읽음 기록(사용자별 `notice_reads`) |
 | `POST /api/mail/notices` · `DELETE /api/mail/notices` | 공지 작성·삭제 — `ADMIN_USERNAMES` 관리자만, 아니면 **403 forbidden** |
 
-- 공지 작성 권한은 Cloudflare Pages 환경변수 **`ADMIN_USERNAMES`**(쉼표 구분 아이디)로만 열린다. 지금은 비어 있어 아무도 쓸 수 없고,
-  아이디를 넣고 저장하면 그 아이디로 로그인한 사람에게 바로 `공지 작성` 버튼이 보인다(재배포 불필요).
+- 공지 작성 권한은 Cloudflare Pages 환경변수 **`ADMIN_USERNAMES`**(쉼표 구분 아이디)로만 열린다. 지금은 비어 있어 아무도 쓸 수 없다.
+  Pages 프로젝트 `itda-play` → Settings → Variables and Secrets 에 아이디를 넣고 저장한 뒤 **새 배포**(main 푸시 또는 Retry deployment)를 한 번 하면
+  그 아이디로 로그인한 사람에게 `공지 작성`·공지 `삭제`가 보인다(Pages 는 환경변수가 배포에 묶여 있어 저장만으로는 바뀌지 않는다).
 - 계정을 지우면 그 사람의 보낸·받은 메일과 공지 읽음 기록도 함께 정리한다.
 - 표: `mails`(발신·수신 아이디와 아이디 스냅숏, `reply_to_id`, 읽음/삭제 표시), `notices`, `notice_reads`(사용자·공지 복합 키).
 
