@@ -45,6 +45,12 @@
                 aria-haspopup="true" aria-controls="scr-dict">
           <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.6 2.1h3c.7 0 1.3.6 1.3 1.3v6.5c0-.6-.6-1.1-1.3-1.1h-3zM10.4 2.1h-3c-.7 0-1.3.6-1.3 1.3v6.5c0-.6.6-1.1 1.3-1.1h3z"/></svg>
         </button>
+        <button class="top-btn top-btn-mail" id="btn-mail" type="button"
+                title="메일함" aria-label="메일함"
+                aria-haspopup="dialog" aria-controls="ov-mail" aria-expanded="false">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="2.4" width="9" height="7.2" rx="1.4"/><path d="M1.9 3.2 6 6.5l4.1-3.3"/></svg>
+          <span class="mail-badge" id="mail-badge" hidden aria-hidden="true"></span>
+        </button>
         <button class="top-btn top-btn-account" id="btn-account" type="button" hidden
                 title="로그인" aria-label="로그인 · 회원가입"
                 aria-haspopup="dialog" aria-controls="ov-auth" aria-expanded="false">
@@ -349,6 +355,99 @@
 
       <button class="btn account-delete-confirm" id="btn-delete-confirm" type="button" disabled>영구 삭제</button>
       <button class="btn ghost" id="btn-delete-cancel" type="button">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────── 메일함 (받은 · 보낸 · 공지) ────────────── -->
+<div class="overlay" id="ov-mail" hidden>
+  <div class="sheet mail-sheet" role="dialog" aria-modal="true" aria-labelledby="mail-title">
+    <header class="settings-top">
+      <h2 id="mail-title">메일함</h2>
+      <button class="settings-close" id="btn-mail-close" type="button" aria-label="메일함 닫기">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.7 2.7l6.6 6.6M9.3 2.7l-6.6 6.6"/></svg>
+      </button>
+    </header>
+
+    <div class="auth-tabs mail-tabs" id="mail-tabs" role="tablist" aria-label="메일함 종류">
+      <button type="button" role="tab" data-mail-tab="inbox" aria-selected="true">받은 메일<i class="mail-tab-dot" id="mail-tab-dot-inbox" hidden aria-hidden="true"></i></button>
+      <button type="button" role="tab" data-mail-tab="sent" aria-selected="false">보낸 메일</button>
+      <button type="button" role="tab" data-mail-tab="notices" aria-selected="false">공지사항<i class="mail-tab-dot" id="mail-tab-dot-notices" hidden aria-hidden="true"></i></button>
+    </div>
+
+    <div class="mail-body" id="mail-body">
+      <!-- 목록 -->
+      <div class="mail-view" id="mail-view-list">
+        <div class="mail-toolbar" id="mail-toolbar">
+          <p class="mail-caption" id="mail-caption">받은 메일</p>
+          <div class="mail-toolbar-actions">
+            <button class="btn ghost mail-action" id="mail-notice-new" type="button" hidden>공지 작성</button>
+            <button class="btn primary mail-action" id="mail-compose-btn" type="button">새 메일 쓰기</button>
+          </div>
+        </div>
+        <p class="mail-status" id="mail-status" role="status" hidden></p>
+        <ul class="mail-list" id="mail-list" aria-label="메일 목록"></ul>
+        <div class="mail-empty" id="mail-empty" hidden>
+          <b id="mail-empty-title">아직 메일이 없어요</b>
+          <small id="mail-empty-desc">새 메일 쓰기로 다른 플레이어에게 첫 메일을 보내 보세요.</small>
+          <button class="btn primary mail-empty-login" id="mail-login-btn" type="button" hidden>로그인하기</button>
+        </div>
+      </div>
+
+      <!-- 메일 상세 -->
+      <div class="mail-view" id="mail-view-detail" hidden>
+        <button class="mail-back" id="mail-detail-back" type="button">← 목록으로</button>
+        <div class="mail-detail">
+          <h3 class="mail-detail-subject" id="mail-detail-subject"></h3>
+          <p class="mail-detail-meta" id="mail-detail-meta"></p>
+          <p class="mail-detail-body" id="mail-detail-body"></p>
+        </div>
+        <div class="mail-detail-actions">
+          <button class="btn primary mail-action" id="mail-reply-btn" type="button">답장</button>
+          <button class="btn ghost mail-action" id="mail-delete-btn" type="button">삭제</button>
+        </div>
+      </div>
+
+      <!-- 새 메일 쓰기 · 답장 -->
+      <div class="mail-view" id="mail-view-compose" hidden>
+        <button class="mail-back" id="mail-compose-back" type="button">← 목록으로</button>
+        <p class="mail-caption" id="mail-compose-title">새 메일 쓰기</p>
+        <form class="mail-form" id="mail-compose-form" novalidate>
+          <label class="mail-field">
+            <span>받는 사람</span>
+            <input id="mail-to" type="text" maxlength="14" placeholder="@아이디"
+                   aria-label="받는 사람 아이디" autocapitalize="off" autocorrect="off" spellcheck="false">
+          </label>
+          <label class="mail-field">
+            <span>제목</span>
+            <input id="mail-subject" type="text" maxlength="80" placeholder="제목" aria-label="메일 제목">
+          </label>
+          <label class="mail-field">
+            <span>내용</span>
+            <textarea id="mail-content" maxlength="2000" rows="6" placeholder="하고 싶은 말을 적어 주세요" aria-label="메일 내용"></textarea>
+          </label>
+          <p class="auth-error" id="mail-compose-error" role="alert" hidden></p>
+          <button class="btn primary mail-submit" id="mail-compose-submit" type="submit">보내기</button>
+        </form>
+      </div>
+
+      <!-- 공지 작성 (관리자만) -->
+      <div class="mail-view" id="mail-view-notice" hidden>
+        <button class="mail-back" id="mail-notice-back" type="button">← 목록으로</button>
+        <p class="mail-caption">새 공지사항</p>
+        <form class="mail-form" id="mail-notice-form" novalidate>
+          <label class="mail-field">
+            <span>제목</span>
+            <input id="mail-notice-title" type="text" maxlength="100" placeholder="공지 제목" aria-label="공지 제목">
+          </label>
+          <label class="mail-field">
+            <span>내용</span>
+            <textarea id="mail-notice-body" maxlength="5000" rows="7" placeholder="모두에게 알릴 내용을 적어 주세요" aria-label="공지 내용"></textarea>
+          </label>
+          <p class="auth-error" id="mail-notice-error" role="alert" hidden></p>
+          <button class="btn primary mail-submit" id="mail-notice-submit" type="submit">공지 올리기</button>
+        </form>
+      </div>
     </div>
   </div>
 </div>

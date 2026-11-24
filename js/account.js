@@ -63,9 +63,11 @@ function loadScript(src) {
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class AccountPanel {
-  constructor({ sfx, toast } = {}) {
+  constructor({ sfx, toast, onUserChange } = {}) {
     this.sfx = sfx;
     this.toast = toast || (() => {});
+    /** 로그인 상태가 바뀌면 다른 창(메일함 등)에 알린다. */
+    this.onUserChange = onUserChange || (() => {});
     this.user = null;
     this.config = null;
     this.apiReady = false;
@@ -137,7 +139,11 @@ export class AccountPanel {
   }
 
   setUser(user) {
+    const before = this.user;
     this.user = user || null;
+    if (before?.id !== this.user?.id || before?.username !== this.user?.username) {
+      this.onUserChange(this.user);
+    }
     const btn = this.el['btn-account'];
     if (!btn) return;
     const signedIn = Boolean(this.user);

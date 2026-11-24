@@ -23,7 +23,48 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 
 CREATE TABLE IF NOT EXISTS auth_throttle (
-  key          TEXT PRIMARY KEY,                -- 'register:1.2.3.4' 처럼 경로:IP
+  key          TEXT PRIMARY KEY,                -- 'register:1.2.3.4' 처럼 경로:IP(또는 사용자)
   count        INTEGER NOT NULL DEFAULT 0,
   window_start INTEGER NOT NULL                 -- epoch 초
+);
+
+-- ── 메일함 ────────────────────────────────────────────────────
+-- 플레이어끼리 주고받는 쪽지. 한쪽이 지워도 상대 메일함은 남도록
+-- deleted_by_sender / deleted_by_recipient 를 따로 둔다(양쪽 다 지우면 행 삭제).
+CREATE TABLE IF NOT EXISTS mails (
+  id                   TEXT PRIMARY KEY,
+  sender_id            TEXT NOT NULL,
+  sender_username      TEXT NOT NULL,           -- 보낸 때의 아이디(탈퇴 뒤에도 표시가 남도록)
+  recipient_id         TEXT NOT NULL,
+  recipient_username   TEXT NOT NULL,
+  reply_to_id          TEXT,                    -- 답장이면 원본 메일 id
+  subject              TEXT NOT NULL,
+  body                 TEXT NOT NULL,
+  is_read              INTEGER NOT NULL DEFAULT 0,
+  read_at              INTEGER,
+  deleted_by_sender    INTEGER NOT NULL DEFAULT 0,
+  deleted_by_recipient INTEGER NOT NULL DEFAULT 0,
+  created_at           INTEGER NOT NULL         -- epoch ms
+);
+
+CREATE INDEX IF NOT EXISTS idx_mails_recipient ON mails(recipient_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_mails_sender ON mails(sender_id, created_at);
+
+-- 공지사항: 관리자(ADMIN_USERNAMES)만 쓰고 지운다. 누구나 읽는다.
+CREATE TABLE IF NOT EXISTS notices (
+  id              TEXT PRIMARY KEY,
+  author_username TEXT NOT NULL,
+  title           TEXT NOT NULL,
+  body            TEXT NOT NULL,
+  created_at      INTEGER NOT NULL              -- epoch ms
+);
+
+CREATE INDEX IF NOT EXISTS idx_notices_created ON notices(created_at);
+
+-- 사용자별 공지 읽음. 기기가 바뀌어도 빨간 동그라미가 다시 뜨지 않게 한다.
+CREATE TABLE IF NOT EXISTS notice_reads (
+  user_id   TEXT NOT NULL,
+  notice_id TEXT NOT NULL,
+  read_at   INTEGER NOT NULL,
+  PRIMARY KEY (user_id, notice_id)
 );

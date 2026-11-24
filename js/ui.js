@@ -6,6 +6,7 @@ import { saveSettings, recordResult, TIME_MAX, normalizeTimeLimit, snapTimeLimit
 import { allowedStarts } from './rules.js';
 import { DictPanel } from './dict.js';
 import { AccountPanel } from './account.js';
+import { MailPanel } from './mail.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -102,8 +103,17 @@ export class App {
     this.accountPanel = new AccountPanel({
       sfx: this.sfx,
       toast: (message) => this.toast(message),
+      onUserChange: (user) => this.mailPanel?.setUser(user),
     });
     this.accountPanel.init();
+
+    // 우측 상단 메일함(받은 · 보낸 · 공지). 빨간 동그라미는 새 메일·새 공지를 알린다.
+    this.mailPanel = new MailPanel({
+      sfx: this.sfx,
+      toast: (message) => this.toast(message),
+      account: this.accountPanel,
+    });
+    this.mailPanel.init();
 
     this.renderLevels();
     this.renderFirst();
@@ -122,10 +132,11 @@ export class App {
 
   show(name) {
     this.screen = name;
-    // 다른 화면으로 옮기면 설정·계정 창은 접는다(둘 다 홈 화면 위에만 뜨는 창이다)
+    // 다른 화면으로 옮기면 설정·계정·메일함 창은 접는다(모두 홈 화면 위에만 뜨는 창이다)
     if (name !== 'setup') {
       this.closeSettings(true);
       this.accountPanel?.closeAll();
+      this.mailPanel?.closeAll(true);
     }
     for (const key of ['scr-loading', 'scr-setup', 'scr-dict', 'scr-game']) {
       this.el[key].hidden = key !== `scr-${name}`;
@@ -455,6 +466,15 @@ export class App {
     });
 
     document.addEventListener('keydown', (e) => {
+      // 메일함 창이 열려 있으면 그 창부터 닫는다(뒤에서 대전이 시작되지 않게)
+      if (this.mailPanel?.isOpen()) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.mailPanel.close();
+        }
+        if (e.key === 'Enter' && document.activeElement === document.body) e.preventDefault();
+        return;
+      }
       // 계정 창이 열려 있으면 그 창부터 닫는다(뒤에서 대전이 시작되지 않게)
       if (this.accountPanel?.isOpen()) {
         if (e.key === 'Escape') {

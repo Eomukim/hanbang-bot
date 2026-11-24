@@ -6,6 +6,7 @@
  *   - 아이디 + 비밀번호 계정: 요청 본문의 현재 `password` 가 저장된 해시와 맞아야 한다.
  *   - 구글 전용 계정(`password_hash` 없음): 요청 본문의 `confirm` 이 '삭제' 또는 '@아이디' 여야 한다.
  * 통과하면 이 사용자의 sessions 행 전부와 users 행을 지우고, 세션 쿠키를 즉시 만료시킨다.
+ * 메일함(mails 의 보낸·받은 메일)과 공지 읽음(notice_reads)도 함께 정리한다.
  */
 import {
   ok,
@@ -62,6 +63,11 @@ export async function onRequest({ request, env }) {
 
   // 다른 기기의 세션까지 함께 지운다. users 행을 지우기 전에 세션부터 정리한다.
   await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(session.id).run();
+  // 메일함: 보낸·받은 메일과 공지 읽음 기록도 함께 지운다.
+  // (사라진 계정의 쪽지가 상대 메일함에 남아 있지 않도록 양쪽을 모두 정리한다.)
+  await env.DB.prepare('DELETE FROM mails WHERE sender_id = ? OR recipient_id = ?')
+    .bind(session.id, session.id).run();
+  await env.DB.prepare('DELETE FROM notice_reads WHERE user_id = ?').bind(session.id).run();
   await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(session.id).run();
 
   return ok(
