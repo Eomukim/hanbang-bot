@@ -243,6 +243,8 @@ W면 그 글자로 먼저 두는 쪽(Lv.4)이 완전한 수로 이기고, 후공
 권한은 경로마다 다시 확인한다 — 읽음 처리는 `recipient_id = 세션 사용자` 인 행만 바꾸고(`updated` 0), 삭제는 보낸·받은 사람만(다른 사람 메일은 **404**),
 답장 연결(`replyToId`)은 본인이 참여한 메일만(아니면 400 `reply_invalid`, 존재 여부도 알려 주지 않는다), 공지 작성·삭제는 `ADMIN_USERNAMES` 만(아니면 403).
 
+메일함 버튼은 메일 API 가 아예 없는 정적 주소(404·405)에서만 숨긴다 — 요청이 몰려 **429** 를 받거나 잠깐 끊겨도 버튼은 그대로 있고 다음 60초 주기에 다시 시도한다.
+
 프런트는 서버에서 온 글자를 `textContent`/`esc()` 로만 넣고(innerHTML 에 값이 들어가는 곳 없음), 로그인·가입·삭제·발송·메일 삭제·공지 작성은
 요청이 도는 동안 버튼을 잠가 **연타해도 한 번만** 나간다. 메일함·계정 API 가 **401** 을 주면 화면을 즉시 게스트로 정리하고(`로그인이 풀렸어요` 안내)
 상단 계정 아이콘까지 맞춘다. 다른 탭에서 로그인·로그아웃하면 `itda.auth.ping`(localStorage)으로 알려 탭끼리 상태가 어긋나지 않는다.
@@ -306,7 +308,8 @@ python3 build/build_data.py --easy-only                 # easy_words.txt 만 바
 ```bash
 python3 tools/verify.py --local
 python3 tools/mail_check.py --local
-python3 tools/security_audit.py --local
+python3 tools/security_audit.py --local                                # 출처·권한·413·429·키보드·모바일 136건
+python3 tools/security_audit.py --url https://itda-play.pages.dev       # 라이브: 출처·413·429·화면 스모크
 python3 tools/verify.py --url https://itda-play.pages.dev
 ```
 
