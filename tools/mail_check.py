@@ -321,11 +321,17 @@ def run(headless=True):
         check(res['data'].get('unreadNoticeCount') == 0, 'notice_reads 로 공지 읽음 0',
               str(res['data'].get('unreadNoticeCount')))
         shot(a, 'local-desktop-mail-notices')
+        a.click('#mail-list .mail-open')
+        a.wait_for_selector('#mail-view-detail:not([hidden])', timeout=5000)
+        check(not a.is_visible('#mail-delete-btn'), '일반 유저는 공지 상세에 삭제 버튼 없음')
+        a.click('#mail-detail-back')
+        a.wait_for_timeout(700)
         close_mail(a)
         drop(ctx_a)
 
         # 관리자 UI: 공지 작성 폼으로 한 건 더
         open_mail(ap)
+        check(not ap.is_visible('#mail-notice-new'), '받은 메일 탭에서는 공지 작성 버튼이 숨겨짐')
         tab(ap, 'notices')
         check(ap.is_visible('#mail-notice-new'), '관리자에게 공지 작성 버튼이 보임')
         ap.click('#mail-notice-new')
@@ -341,6 +347,12 @@ def run(headless=True):
         res = api(ap, '/api/mail/notices')
         created_notice = next((n for n in res['data'].get('notices', []) if n['title'] == '주말 점검 안내'), None)
         check(created_notice is not None, '새 공지가 서버에 저장됨')
+        ap.click('#mail-list .mail-open')
+        ap.wait_for_selector('#mail-view-detail:not([hidden])', timeout=5000)
+        check(ap.is_visible('#mail-delete-btn'), '관리자는 공지 상세에 삭제 버튼')
+        shot(ap, 'local-desktop-mail-notice-detail-admin')
+        ap.click('#mail-detail-back')
+        ap.wait_for_timeout(600)
         shot(ap, 'local-desktop-mail-notices-admin')
         drop(ctx_admin)
 

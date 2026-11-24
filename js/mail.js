@@ -216,7 +216,8 @@ export class MailPanel {
     if (inboxDot) inboxDot.hidden = unreadMail === 0;
     if (noticeDot) noticeDot.hidden = unreadNotice === 0;
 
-    this.updateNoticeNewButton(Boolean(signedIn && data.isAdmin));
+    // 공지 작성은 공지 탭에서만 보인다(다른 탭에서 요약이 갱신돼도 다시 뜨지 않게).
+    this.updateNoticeNewButton(Boolean(signedIn && data.isAdmin) && this.tab === 'notices');
     this.onUnreadChange(total);
     if (this.isOpen() && this.tab === 'inbox') this.syncComposeAvailability();
   }
@@ -488,6 +489,7 @@ export class MailPanel {
     this.el['mail-detail-meta'].textContent = `${who} · ${formatWhen(mail.createdAt)}${extra}`;
     this.el['mail-detail-body'].textContent = mail.body;
     this.el['mail-reply-btn'].hidden = kind !== 'inbox';
+    this.el['mail-delete-btn'].hidden = false;
     this.el['mail-delete-btn'].textContent = '삭제';
     this.showView('detail');
     this.sfx?.play('tap');
@@ -509,6 +511,7 @@ export class MailPanel {
     this.el['mail-detail-meta'].textContent = `공지 · ${notice.authorUsername} · ${formatWhen(notice.createdAt)}`;
     this.el['mail-detail-body'].textContent = notice.body;
     this.el['mail-reply-btn'].hidden = true;
+    this.el['mail-delete-btn'].hidden = !(this.user && this.summary?.isAdmin);
     this.el['mail-delete-btn'].textContent = '삭제';
     this.showView('detail');
     this.sfx?.play('tap');
