@@ -668,8 +668,29 @@ def audit_ui(names, cookie_a, cookie_admin):
         check(page.evaluate("() => document.documentElement.classList.contains('mono')"), '흑백모드 켜짐')
         page.click('#btn-settings-close')
         page.wait_for_timeout(400)
+
+        # 긴 표시 이름(24자)·긴 아이디(12자)가 계정 창 레이아웃을 밀지 않는지
+        long_name = '아주아주아주긴이름테스트스물네글자임돠'[:24]
+        d1("UPDATE users SET display_name = '%s' WHERE username = '%s'" % (long_name, ADMIN))
+        page.reload(wait_until='domcontentloaded')
+        page.wait_for_function('() => window.__ITDA && window.__ITDA.ready === true', timeout=60000)
+        page.wait_for_timeout(500)
         page.click('#btn-account')
         page.wait_for_selector('#ov-account:not([hidden])', timeout=8000)
+        page.wait_for_timeout(300)
+        name_box = page.evaluate("""() => {
+            const b = document.querySelector('.account-name b');
+            const sheet = document.querySelector('#ov-account .sheet');
+            const card = document.querySelector('.account-card');
+            return { name: b.textContent, clipped: b.scrollWidth > b.clientWidth,
+                     card: card.scrollWidth - card.clientWidth,
+                     sheet: sheet.scrollWidth - sheet.clientWidth,
+                     fit: sheet.getBoundingClientRect().right <= innerWidth + 1 };
+        }""")
+        check(name_box['sheet'] <= 1 and name_box['card'] <= 1 and name_box['fit'],
+              '24자 표시 이름도 계정 창을 밀지 않음(말줄임)', name_box)
+        ui.shot(page, 'audit-desktop-account-longname')
+        d1("UPDATE users SET display_name = '%s' WHERE username = '%s'" % (ADMIN, ADMIN))
         page.click('#btn-delete-account')
         page.wait_for_timeout(400)
         danger = page.evaluate("""() => {
