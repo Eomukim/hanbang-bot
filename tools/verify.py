@@ -2232,6 +2232,7 @@ def scenario_setup_clean(page, tag):
         const lab = document.getElementById('btn-lab').getBoundingClientRect();
         const profile = document.getElementById('btn-account').getBoundingClientRect();
         const actions = document.querySelector('#scr-setup .top-actions').getBoundingClientRect();
+        const board = setup.getBoundingClientRect();
         const text = setup.innerText;
         return {
             nodes: {
@@ -2249,6 +2250,8 @@ def scenario_setup_clean(page, tag):
             labTop: Math.round(lab.top), labBottom: Math.round(lab.bottom),
             labText: (document.getElementById('btn-lab').innerText || '').replace(/\\s+/g, ' ').trim(),
             profileLeft: Math.round(profile.left), actionsRight: Math.round(actions.right),
+            profileTop: Math.round(profile.top),
+            boardLeft: Math.round(board.left), boardTop: Math.round(board.top),
             viewH: window.innerHeight, viewW: window.innerWidth,
             scroll: { h: sec.scrollHeight, client: sec.clientHeight },
         };
@@ -2266,8 +2269,11 @@ def scenario_setup_clean(page, tag):
           and view['labBottom'] <= view['viewH'],
           f'[{tag}] 대전 시작 바로 아래 실험실 버튼이 한 화면에 보임',
           f"{view['labText']} · lab {view['labTop']}~{view['labBottom']} / 화면 {view['viewH']}px")
-    check(view['profileLeft'] <= 24, f'[{tag}] 프로필(계정) 버튼이 설정 화면 왼쪽 위',
-          f"left {view['profileLeft']}px · 오른쪽 묶음 right {view['actionsRight']}px")
+    check(0 <= view['profileLeft'] - view['boardLeft'] <= 24
+          and 0 <= view['profileTop'] - view['boardTop'] <= 40,
+          f'[{tag}] 프로필(계정) 버튼이 설정 화면 왼쪽 위',
+          f"왼쪽 여백 {view['profileLeft'] - view['boardLeft']}px · 위 여백 "
+          f"{view['profileTop'] - view['boardTop']}px · 오른쪽 묶음 right {view['actionsRight']}px")
     check(view['scroll']['h'] <= view['scroll']['client'] + 1,
           f'[{tag}] 설정 화면 세로 스크롤 없음',
           f"{view['scroll']['h']} / {view['scroll']['client']}px")
