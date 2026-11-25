@@ -137,7 +137,7 @@ PROBE = r"""
       resultStats: box('.result-stats'), logBtn: box('#battle-log-btn'),
       log: box('#battle-log'), actions: box('.result-actions'),
       settingsSheet: box('#ov-settings .sheet'), settingsBlock: box('.settings-block'),
-      mono: box('.mono-card'), settingsClose: box('#btn-settings-close'),
+      dark: box('.dark-card'), settingsClose: box('#btn-settings-close'),
     },
   };
 }
@@ -251,7 +251,7 @@ def sheet_checks(st, name='result'):
         if overlap(b['actions'], b['logBtn']):
             bad.append('결과 버튼과 배틀 내역 버튼 겹침')
     else:
-        for k in ('settingsBlock', 'mono', 'settingsClose'):
+        for k in ('settingsBlock', 'dark', 'settingsClose'):
             if b[k] and not inside(b[k], vw, vh):
                 bad.append(f"{k} 화면 안에 없음 {b[k]}")
     return bad

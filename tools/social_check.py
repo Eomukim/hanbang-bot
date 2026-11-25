@@ -336,7 +336,8 @@ def run(headless=True):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=CHROME, headless=headless,
-                                    args=['--no-sandbox', '--disable-dev-shm-usage'])
+                                    args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+                                          '--renderer-process-limit=1', '--disable-background-networking'])
 
         def open_page(user=None, width=1280, height=900, mobile=False, app=False):
             """app=True 면 사전(73만 단어)까지 다 뜬 화면이 필요하다(화면 점검용).

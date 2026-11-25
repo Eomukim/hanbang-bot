@@ -7,6 +7,7 @@ import { allowedStarts } from './rules.js';
 import { DictPanel } from './dict.js';
 import { AccountPanel } from './account.js';
 import { MailPanel } from './mail.js';
+import { LabPanel } from './lab.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -71,12 +72,12 @@ export class App {
 
   mount() {
     const ids = [
-      'scr-loading', 'scr-setup', 'scr-dict', 'scr-game', 'load-fill', 'load-meta', 'load-error',
+      'scr-loading', 'scr-setup', 'scr-dict', 'scr-game', 'scr-lab', 'load-fill', 'load-meta', 'load-error',
       'levels', 'lv-desc', 'first-opts',
       'time-slider', 'time-range', 'time-fill', 'time-value',
       'btn-settings', 'ov-settings', 'btn-settings-close',
       'vol-slider', 'vol-range', 'vol-fill', 'vol-value', 'vol-icon', 'btn-vol-icon',
-      'btn-mono', 'mono-desc',
+      'btn-dark', 'dark-desc', 'btn-lab',
       'btn-mercy', 'mercy-desc',
       'btn-start', 'btn-dict',
       'bot-face', 'bot-name', 'bot-lv', 'score-me', 'score-bot', 'btn-quit', 'game-mercy',
@@ -103,7 +104,10 @@ export class App {
     this.accountPanel = new AccountPanel({
       sfx: this.sfx,
       toast: (message) => this.toast(message),
-      onUserChange: (user) => this.mailPanel?.setUser(user),
+      onUserChange: (user) => {
+        this.mailPanel?.setUser(user);
+        this.labPanel?.setUser(user);
+      },
       onComposeMail: (to) => this.mailPanel?.composeTo(to),
     });
     this.accountPanel.init();
@@ -116,13 +120,25 @@ export class App {
     });
     this.mailPanel.init();
 
+    // 🧪 실험실: 최대 8인 커스텀 방 · 방장 = 신 모드. 전적·랭킹·엽전은 쌓지 않는다.
+    this.labPanel = new LabPanel({
+      dict: this.dict,
+      sfx: this.sfx,
+      toast: (message, variant) => this.toast(message, variant),
+      account: this.accountPanel,
+      onExit: () => this.show('setup'),
+      onOpen: () => this.show('lab'),
+      onEnterRoom: () => this.show('lab'),
+    });
+    this.labPanel.init();
+
     this.renderLevels();
     this.renderFirst();
     this.renderTime();
     this.renderMercy();
     this.renderVolume();
-    this.renderMono();
-    this.applyMonochrome();
+    this.renderTheme();
+    this.applyTheme();
 
     this.bindEvents();
     this.show('setup');
@@ -139,8 +155,10 @@ export class App {
       this.accountPanel?.closeAll();
       this.mailPanel?.closeAll(true);
     }
-    for (const key of ['scr-loading', 'scr-setup', 'scr-dict', 'scr-game']) {
-      this.el[key].hidden = key !== `scr-${name}`;
+    // 실험실을 떠나면 방 화면의 폴링을 멈춘다(방은 서버에 그대로 남는다).
+    if (name !== 'lab') this.labPanel?.pause?.();
+    for (const key of ['scr-loading', 'scr-setup', 'scr-dict', 'scr-game', 'scr-lab']) {
+      if (this.el[key]) this.el[key].hidden = key !== `scr-${name}`;
     }
   }
 
@@ -323,22 +341,25 @@ export class App {
     this.sfx.play('tap');
   }
 
-  renderMono() {
-    const on = Boolean(this.settings.monochrome);
-    const btn = this.el['btn-mono'];
+  renderTheme() {
+    const on = Boolean(this.settings.dark);
+    const btn = this.el['btn-dark'];
+    if (!btn) return;
     btn.setAttribute('aria-checked', String(on));
-    btn.setAttribute('aria-label', `흑백모드 ${on ? '켬' : '끔'}`);
-    this.el['mono-desc'].textContent = on
-      ? '켜면 화면 전체가 흑백으로 보여요'
-      : '끄면 기본 컬러 · 켜면 화면 전체 흑백';
+    btn.setAttribute('aria-label', `다크모드 ${on ? '켬' : '끔'}`);
+    this.el['dark-desc'].textContent = on
+      ? '켜면 어두운 우드 톤으로 보여요'
+      : '끄면 기본 밝은 우드 톤 · 켜면 어두운 우드 톤';
   }
 
-  /** 흑백모드는 html 에 .mono 만 붙인다(레이아웃·뷰포트 계산은 건드리지 않는다). */
-  applyMonochrome() {
-    const on = Boolean(this.settings.monochrome);
-    document.documentElement.classList.toggle('mono', on);
+  /** 다크모드는 html 에 .dark 만 붙인다(레이아웃·뷰포트 계산은 건드리지 않는다).
+   *  색은 CSS 의 `html.dark` 토큰이 통째로 바꾸므로 화면별로 따로 칠하지 않는다. */
+  applyTheme() {
+    const on = Boolean(this.settings.dark);
+    document.documentElement.classList.toggle('dark', on);
+    document.documentElement.classList.remove('mono');
     const tag = document.querySelector('meta[name="theme-color"]');
-    if (tag) tag.setAttribute('content', on ? '#E9E6DF' : '#EFECE4');
+    if (tag) tag.setAttribute('content', on ? '#191713' : '#EFECE4');
   }
 
   openSettings() {
@@ -348,7 +369,7 @@ export class App {
     ov.classList.remove('ov-out');
     this.el['btn-settings'].setAttribute('aria-expanded', 'true');
     this.renderVolume();
-    this.renderMono();
+    this.renderTheme();
     this.sfx.play('tap');
     if (this.isFinePointer()) this.el['btn-settings-close'].focus({ preventScroll: true });
   }
@@ -429,10 +450,10 @@ export class App {
     this.el['btn-vol-icon'].addEventListener('click', () => this.toggleMute());
 
     // ── 흑백모드 ──
-    this.el['btn-mono'].addEventListener('click', () => {
-      this.settings.monochrome = !this.settings.monochrome;
-      this.applyMonochrome();
-      this.renderMono();
+    this.el['btn-dark'].addEventListener('click', () => {
+      this.settings.dark = !this.settings.dark;
+      this.applyTheme();
+      this.renderTheme();
       this.persist();
       this.sfx.play('tap');
     });
@@ -498,6 +519,7 @@ export class App {
       }
       if (e.key === 'Escape' && !this.el['ov-result'].hidden) this.hideResult();
       if (e.key === 'Escape' && this.screen === 'dict') this.closeDict();
+      if (this.screen === 'lab') return;   // 실험실 화면의 키는 lab.js 가 다룬다
       if (e.key === 'Enter' && this.screen === 'setup' && this.anyPanelOpen()) {
         // 창이 접히는 중(사라지는 애니메이션)에 뒤의 `대전 시작` 이 눌리지 않게 한 번 더 막는다.
         e.preventDefault();

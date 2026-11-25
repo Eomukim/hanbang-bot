@@ -1751,9 +1751,12 @@ def settings_view(page):
                    pressed: document.getElementById('btn-vol-icon').getAttribute('aria-pressed'),
                    fillW: Math.round(document.getElementById('vol-fill').getBoundingClientRect().width),
                    trackW: Math.round(document.querySelector('#vol-slider .slider-track').getBoundingClientRect().width) },
-            mono: { checked: document.getElementById('btn-mono').getAttribute('aria-checked'),
-                    html: document.documentElement.classList.contains('mono'),
-                    filters },
+            theme: { checked: document.getElementById('btn-dark').getAttribute('aria-checked'),
+                     html: document.documentElement.classList.contains('dark'),
+                     mono: document.documentElement.classList.contains('mono'),
+                     bg: getComputedStyle(document.body).backgroundColor,
+                     ink: getComputedStyle(document.documentElement).getPropertyValue('--ink').trim(),
+                     filters },
             sfx: { volume: window.__ITDA.sfx.volume,
                    gain: window.__ITDA.sfx.master ? Number(window.__ITDA.sfx.master.gain.value.toFixed(3)) : null },
             screen: { open: !!ov.querySelector('.settings-sheet'), dict: !document.getElementById('scr-dict').hidden,
@@ -1948,42 +1951,45 @@ def scenario_settings(page, tag):
     check(back['vol']['value'] == '35' and back['vol']['pressed'] == 'false' and back['sfx']['volume'] == 35,
           f'[{tag}] 음소거 해제 → 직전 음량 복귀', json.dumps({**back['vol'], **back['sfx']}, ensure_ascii=False))
 
-    # 5) 흑백모드: 화면 전체 회색 · 레이아웃 그대로
+    # 5) 다크모드: 어두운 우드 톤으로 전체가 바뀌고 레이아웃은 그대로
     before_rect = page.evaluate("""() => {
         const a = document.getElementById('app').getBoundingClientRect();
         const s = document.getElementById('btn-start').getBoundingClientRect();
         return { app: [Math.round(a.left), Math.round(a.top), Math.round(a.width), Math.round(a.height)],
                  start: [Math.round(s.left), Math.round(s.top), Math.round(s.width), Math.round(s.height)] };
     }""")
-    page.evaluate("window.__ITDA.app.toast('흑백 확인')")
+    page.evaluate("window.__ITDA.app.toast('다크 확인')")
     page.wait_for_timeout(120)
-    page.click('#btn-mono')
+    light = settings_view(page)
+    page.click('#btn-dark')
     page.wait_for_timeout(320)
-    mono = settings_view(page)
+    theme = settings_view(page)
     after_rect = page.evaluate("""() => {
         const a = document.getElementById('app').getBoundingClientRect();
         const s = document.getElementById('btn-start').getBoundingClientRect();
         return { app: [Math.round(a.left), Math.round(a.top), Math.round(a.width), Math.round(a.height)],
                  start: [Math.round(s.left), Math.round(s.top), Math.round(s.width), Math.round(s.height)] };
     }""")
-    filters = mono['mono']['filters']
-    check(mono['mono']['checked'] == 'true' and mono['mono']['html'], f'[{tag}] 흑백모드 켜짐',
-          json.dumps(mono['mono'], ensure_ascii=False))
-    check(all('grayscale(1)' in (filters[k] or '') for k in ('.bg', '#app', '#ov-settings', '.toast')),
-          f'[{tag}] 흑백이 배경·보드·설정 창·토스트 전체에 적용',
-          json.dumps(filters, ensure_ascii=False))
-    check(before_rect == after_rect, f'[{tag}] 흑백 켜도 레이아웃 그대로',
+    check(theme['theme']['checked'] == 'true' and theme['theme']['html'], f'[{tag}] 다크모드 켜짐',
+          json.dumps(theme['theme'], ensure_ascii=False))
+    check(theme['theme']['bg'] != light['theme']['bg'] and theme['theme']['ink'] != light['theme']['ink'],
+          f'[{tag}] 배경·글자 토큰이 어두운 색으로 바뀐다',
+          f"{light['theme']['bg']}/{light['theme']['ink']} → {theme['theme']['bg']}/{theme['theme']['ink']}")
+    check(before_rect == after_rect, f'[{tag}] 다크 켜도 레이아웃 그대로',
           f'{before_rect} → {after_rect}')
-    check(mono['overflow']['doc'] <= 0 and mono['overflow']['body'] <= 0,
-          f'[{tag}] 흑백모드 가로 오버플로 0', json.dumps(mono['overflow']))
-    check(page.evaluate("JSON.parse(localStorage.getItem('itda.settings.v1')).monochrome") is True,
-          f'[{tag}] 흑백모드 켬 저장')
-    page.click('#btn-mono')
+    check(theme['overflow']['doc'] <= 0 and theme['overflow']['body'] <= 0,
+          f'[{tag}] 다크모드 가로 오버플로 0', json.dumps(theme['overflow']))
+    check(page.evaluate("JSON.parse(localStorage.getItem('itda.settings.v1')).dark") is True,
+          f'[{tag}] 다크모드 켬 저장')
+    check(not page.evaluate("() => !!document.getElementById('btn-mono')")
+          and page.evaluate("() => document.documentElement.className").find('mono') < 0,
+          f'[{tag}] 흑백모드(.mono)는 남아 있지 않다')
+    page.click('#btn-dark')
     page.wait_for_timeout(260)
     off = settings_view(page)
-    check(off['mono']['checked'] == 'false' and not off['mono']['html']
-          and 'grayscale' not in (off['mono']['filters']['#app'] or ''),
-          f'[{tag}] 흑백모드 끄면 컬러로', json.dumps(off['mono'], ensure_ascii=False))
+    check(off['theme']['checked'] == 'false' and not off['theme']['html']
+          and off['theme']['bg'] == light['theme']['bg'],
+          f'[{tag}] 다크모드 끄면 밝은 우드 톤으로', json.dumps(off['theme'], ensure_ascii=False))
 
     # 6) 설정 창 닫기: Esc·바깥 누르기 모두
     page.keyboard.press('Escape')
@@ -2071,7 +2077,7 @@ def scenario_settings(page, tag):
         out['soundFalse'] = store.loadSettings().volume;
         localStorage.setItem('itda.settings.v1', JSON.stringify({ sound: true }));
         out['soundTrue'] = store.loadSettings().volume;
-        localStorage.setItem('itda.settings.v1', JSON.stringify({ monochrome: true, volume: 60, timeLimit: 1 }));
+        localStorage.setItem('itda.settings.v1', JSON.stringify({ dark: true, volume: 60, timeLimit: 1 }));
         return out;
     }""")
     expect = {'1': 1, '2': 1, '3': 5, '4': 5, '5': 5, '7': 5, '10': 10, '12': 10, '13': 15,
@@ -2083,18 +2089,18 @@ def scenario_settings(page, tag):
     check(not wrong, f'[{tag}] 저장값 해석(1초 유지 · 5초 단위 보정 · 범위 밖 기본값 · 옛 효과음 끔→0%)',
           json.dumps(wrong or store, ensure_ascii=False)[:240])
 
-    # 9) 새 값으로 다시 열었을 때 복원(1초 · 60% · 흑백) + 화살표 한 칸씩 이동
+    # 9) 새 값으로 다시 열었을 때 복원(1초 · 60% · 다크) + 화살표 한 칸씩 이동
     page.reload(wait_until='domcontentloaded')
     wait_ready(page)
     page.wait_for_timeout(280)
     restored = settings_view(page)
     check(restored['time']['value'] == '1' and restored['time']['badge'] == '1'
           and restored['vol']['value'] == '60'
-          and restored['mono']['html'] and 'grayscale(1)' in (restored['mono']['filters']['#app'] or ''),
-          f'[{tag}] 새로 열어도 1초·60%·흑백 복원',
+          and restored['theme']['html'] and restored['theme']['checked'] == 'true',
+          f'[{tag}] 새로 열어도 1초·60%·다크 복원',
           json.dumps({'time': restored['time']['value'], 'badge': restored['time']['badge'],
                       'vol': restored['vol']['value'],
-                      'mono': restored['mono']['html']}, ensure_ascii=False))
+                      'dark': restored['theme']['html']}, ensure_ascii=False))
     check(restored['sfx']['volume'] == 60, f'[{tag}] 복원된 음량이 효과음에 반영', str(restored['sfx']))
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 복원 뒤 가로 오버플로 0', str(overflow(page)))
 
@@ -2189,8 +2195,8 @@ def scenario_settings(page, tag):
         r.dispatchEvent(new Event('input', { bubbles: true }));
         r.dispatchEvent(new Event('change', { bubbles: true }));
     }""")
-    if settings_view(page)['mono']['html']:
-        page.evaluate("document.getElementById('btn-mono').click()")
+    if settings_view(page)['theme']['html']:
+        page.evaluate("document.getElementById('btn-dark').click()")
         page.wait_for_timeout(200)
     page.click('#btn-settings')
     page.wait_for_timeout(300)
@@ -2200,10 +2206,10 @@ def scenario_settings(page, tag):
     page.wait_for_timeout(300)
     final = settings_view(page)
     check(final['time']['value'] == '15' and final['vol']['value'] == '100'
-          and not final['mono']['html'] and final['sheet']['vh'] > 0,
+          and not final['theme']['html'] and final['sheet']['vh'] > 0,
           f'[{tag}] 설정 기본값 복귀',
           json.dumps({'time': final['time']['value'], 'vol': final['vol']['value'],
-                      'mono': final['mono']['html']}, ensure_ascii=False))
+                      'dark': final['theme']['html']}, ensure_ascii=False))
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 설정 시험 뒤 가로 오버플로 0', str(overflow(page)))
     shot(page, f'{tag}-20-settings')
 

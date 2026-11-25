@@ -155,7 +155,7 @@ def run(headless=True):
         guest.goto(URL, wait_until='domcontentloaded')
         wait_ready(guest)
         order = guest.eval_on_selector_all('.top-actions .top-btn', 'els => els.map(e => e.id)')
-        check(order[:4] == ['btn-settings', 'btn-dict', 'btn-mail', 'btn-account'],
+        check(order[:5] == ['btn-settings', 'btn-dict', 'btn-lab', 'btn-mail', 'btn-account'],
               '상단 버튼은 그대로 4개(설정·사전·메일·계정)', json.dumps(order))
         check(guest.locator('#btn-friends').count() == 0, '다섯 번째(친구) 아이콘을 만들지 않음')
         check(guest.is_visible('#btn-mail') and guest.inner_text('#btn-mail').strip() == '',

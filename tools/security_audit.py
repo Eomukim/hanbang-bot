@@ -795,12 +795,12 @@ def audit_ui(names, cookie_a, cookie_admin):
         page.click('#btn-mail-close')
         page.wait_for_timeout(300)
 
-        # 흑백모드: 화면 전체 회색 + 위험 영역·토스트·동그라미가 그대로 보이고 동작하는지
+        # 다크모드: 어두운 우드 톤에서도 위험 영역·토스트·동그라미가 그대로 보이고 동작하는지
         page.click('#btn-settings')
         page.wait_for_timeout(400)
-        page.click('#btn-mono')
+        page.click('#btn-dark')
         page.wait_for_timeout(300)
-        check(page.evaluate("() => document.documentElement.classList.contains('mono')"), '흑백모드 켜짐')
+        check(page.evaluate("() => document.documentElement.classList.contains('dark')"), '다크모드 켜짐')
         page.click('#btn-settings-close')
         page.wait_for_timeout(400)
 
@@ -838,13 +838,13 @@ def audit_ui(names, cookie_a, cookie_admin):
                      sheetFits: s.bottom <= innerHeight + 1 && s.top >= -1 };
         }""")
         check(not danger['viewHidden'] and danger['disabled'] and danger['inside'] and danger['sheetFits'],
-              '흑백모드에서 계정 삭제(위험 영역) 화면이 보이고 확인 전에는 잠김', danger)
-        ui.shot(page, 'audit-desktop-account-danger-mono')
+              '다크모드에서 계정 삭제(위험 영역) 화면이 보이고 확인 전에는 잠김', danger)
+        ui.shot(page, 'audit-desktop-account-danger-dark')
         page.click('#btn-delete-cancel')
         page.wait_for_timeout(300)
         page.click('#btn-account-close')
         page.wait_for_timeout(300)
-        page.evaluate("() => window.__ITDA.app.toast('흑백모드 점검')")
+        page.evaluate("() => window.__ITDA.app.toast('다크모드 점검')")
         page.wait_for_timeout(400)
         toast = page.evaluate("""() => {
             const el = document.querySelector('.toast');
@@ -853,45 +853,46 @@ def audit_ui(names, cookie_a, cookie_admin):
             return { cls: el.className, shown: getComputedStyle(el).opacity !== '0' && r.width > 0,
                      inside: r.top >= -1 && r.bottom <= innerHeight + 1 && r.left >= -1 && r.right <= innerWidth + 1 };
         }""")
-        check(toast and toast['shown'] and toast['inside'], '흑백모드에서 토스트가 화면 안에 보임', toast)
-        ui.shot(page, 'audit-desktop-toast-mono')
+        check(toast and toast['shown'] and toast['inside'], '다크모드에서 토스트가 화면 안에 보임', toast)
+        ui.shot(page, 'audit-desktop-toast-dark')
         page.click('#btn-settings')
         page.wait_for_timeout(300)
-        page.click('#btn-mono')
+        page.click('#btn-dark')
         page.wait_for_timeout(200)
         page.click('#btn-settings-close')
         page.wait_for_timeout(300)
         ctx.close()
 
-        # 게스트: 새 공지 동그라미가 흑백모드에서도 보이는지(픽셀 대비까지)
+        # 게스트: 새 공지 동그라미가 다크모드에서도 보이는지(픽셀 대비까지)
         ctx, page = ui.page()
         page.wait_for_timeout(800)
         check(page.is_visible('#mail-badge'), '새 공지가 있으면 게스트에게 빨간 동그라미')
         page.click('#btn-settings')
         page.wait_for_timeout(400)
-        page.click('#btn-mono')
+        page.click('#btn-dark')
         page.wait_for_timeout(300)
         page.click('#btn-settings-close')
         page.wait_for_timeout(400)
-        mono = page.evaluate("""() => {
+        dark = page.evaluate("""() => {
             const badge = document.getElementById('mail-badge');
-            const sheet = document.querySelector('.mail-sheet');
-            return { filter: getComputedStyle(document.getElementById('app')).filter,
+            return { on: document.documentElement.classList.contains('dark'),
+                     filter: getComputedStyle(document.getElementById('app')).filter,
+                     bg: getComputedStyle(document.body).backgroundColor,
                      hidden: badge.hidden, w: badge.getBoundingClientRect().width,
                      opacity: getComputedStyle(badge).opacity };
         }""")
-        check('grayscale' in mono['filter'], '흑백모드에서 화면이 회색 처리', mono['filter'])
-        check(not mono['hidden'] and mono['w'] > 0 and mono['opacity'] == '1',
-              '흑백모드에서도 알림 동그라미가 그려짐', mono)
+        check(dark['on'] and dark['bg'] != 'rgb(239, 236, 228)', '다크모드에서 화면이 어두운 톤', dark['bg'])
+        check(not dark['hidden'] and dark['w'] > 0 and dark['opacity'] == '1',
+              '다크모드에서도 알림 동그라미가 그려짐', dark)
         contrast = badge_contrast(page, '#mail-badge')
-        check(contrast is not None and contrast >= 20, '흑백모드 동그라미가 배경과 구분됨(밝기 차)', contrast)
-        ui.shot(page, 'audit-desktop-mail-mono')
-        ui.shot(page, 'audit-desktop-badge-mono', cls='.top-actions')
+        check(contrast is not None and contrast >= 20, '다크모드 동그라미가 배경과 구분됨(밝기 차)', contrast)
+        ui.shot(page, 'audit-desktop-mail-dark')
+        ui.shot(page, 'audit-desktop-badge-dark', cls='.top-actions')
         page.click('#btn-mail')
         page.wait_for_timeout(900)
         fits = page.evaluate("""() => { const s = document.querySelector('.mail-sheet').getBoundingClientRect();
             return { w: Math.round(s.width), h: Math.round(s.height), vw: innerWidth, vh: innerHeight }; }""")
-        check(fits['w'] <= fits['vw'] and fits['h'] <= fits['vh'], '흑백모드에서 메일함 창 폭 유지', fits)
+        check(fits['w'] <= fits['vw'] and fits['h'] <= fits['vh'], '다크모드에서 메일함 창 폭 유지', fits)
         ctx.close()
 
         # ── E4. 모바일 4종 화면 ───────────────────────────────

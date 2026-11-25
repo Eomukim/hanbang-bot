@@ -30,7 +30,7 @@ export const DEFAULT_SETTINGS = {
   timeLimit: 15,
   first: 'me',      // 'me' | 'bot'
   volume: 100,      // 효과음 음량 0~100(%). 0이면 무음
-  monochrome: false, // 흑백모드
+  dark: false,      // 다크모드(수제 우드 톤을 어둡게)
   mercy: false,     // 배려모드: 첫 5수 한방 금지
 };
 
@@ -150,7 +150,9 @@ export function loadSettings() {
   } else if (saved.sound === true) {
     settings.volume = 100;
   }
-  if (typeof saved.monochrome === 'boolean') settings.monochrome = saved.monochrome;
+  // 2026-11-25: 흑백모드(monochrome)를 없애고 다크모드(dark)로 바꿨다.
+  // 예전에 흑백을 켜 두었던 기기는 흑백이 아니라 기본(라이트)으로 시작한다.
+  if (typeof saved.dark === 'boolean') settings.dark = saved.dark;
   if (typeof saved.mercy === 'boolean') settings.mercy = saved.mercy;
   return settings;
 }
@@ -161,7 +163,7 @@ export function saveSettings(settings) {
     timeLimit: normalizeTimeLimit(settings.timeLimit, DEFAULT_SETTINGS.timeLimit),
     first: settings.first,
     volume: clampInt(settings.volume, 0, 100, DEFAULT_SETTINGS.volume),
-    monochrome: Boolean(settings.monochrome),
+    dark: Boolean(settings.dark),
     mercy: Boolean(settings.mercy),
   });
 }

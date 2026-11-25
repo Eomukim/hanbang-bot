@@ -248,12 +248,21 @@ export class FriendsPanel {
     const item = el('li', 'friend-item');
     item.dataset.id = user.id;
     item.appendChild(this.avatarNode(user, 'friend-avatar'));
+    if (user.online) {
+      // 접속 중(90초 안에 활동) 표시 — 초록 점
+      const dot = el('i', 'friend-online');
+      dot.setAttribute('aria-label', '접속 중');
+      dot.title = '접속 중';
+      item.appendChild(dot);
+      item.classList.add('is-online');
+    }
 
     const who = el('div', 'friend-who');
     // 닉네임이 있으면 `닉네임` + `@아이디`, 없으면 아이디가 곧 이름이라 `@아이디` 하나만.
     if (user.nickname) {
       who.appendChild(el('b', 'friend-name', user.displayName || user.nickname));
       who.appendChild(el('small', 'friend-handle', `@${user.username}`));
+      if (user.online) who.appendChild(el('small', 'friend-live', '접속 중'));
     } else {
       who.appendChild(el('b', 'friend-name', `@${user.username}`));
     }

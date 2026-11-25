@@ -151,7 +151,7 @@ def run(headless=True):
         guest.goto(URL, wait_until='domcontentloaded')
         wait_ready(guest)
         order = guest.eval_on_selector_all('.top-actions .top-btn', 'els => els.map(e => e.id)')
-        check(order[:4] == ['btn-settings', 'btn-dict', 'btn-mail', 'btn-account'],
+        check(order[:5] == ['btn-settings', 'btn-dict', 'btn-lab', 'btn-mail', 'btn-account'],
               '상단 버튼: 설정 · 사전 · 메일 · 계정', json.dumps(order))
         check(guest.is_visible('#btn-mail') and guest.inner_text('#btn-mail').strip() == '',
               '메일함 버튼은 아이콘만')

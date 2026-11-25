@@ -55,7 +55,7 @@ export async function onRequestPost({ request, env }) {
   let target = null;
   if (userId) {
     target = await env.DB.prepare(
-      'SELECT id, username, nickname, display_name, avatar_updated_at FROM users WHERE id = ?',
+      'SELECT id, username, nickname, display_name, avatar_updated_at, last_seen_at FROM users WHERE id = ?',
     ).bind(userId).first();
   } else {
     const username = String(body.username ?? '').trim().replace(/^@+/, '').trim();
@@ -63,7 +63,7 @@ export async function onRequestPost({ request, env }) {
       return fail(400, 'username_invalid', '친구로 찾을 아이디는 2~12자의 한글·영문·숫자·밑줄이에요.');
     }
     target = await env.DB.prepare(
-      'SELECT id, username, nickname, display_name, avatar_updated_at FROM users WHERE username = ?',
+      'SELECT id, username, nickname, display_name, avatar_updated_at, last_seen_at FROM users WHERE username = ?',
     ).bind(username).first();
   }
   if (!target) return fail(404, 'user_not_found', '그 아이디를 찾지 못했어요.');

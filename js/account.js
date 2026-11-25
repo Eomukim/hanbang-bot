@@ -192,6 +192,8 @@ export class AccountPanel {
     /** 친구 목록·받은 요청(별도 모듈이 이 시트의 친구 탭을 그린다) */
     this.friends = null;
     this.friendCounts = { friends: 0, incoming: 0, outgoing: 0 };
+    /** 접속 중 표시용 하트비트(30초 간격 · 서버가 30초 쿨다운으로 D1 쓰기를 아낀다). */
+    this.heartbeatTimer = null;
     this.el = {};
   }
 
@@ -229,6 +231,7 @@ export class AccountPanel {
     this.watchAuth();
     await this.loadServer();
     this.watchFriends();
+    this.startHeartbeat();
   }
 
   /**
@@ -247,6 +250,30 @@ export class AccountPanel {
    * 다른 탭에서 로그인·로그아웃했거나 이 탭이 다시 앞으로 나오면 세션을 다시 확인한다.
    * (한 탭에서 로그아웃했는데 다른 탭은 로그인 상태로 남아 401 만 받던 문제를 없엔다.)
    */
+  /** 30초마다 `POST /api/account/ping` — 친구 목록의 초록 점(접속 중)이 이 값을 본다. */
+  startHeartbeat() {
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      if (document.visibilityState === 'visible' && this.user) void this.ping();
+    }, 30 * 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && this.user) void this.ping();
+    });
+  }
+
+  async ping() {
+    if (!this.apiReady || !this.user) return;
+    try {
+      await fetch('/api/account/ping', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { accept: 'application/json' },
+      });
+    } catch {
+      /* 잠깐 끊긴 것뿐이면 다음 하트비트에서 다시 알린다 */
+    }
+  }
+
   watchAuth() {
     window.addEventListener('storage', (event) => {
       if (event.key === AUTH_PING_KEY) void this.refreshUser({ force: true });
@@ -310,6 +337,8 @@ export class AccountPanel {
     }
     this.friends?.setUser(this.user);
     this.fillAccount();
+    // 로그인하자마자 접속 중으로 보이게 한 번 알린다(그 뒤로는 30초마다).
+    if (this.user && before?.id !== this.user.id) void this.ping();
     if (this.user) void this.friends?.refreshSummary();
     else this.setFriendBadge({ friends: 0, incoming: 0, outgoing: 0 });
     const btn = this.el['btn-account'];
@@ -675,6 +704,7 @@ export class AccountPanel {
 
   afterSignIn(user) {
     this.setUser(user);
+    void this.ping();
     this.closeAuth();
     this.resetTurnstile();
     pingAuth();

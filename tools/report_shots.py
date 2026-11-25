@@ -16,9 +16,9 @@
   (2026-11-23-alnum/ 아래 dict-alnum.png, dict-alnum-long.png, game-alnum.png, game-alnum-tile.png,
    mobile-dict-alnum.png, mobile-game-alnum.png, mobile-game-alnum-tile.png)
 - 내 단어장 삭제(버튼·모달·사전 API 없음)
-- 별도 설정 창(⚙ 설정): 음량 70% → gain 0.35, 흑백모드로 화면 전체 회색, 화면 안·스크롤 0
-  (desktop-settings.png, desktop-settings-mono.png, desktop-mono-home.png,
-   mobile-settings.png, mobile-settings-mono.png, mobile-mono-home.png)
+- 별도 설정 창(⚙ 설정): 음량 70% → gain 0.35, 다크모드로 어두운 우드 톤, 화면 안·스크롤 0
+  (desktop-settings.png, desktop-settings-dark.png, desktop-dark-home.png,
+   mobile-settings.png, mobile-settings-dark.png, mobile-dark-home.png)
 - 제한 시간 1초·5~50초 슬라이더 · 0~50초 눈금 11개(0·50 / 10의 배수 / 5의 배수 3단계)와
   양끝 0초·50초 숫자 · 홈에 효과음 행 없음
 - 힌트 삭제(버튼·문구·API 없음)
@@ -148,7 +148,7 @@ def brand_hits(page):
 
 
 def settings_shots(page, prefix):
-    """설정 창(음량·흑백모드)과 흑백으로 바뀐 화면을 남긴다. 끝나면 컬러·기본값으로 되돌린다."""
+    """설정 창(음량·다크모드)과 다크로 바뀐 화면을 남긴다. 끝나면 라이트·기본값으로 되돌린다."""
     page.evaluate("window.__ITDA.app.engine && window.__ITDA.app.engine.destroy()")
     page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(160)
@@ -199,27 +199,27 @@ def settings_shots(page, prefix):
     page.screenshot(path=os.path.join(OUT, f'{prefix}-settings.png'))
     print(f'  shot  {os.path.join(OUT, f"{prefix}-settings.png")}')
 
-    page.click('#btn-mono')
+    page.click('#btn-dark')
     page.wait_for_timeout(430)
-    mono = page.evaluate("""() => ({
-        on: document.documentElement.classList.contains('mono'),
-        app: getComputedStyle(document.getElementById('app')).filter,
-        bg: getComputedStyle(document.querySelector('.bg')).filter,
+    dark = page.evaluate("""() => ({
+        on: document.documentElement.classList.contains('dark'),
+        bg: getComputedStyle(document.body).backgroundColor,
+        ink: getComputedStyle(document.documentElement).getPropertyValue('--ink').trim(),
         overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     })""")
-    check(mono['on'] and 'grayscale(1)' in mono['app'] and 'grayscale(1)' in mono['bg'] and mono['overflow'] <= 0,
-          f'{prefix} 흑백모드 적용', json.dumps(mono, ensure_ascii=False))
-    page.screenshot(path=os.path.join(OUT, f'{prefix}-settings-mono.png'))
-    print(f'  shot  {os.path.join(OUT, f"{prefix}-settings-mono.png")}')
+    check(dark['on'] and dark['overflow'] <= 0,
+          f'{prefix} 다크모드 적용', json.dumps(dark, ensure_ascii=False))
+    page.screenshot(path=os.path.join(OUT, f'{prefix}-settings-dark.png'))
+    print(f'  shot  {os.path.join(OUT, f"{prefix}-settings-dark.png")}')
     page.click('#btn-settings-close')
     page.wait_for_timeout(320)
-    page.screenshot(path=os.path.join(OUT, f'{prefix}-mono-home.png'))
-    print(f'  shot  {os.path.join(OUT, f"{prefix}-mono-home.png")}')
+    page.screenshot(path=os.path.join(OUT, f'{prefix}-dark-home.png'))
+    print(f'  shot  {os.path.join(OUT, f"{prefix}-dark-home.png")}')
 
-    # 컬러로 되돌리고 음량도 되돌린다(다음 장면들이 컬러로 찍히도록)
+    # 라이트로 되돌리고 음량도 되돌린다(다음 장면들이 라이트로 찍히도록)
     page.click('#btn-settings')
     page.wait_for_timeout(320)
-    page.click('#btn-mono')
+    page.click('#btn-dark')
     page.wait_for_timeout(220)
     page.evaluate("""() => {
         const r = document.getElementById('vol-range');
@@ -230,8 +230,8 @@ def settings_shots(page, prefix):
     page.wait_for_timeout(160)
     page.click('#btn-settings-close')
     page.wait_for_timeout(300)
-    back = page.evaluate("() => ({ mono: document.documentElement.classList.contains('mono'), vol: document.getElementById('vol-range').value })")
-    check(not back['mono'] and back['vol'] == '100', f'{prefix} 설정 창 닫고 컬러·100%로 복귀',
+    back = page.evaluate("() => ({ dark: document.documentElement.classList.contains('dark'), vol: document.getElementById('vol-range').value })")
+    check(not back['dark'] and back['vol'] == '100', f'{prefix} 설정 창 닫고 라이트·100%로 복귀',
           json.dumps(back, ensure_ascii=False))
     return view
 

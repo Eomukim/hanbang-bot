@@ -240,7 +240,8 @@ def run(headless=True):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=CHROME, headless=headless,
-                                    args=['--no-sandbox', '--disable-dev-shm-usage'])
+                                    args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+                                          '--renderer-process-limit=1', '--disable-background-networking'])
 
         def open_page(user=None, width=1280, height=900, mobile=False):
             ctx = browser.new_context(
@@ -283,8 +284,8 @@ def run(headless=True):
         print('\n· 게스트')
         ctx_guest, guest = open_page()
         order = guest.eval_on_selector_all('.top-actions .top-btn', 'els => els.map(e => e.id)')
-        check(order[:4] == ['btn-settings', 'btn-dict', 'btn-mail', 'btn-account'],
-              '상단 버튼 순서: 설정 · 사전 · 메일 · 계정', json.dumps(order))
+        check(order[:5] == ['btn-settings', 'btn-dict', 'btn-lab', 'btn-mail', 'btn-account'],
+              '상단 버튼 순서: 설정 · 사전 · 실험실 · 메일 · 계정', json.dumps(order))
         check(guest.is_visible('#btn-mail'), '메일함 버튼이 보임')
         check(guest.inner_text('#btn-mail').strip() == '', '메일함 버튼은 아이콘만(글자 없음)',
               guest.inner_text('#btn-mail'))

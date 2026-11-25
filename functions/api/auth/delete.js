@@ -72,6 +72,29 @@ export async function onRequest({ request, env }) {
   // 친구: 이 사람이 낀 친구·요청 행을 모두 지운다(상대 친구 목록에 유령이 남지 않게).
   await env.DB.prepare('DELETE FROM friendships WHERE requester_id = ? OR addressee_id = ?')
     .bind(session.id, session.id).run();
+  // 실험실: 내 방과 내게 온·내가 보낸 초대를 지운다. 다른 방의 내 자리도 뺀다
+  // (방장 화면에 사라진 사람의 자리가 남지 않게).
+  await env.DB.prepare('DELETE FROM lab_invites WHERE from_id = ? OR to_id = ?')
+    .bind(session.id, session.id).run();
+  await env.DB.prepare('DELETE FROM lab_rooms WHERE host_id = ?').bind(session.id).run();
+  try {
+    const seated = await env.DB.prepare(
+      "SELECT code, version, seats_json FROM lab_rooms WHERE seats_json LIKE ? LIMIT 20",
+    ).bind(`%${session.id}%`).all();
+    for (const row of seated?.results || []) {
+      let seats = [];
+      try { seats = JSON.parse(row.seats_json || '[]'); } catch { seats = []; }
+      const index = seats.findIndex((seat) => seat && seat.kind !== 'bot' && seat.userId === session.id);
+      if (index < 0) continue;
+      if (seats.length > 2) seats.splice(index, 1);
+      else seats[index] = { kind: 'bot', userId: '', name: '봇 Lv.2 루키 봇', avatarAt: 0, level: 2, status: 'joined' };
+      await env.DB.prepare(
+        'UPDATE lab_rooms SET seats_json = ?, version = version + 1, updated_at = ? WHERE code = ? AND version = ?',
+      ).bind(JSON.stringify(seats), Date.now(), row.code, Number(row.version)).run();
+    }
+  } catch {
+    /* 자리 정리는 실패해도 탈퇴를 막지 않는다 */
+  }
   await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(session.id).run();
 
   return ok(

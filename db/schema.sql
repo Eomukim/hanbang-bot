@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_data   TEXT,                           -- 프로필 사진(160px 정사각 WebP/JPEG Data URL) · 없으면 글자 아바타
   avatar_updated_at INTEGER,                    -- 사진을 마지막으로 바꾼 시각(epoch ms) · 주소의 ?v= 캐시 키
   stats_json    TEXT NOT NULL DEFAULT '{}',     -- 개인 전적·설정 동기화용 경량 JSON(랭킹 UI 없음)
+  last_seen_at  INTEGER,                        -- 마지막 활동 시각(epoch ms) · 90초 안이면 접속 중
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
 );
@@ -94,3 +95,36 @@ CREATE TABLE IF NOT EXISTS friendships (
 
 CREATE INDEX IF NOT EXISTS idx_friendships_requester ON friendships(requester_id, status);
 CREATE INDEX IF NOT EXISTS idx_friendships_addressee ON friendships(addressee_id, status);
+
+-- ── 실험실 (최대 8인 커스텀 방 · 방장 = 신 모드) ─────────────
+-- 방 하나 = 한 행. 좌석·룰·진행 상태를 JSON 으로 모아 두어 폴링 1회가 1행만 읽는다.
+-- 전적·랭킹·엽전은 이 방에서 쌓지 않는다.
+CREATE TABLE IF NOT EXISTS lab_rooms (
+  code       TEXT PRIMARY KEY,              -- 6자리 방 코드(O·0·I·1 제외)
+  host_id    TEXT NOT NULL,
+  status     TEXT NOT NULL,                 -- 'lobby' | 'playing' | 'over'
+  version    INTEGER NOT NULL DEFAULT 1,    -- 낙관적 락
+  seats_json TEXT NOT NULL,
+  rules_json TEXT NOT NULL,
+  state_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_lab_rooms_host ON lab_rooms(host_id);
+CREATE INDEX IF NOT EXISTS idx_lab_rooms_updated ON lab_rooms(updated_at);
+
+CREATE TABLE IF NOT EXISTS lab_invites (
+  id         TEXT PRIMARY KEY,
+  room_code  TEXT NOT NULL,
+  from_id    TEXT NOT NULL,
+  from_name  TEXT NOT NULL,
+  to_id      TEXT NOT NULL,
+  seat       INTEGER NOT NULL,
+  status     TEXT NOT NULL,                 -- 'pending' | 'accepted' | 'declined'
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_lab_invites_to ON lab_invites(to_id, status);
+CREATE INDEX IF NOT EXISTS idx_lab_invites_room ON lab_invites(room_code);

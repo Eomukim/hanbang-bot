@@ -200,7 +200,8 @@ def run(url, shot_dir, local):
 
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=CHROME, headless=True,
-                                    args=['--no-sandbox', '--disable-dev-shm-usage'])
+                                    args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+                                          '--renderer-process-limit=1', '--disable-background-networking'])
         ctx = browser.new_context(viewport={'width': 1280, 'height': 900}, locale='ko-KR')
         page = ctx.new_page()
         errors = []

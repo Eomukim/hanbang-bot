@@ -45,6 +45,10 @@
                 aria-haspopup="true" aria-controls="scr-dict">
           <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.6 2.1h3c.7 0 1.3.6 1.3 1.3v6.5c0-.6-.6-1.1-1.3-1.1h-3zM10.4 2.1h-3c-.7 0-1.3.6-1.3 1.3v6.5c0-.6.6-1.1 1.3-1.1h3z"/></svg>
         </button>
+        <button class="top-btn top-btn-lab" id="btn-lab" type="button"
+                title="실험실 · 최대 8인 커스텀 방" aria-label="실험실">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.6 1.6h2.8M5.3 1.6v3.1L2.2 9.6c-.4.7.1 1.5.9 1.5h5.8c.8 0 1.3-.8.9-1.5L6.7 4.7V1.6"/><path d="M3.7 7.7h4.6"/></svg>
+        </button>
         <button class="top-btn top-btn-mail" id="btn-mail" type="button"
                 title="메일함" aria-label="메일함"
                 aria-haspopup="dialog" aria-controls="ov-mail" aria-expanded="false">
@@ -211,7 +215,156 @@
       </form>
     </div>
   </section>
+  <!-- ────────────── 실험실 (최대 8인 커스텀 방 · 방장 = 신) ────────────── -->
+  <section class="screen screen-lab" id="scr-lab" data-screen="lab" hidden>
+    <div class="lab">
+      <header class="lab-top">
+        <button class="lab-back" id="lab-back" type="button">← 홈으로</button>
+        <div class="lab-title"><b>🧪 실험실</b><small>최대 8인 · 방장이 신</small></div>
+        <button class="lab-leave" id="lab-leave" type="button" hidden>나가기</button>
+      </header>
+
+      <p class="lab-notice">실험실에서는 전적·랭킹·엽전이 반영되지 않습니다.</p>
+
+      <div class="lab-gate" id="lab-gate" hidden>
+        <b>실험실은 로그인하면 열려요</b>
+        <small>친구를 초대해 자리마다 앉혀 놀 수 있어요. 게스트 대전은 홈에서 그대로 즐길 수 있습니다.</small>
+        <button class="btn primary" id="lab-login" type="button">로그인 · 회원가입</button>
+      </div>
+
+      <div class="lab-home" id="lab-home" hidden>
+        <p class="lab-lead"><b>룰은 방장이 정하고, 방장은 신이 됩니다</b>
+          <small>2~8자리에 나·친구·봇을 자유롭게 앉히고, 턴 제한 시간·목숨·한방 금지·글자 봉인까지 마음대로.</small></p>
+        <button class="btn primary big" id="lab-create" type="button">실험실 방 만들기</button>
+        <p class="lab-hint">방을 만들면 6자리 코드가 생겨요. <b>친구</b> 탭에서 접속 중인 친구를 골라 자리에 초대하면, 상대 화면에 초대가 바로 뜹니다.</p>
+      </div>
+
+      <div class="lab-room" id="lab-room" hidden>
+        <div class="lab-room-head">
+          <span class="lab-code-chip">방 코드 <b id="lab-code">······</b></span>
+          <button class="btn ghost lab-copy" id="lab-copy" type="button">복사</button>
+          <span class="lab-state" id="lab-state">준비 중</span>
+        </div>
+
+        <ul class="lab-seats" id="lab-seats" aria-label="자리"></ul>
+        <p class="lab-seat-note" id="lab-seat-note">최소 2자리 ~ 최대 8자리 · 방장만 자리를 바꿀 수 있어요</p>
+
+        <div class="lab-lobby" id="lab-lobby" hidden>
+          <section class="lab-card">
+            <h3>친구 초대</h3>
+            <p class="lab-cap" id="lab-invite-cap">접속 중인 친구를 빈 자리에 앉혀 보세요.</p>
+            <ul class="lab-friends" id="lab-friends"></ul>
+          </section>
+
+          <form class="lab-card lab-rules" id="lab-rules" novalidate>
+            <h3>방 룰 <small>방장 마음대로</small></h3>
+            <div class="lab-row">
+              <label class="lab-field"><span>턴 제한 시간(초)</span>
+                <input id="lab-rule-time" type="text" inputmode="numeric" autocomplete="off"
+                       maxlength="3" placeholder="1~999" aria-label="턴 제한 시간(1~999초)">
+              </label>
+              <label class="lab-check"><input id="lab-rule-nolimit" type="checkbox"> 무제한</label>
+            </div>
+            <div class="lab-row">
+              <label class="lab-field"><span>목숨(하트)</span>
+                <select id="lab-rule-lives" aria-label="목숨 개수">
+                  <option value="1">1개</option><option value="2">2개</option><option value="3">3개</option>
+                  <option value="4">4개</option><option value="5">5개</option>
+                </select>
+              </label>
+              <label class="lab-field"><span>한방 단어</span>
+                <select id="lab-rule-oneshot" aria-label="한방 단어">
+                  <option value="allow">허용</option><option value="ban">금지</option>
+                </select>
+              </label>
+            </div>
+            <div class="lab-row">
+              <label class="lab-field"><span>최소 글자</span>
+                <input id="lab-rule-min" type="number" min="1" max="10" step="1" aria-label="최소 글자 수"></label>
+              <label class="lab-field"><span>최대 글자</span>
+                <input id="lab-rule-max" type="number" min="2" max="30" step="1" aria-label="최대 글자 수"></label>
+            </div>
+            <label class="lab-field"><span>금지 글자 <small>붙여서 최대 20자</small></span>
+              <input id="lab-rule-banned" type="text" maxlength="20" placeholder="예: 흑백" aria-label="금지 글자"></label>
+            <div class="lab-row">
+              <label class="lab-field"><span>첫 제시 글자 <small>비우면 자동</small></span>
+                <input id="lab-rule-start" type="text" maxlength="1" placeholder="가" aria-label="첫 제시 글자"></label>
+              <label class="lab-check"><input id="lab-rule-mission" type="checkbox" checked> 미션 켜기</label>
+            </div>
+            <p class="lab-error" id="lab-rule-error" role="alert" hidden></p>
+            <button class="btn ghost lab-rule-save" id="lab-rule-save" type="button">룰 저장</button>
+          </form>
+
+          <button class="btn primary big" id="lab-start" type="button">게임 시작</button>
+          <p class="lab-cap lab-start-hint" id="lab-start-hint">두 자리 이상 채우면 시작할 수 있어요.</p>
+        </div>
+
+        <div class="lab-play" id="lab-play" hidden>
+          <div class="lab-turn" id="lab-turn">
+            <div class="lab-need">
+              <span>이어야 할 글자</span>
+              <b id="lab-need">가</b>
+              <em id="lab-need-alt" hidden>두음</em>
+            </div>
+            <div class="lab-turn-meta">
+              <span class="lab-now" id="lab-now">차례</span>
+              <span class="mini mission" id="lab-mission" hidden></span>
+              <span class="lab-timer" id="lab-timer">30초</span>
+            </div>
+          </div>
+          <ol class="lab-chain" id="lab-chain" aria-label="주고받은 단어"></ol>
+          <div class="lab-compose" id="lab-compose" hidden>
+            <form class="composer" id="lab-form" novalidate>
+              <input id="lab-word" type="text" enterkeyhint="send" placeholder="단어 입력" aria-label="단어 입력"
+                     autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+              <button class="btn go" id="lab-submit" type="submit">입력</button>
+            </form>
+            <button class="btn ghost lab-stuck" id="lab-stuck" type="button">이을 단어가 없어요</button>
+          </div>
+          <p class="lab-error lab-word-error" id="lab-word-error" role="alert" hidden></p>
+
+          <section class="lab-card lab-god" id="lab-god" hidden>
+            <h3>신 모드 <small>방장 전용</small></h3>
+            <div class="lab-row">
+              <label class="lab-field"><span>제한 시간(초)</span>
+                <input id="lab-god-time" type="text" inputmode="numeric" maxlength="3" placeholder="1~999" aria-label="바꿀 제한 시간(1~999초)"></label>
+              <button class="btn ghost lab-god-btn" id="lab-god-time-btn" type="button">적용</button>
+            </div>
+            <div class="lab-row">
+              <label class="lab-field"><span>글자 봉인</span>
+                <input id="lab-god-seal" type="text" maxlength="1" placeholder="한 글자" aria-label="봉인할 글자"></label>
+              <button class="btn ghost lab-god-btn" id="lab-god-seal-btn" type="button">봉인</button>
+            </div>
+            <div class="lab-row">
+              <button class="btn ghost lab-god-btn" id="lab-god-pass" type="button">현재 턴 넘기기</button>
+            </div>
+            <ul class="lab-god-bots" id="lab-god-bots"></ul>
+            <p class="lab-error" id="lab-god-error" role="alert" hidden></p>
+          </section>
+
+          <section class="lab-result" id="lab-result" hidden>
+            <b id="lab-result-title">승리</b>
+            <p id="lab-result-line"></p>
+            <p class="lab-notice">실험실에서는 전적·랭킹·엽전이 반영되지 않습니다.</p>
+            <div class="lab-result-actions">
+              <button class="btn primary" id="lab-rematch" type="button">다시 준비</button>
+              <button class="btn ghost" id="lab-quit" type="button">방 나가기</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
 </main>
+
+<!-- ────────────── 실험실 초대 알림 ────────────── -->
+<div class="lab-invite-pop" id="lab-invite-pop" hidden>
+  <p><b id="lab-invite-from">친구</b>님이 실험실에 초대했어요 <small id="lab-invite-seat"></small></p>
+  <div class="lab-invite-actions">
+    <button class="btn primary" id="lab-invite-accept" type="button">수락</button>
+    <button class="btn ghost" id="lab-invite-decline" type="button">거절</button>
+  </div>
+</div>
 
 <!-- ────────────── 결과 ────────────── -->
 <div class="overlay" id="ov-result" hidden>
@@ -571,10 +724,10 @@
       </div>
     </div>
 
-    <button class="toggle-card mono-card" id="btn-mono" type="button" role="switch" aria-checked="false">
+    <button class="toggle-card dark-card" id="btn-dark" type="button" role="switch" aria-checked="false">
       <span class="toggle-text">
-        <b><i aria-hidden="true">◐</i>흑백모드</b>
-        <small id="mono-desc">끄면 기본 컬러 · 켜면 화면 전체 흑백</small>
+        <b><i aria-hidden="true">☾</i>다크모드</b>
+        <small id="dark-desc">끄면 기본 밝은 우드 톤 · 켜면 어두운 우드 톤</small>
       </span>
       <span class="switch" aria-hidden="true"><i></i></span>
     </button>

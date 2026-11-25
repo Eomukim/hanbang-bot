@@ -21,6 +21,8 @@ export const AVATAR_BYTES_MAX = 20 * 1024;
 export const SEARCH_MIN = 2;
 /** 한 번에 내려 주는 검색 결과 수. */
 export const SEARCH_LIMIT = 8;
+/** 이 시간(90초) 안에 활동한 사람을 `접속 중`으로 보여 준다(하트비트는 30초 간격). */
+export const ONLINE_WINDOW_MS = 90 * 1000;
 /** 한 사람이 가질 수 있는 친구·요청 행 상한(목록 응답 크기 보호). */
 export const FRIEND_LIST_LIMIT = 200;
 
@@ -135,12 +137,14 @@ export function pairKey(a, b) {
 export function socialUser(row) {
   if (!row) return null;
   const nickname = row.nickname || '';
+  const seen = Number(row.last_seen_at || 0);
   return {
     id: row.id,
     username: row.username,
     nickname,
     displayName: nickname || row.display_name || row.username,
     avatarAt: Number(row.avatar_updated_at || 0),
+    online: Boolean(seen) && Date.now() - seen < ONLINE_WINDOW_MS,
   };
 }
 
@@ -193,7 +197,7 @@ export async function loadUsersByIds(env, ids) {
   if (!unique.length) return new Map();
   const placeholders = unique.map(() => '?').join(',');
   const result = await env.DB.prepare(
-    `SELECT id, username, nickname, display_name, avatar_updated_at
+    `SELECT id, username, nickname, display_name, avatar_updated_at, last_seen_at
        FROM users WHERE id IN (${placeholders})`,
   ).bind(...unique).all();
   const map = new Map();

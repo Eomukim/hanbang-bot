@@ -53,7 +53,7 @@ export async function onRequestGet({ request, env }) {
 
   const escaped = likeEscape(query);
   const result = await env.DB.prepare(
-    `SELECT id, username, nickname, display_name, avatar_updated_at
+    `SELECT id, username, nickname, display_name, avatar_updated_at, last_seen_at
        FROM users
       WHERE id <> ? AND username LIKE ? ESCAPE '\\'
       ORDER BY CASE WHEN lower(username) = lower(?) THEN 0
