@@ -1,11 +1,13 @@
 /**
- * 메일함 (받은 메일 · 보낸 메일 · 공지사항).
+ * 메일함 (받은 메일 · 보낸 메일 · 휴지통 · 공지사항).
  *
  * 서버는 Cloudflare Pages Functions(`/api/mail/*`) + D1 이다.
  *   - 로그인한 플레이어끼리 쪽지를 주고받고, 받은 메일에 답장(Re:)할 수 있다.
- *   - 공지사항은 누구나(게스트 포함) 읽고, `ADMIN_USERNAMES` 관리자만 쓴다.
- *   - 안 읽은 메일이나 새 공지가 있으면 상단 메일함 버튼에 빨간 동그라미가 뜬다.
- *     로그인 사용자는 서버(notice_reads·is_read), 게스트는 이 기기의 마지막 확인 시각으로 판단한다.
+ *   - `삭제`는 휴지통으로 옮기고, 휴지통에서 복구하거나 완전히 지울 수 있다(각자 독립).
+ *   - 보낸 메일은 제목·본문을 고칠 수 있고, 고친 메일·공지는 `(수정됨)` 으로 보인다.
+ *   - 공지사항은 누구나(게스트 포함) 읽고, `ADMIN_USERNAMES` 관리자만 쓰고 고친다.
+ *   - 안 읽은 메일(휴지통에 넣은 것은 빼고)이나 새 공지가 있으면 상단 메일함 버튼에 빨간 동그라미가 뜬다.
+ *     로그인 사용자는 서버(is_read·notice_reads), 게스트는 이 기기의 마지막 확인 시각으로 판단한다.
  *
  * 이 파일은 서버에서 온 글자를 화면에 넣을 때 textContent 만 쓴다(innerHTML 로 넣지 않는다).
  */
@@ -32,6 +34,8 @@ const ERROR_TEXT = {
   title_required: '공지 제목을 입력해 주세요.',
   title_long: '공지 제목은 100자까지 쓸 수 있어요.',
   not_found: '이미 지운 항목이에요.',
+  not_in_trash: '휴지통에 없는 메일이에요.',
+  edit_forbidden: '보낸 메일만 수정할 수 있어요.',
   network: '연결이 잠시 불안정해요. 잠시 후 다시 시도해 주세요.',
   default: '잠시 문제가 생겼어요. 다시 시도해 주세요.',
 };
@@ -66,6 +70,7 @@ function preview(text, max = 70) {
 const TAB_CAPTION = {
   inbox: '받은 메일',
   sent: '보낸 메일',
+  trash: '휴지통',
   notices: '공지사항',
 };
 
@@ -79,9 +84,11 @@ export class MailPanel {
     this.apiReady = false;
     this.summary = null;
     this.tab = 'inbox';
-    this.mails = { inbox: [], sent: [] };
+    this.mails = { inbox: [], sent: [], trash: [] };
     this.notices = [];
     this.current = null;
+    this.mailEdit = null;
+    this.noticeEdit = null;
     this.busy = false;
     this.deleting = false;
     this.loadingTab = null;
@@ -98,12 +105,14 @@ export class MailPanel {
       'mail-tab-dot-inbox', 'mail-tab-dot-notices',
       'mail-body', 'mail-view-list', 'mail-toolbar', 'mail-caption', 'mail-status',
       'mail-list', 'mail-empty', 'mail-empty-title', 'mail-empty-desc', 'mail-login-btn',
-      'mail-compose-btn', 'mail-notice-new',
+      'mail-compose-btn', 'mail-notice-new', 'mail-trash-empty',
       'mail-view-detail', 'mail-detail-back', 'mail-detail-subject', 'mail-detail-meta',
-      'mail-detail-body', 'mail-reply-btn', 'mail-delete-btn',
+      'mail-detail-body', 'mail-reply-btn', 'mail-edit-btn', 'mail-restore-btn', 'mail-delete-btn',
+      'mail-view-edit', 'mail-edit-back', 'mail-edit-caption', 'mail-edit-form',
+      'mail-edit-subject', 'mail-edit-body', 'mail-edit-error', 'mail-edit-submit',
       'mail-view-compose', 'mail-compose-back', 'mail-compose-title', 'mail-compose-form',
       'mail-to', 'mail-subject', 'mail-content', 'mail-compose-error', 'mail-compose-submit',
-      'mail-view-notice', 'mail-notice-back', 'mail-notice-form',
+      'mail-view-notice', 'mail-notice-back', 'mail-notice-heading', 'mail-notice-form',
       'mail-notice-title', 'mail-notice-body', 'mail-notice-error', 'mail-notice-submit',
     ];
     for (const id of ids) this.el[id] = $(id);
@@ -157,7 +166,7 @@ export class MailPanel {
     const wasSignedIn = Boolean(this.user);
     this.user = user || null;
     if (!this.user) {
-      this.mails = { inbox: [], sent: [] };
+      this.mails = { inbox: [], sent: [], trash: [] };
       if (this.tab !== 'notices') this.tab = 'notices';
       if (this.isOpen()) this.showList('notices');
       else this.renderEmptyForTab();
@@ -288,6 +297,8 @@ export class MailPanel {
 
   showList(tab = this.tab) {
     this.tab = TAB_CAPTION[tab] ? tab : 'inbox';
+    this.mailEdit = null;
+    this.noticeEdit = null;
     this.el['mail-tabs'].querySelectorAll('[data-mail-tab]').forEach((btn) => {
       btn.setAttribute('aria-selected', String(btn.dataset.mailTab === this.tab));
     });
@@ -305,6 +316,7 @@ export class MailPanel {
     for (const [key, id] of Object.entries({
       list: 'mail-view-list',
       detail: 'mail-view-detail',
+      edit: 'mail-view-edit',
       compose: 'mail-view-compose',
       notice: 'mail-view-notice',
     })) {
@@ -316,14 +328,21 @@ export class MailPanel {
     this.cancelArmed();
   }
 
-  /** 받은·보낸 메일은 로그인해야 쓸 수 있다 — 쓰기 버튼을 감춘다. */
+  /** 받은·보낸 메일은 로그인해야 쓸 수 있다 — 쓰기 버튼을 감춘다. 휴지통에는 쓰기가 없다. */
   syncComposeAvailability() {
     const signedIn = Boolean(this.user);
+    const canCompose = signedIn && this.tab !== 'notices' && this.tab !== 'trash';
     const compose = this.el['mail-compose-btn'];
-    if (compose) {
-      compose.hidden = !signedIn || this.tab === 'notices';
-    }
+    if (compose) compose.hidden = !canCompose;
     this.updateNoticeNewButton(Boolean(signedIn && this.summary?.isAdmin) && this.tab === 'notices');
+    this.updateTrashTools();
+  }
+
+  /** 휴지통 탭에만 `휴지통 비우기` 를 보인다(항목이 있을 때만). */
+  updateTrashTools() {
+    const btn = this.el['mail-trash-empty'];
+    if (!btn) return;
+    btn.hidden = !(this.tab === 'trash' && Boolean(this.user) && this.mails.trash.length > 0);
   }
 
   updateNoticeNewButton(show) {
@@ -334,6 +353,7 @@ export class MailPanel {
   async reloadTab() {
     if (this.tab === 'inbox') return this.loadMails('inbox');
     if (this.tab === 'sent') return this.loadMails('sent');
+    if (this.tab === 'trash') return this.loadMails('trash');
     return this.loadNotices();
   }
 
@@ -437,11 +457,16 @@ export class MailPanel {
         this.el['mail-empty-title'].textContent = '보낸 메일이 없어요';
         this.el['mail-empty-desc'].textContent = '새 메일 쓰기로 다른 플레이어에게 첫 메일을 보내 보세요.';
         loginBtn.hidden = true;
+      } else if (kind === 'trash') {
+        this.el['mail-empty-title'].textContent = '휴지통이 비어 있어요';
+        this.el['mail-empty-desc'].textContent = '삭제한 메일이 여기에 모여요. 복구하거나 완전히 지울 수 있어요.';
+        loginBtn.hidden = true;
       } else {
         this.el['mail-empty-title'].textContent = '아직 공지사항이 없어요';
         this.el['mail-empty-desc'].textContent = '잇다의 새 소식이 올라오면 여기에서 알려 드릴게요.';
         loginBtn.hidden = true;
       }
+      this.updateTrashTools();
       return;
     }
 
@@ -449,6 +474,7 @@ export class MailPanel {
     for (const item of items) {
       list.appendChild(kind === 'notices' ? this.noticeItem(item) : this.mailItem(item, kind));
     }
+    this.updateTrashTools();
   }
 
   mailItem(mail, kind) {
@@ -461,18 +487,39 @@ export class MailPanel {
 
     const top = el('div', 'mail-top');
     if (kind === 'inbox' && !mail.isRead) top.appendChild(el('i', 'mail-dot'));
-    top.appendChild(el('b', 'mail-who', kind === 'inbox' ? `@${mail.senderUsername}` : `@${mail.recipientUsername}`));
-    top.appendChild(el('span', 'mail-when', formatWhen(mail.createdAt)));
+    // 휴지통에서는 어느 함에서 온 메일인지(받은·보낸) 함께 보여 준다.
+    const counterpart = kind === 'sent' || (kind === 'trash' && mail.folder === 'sent')
+      ? `@${mail.recipientUsername}`
+      : `@${mail.senderUsername}`;
+    top.appendChild(el('b', 'mail-who', counterpart));
+    if (kind === 'trash') {
+      top.appendChild(el('span', 'mail-origin', mail.folder === 'sent' ? '보낸 메일' : '받은 메일'));
+    }
+    top.appendChild(el('span', 'mail-when', formatWhen(kind === 'trash' ? (mail.trashedAt || mail.createdAt) : mail.createdAt)));
 
-    const subject = el('span', 'mail-subject', mail.subject);
+    const subjectRow = el('div', 'mail-subject-row');
+    subjectRow.appendChild(el('span', 'mail-subject', mail.subject));
+    if (mail.updatedAt) subjectRow.appendChild(el('i', 'mail-edited', '수정됨'));
+
     const previewLine = el('span', 'mail-preview', preview(mail.body));
 
-    open.append(top, subject, previewLine);
+    open.append(top, subjectRow, previewLine);
     if (kind === 'sent') {
       open.appendChild(el('span', 'mail-flag' + (mail.isRead ? ' read' : ''), mail.isRead ? '읽음' : '아직 안 읽음'));
     }
     open.addEventListener('click', () => this.openMail(mail, kind));
     item.appendChild(open);
+
+    // 휴지통 목록에서 바로 복구할 수 있다(완전 삭제는 상세에서 한다).
+    if (kind === 'trash') {
+      const tools = el('div', 'mail-item-tools');
+      const restore = el('button', 'mail-item-del mail-item-restore', '복구');
+      restore.type = 'button';
+      restore.setAttribute('aria-label', '메일 복구');
+      restore.addEventListener('click', () => this.restoreMail(mail));
+      tools.appendChild(restore);
+      item.appendChild(tools);
+    }
     return item;
   }
 
@@ -485,7 +532,10 @@ export class MailPanel {
     open.dataset.id = notice.id;
     const top = el('div', 'mail-top');
     if (notice.isRead === false) top.appendChild(el('i', 'mail-dot'));
-    top.appendChild(el('b', 'mail-subject', notice.title));
+    const titleRow = el('div', 'mail-subject-row notice-title-row');
+    titleRow.appendChild(el('b', 'mail-subject', notice.title));
+    if (notice.updatedAt) titleRow.appendChild(el('i', 'mail-edited', '수정됨'));
+    top.appendChild(titleRow);
     top.appendChild(el('span', 'mail-when', formatWhen(notice.createdAt)));
     open.append(top, el('span', 'mail-preview', preview(notice.body, 90)));
     open.addEventListener('click', () => this.openNotice(notice));
@@ -504,18 +554,47 @@ export class MailPanel {
 
   /* ── 상세 ─────────────────────────────────────────────── */
 
+  /** 상세 제목과 `수정됨` 표시. */
+  setDetailTitle(text, edited) {
+    const node = this.el['mail-detail-subject'];
+    if (!node) return;
+    node.replaceChildren(el('span', null, text));
+    if (edited) node.appendChild(el('i', 'mail-edited', '수정됨'));
+  }
+
+  /** 상세 아래 버튼을 한 번에 맞춘다(답장·수정·복구·삭제). */
+  setDetailActions({ reply = false, edit = false, restore = false, remove = false, removeLabel = '삭제' } = {}) {
+    const replyBtn = this.el['mail-reply-btn'];
+    const editBtn = this.el['mail-edit-btn'];
+    const restoreBtn = this.el['mail-restore-btn'];
+    const delBtn = this.el['mail-delete-btn'];
+    if (replyBtn) replyBtn.hidden = !reply;
+    if (editBtn) editBtn.hidden = !edit;
+    if (restoreBtn) restoreBtn.hidden = !restore;
+    if (delBtn) {
+      delBtn.hidden = !remove;
+      delBtn.textContent = removeLabel;
+      delBtn.classList.remove('armed');
+    }
+  }
+
   openMail(mail, kind) {
     this.current = { kind, mail };
-    this.el['mail-detail-subject'].textContent = mail.subject;
-    const who = kind === 'inbox'
-      ? `보낸 사람 @${mail.senderUsername}`
-      : `받는 사람 @${mail.recipientUsername}`;
+    this.setDetailTitle(mail.subject, Boolean(mail.updatedAt));
+    const who = kind === 'sent' || (kind === 'trash' && mail.folder === 'sent')
+      ? `받는 사람 @${mail.recipientUsername}`
+      : `보낸 사람 @${mail.senderUsername}`;
     const extra = kind === 'sent' ? (mail.isRead ? ' · 읽음' : ' · 아직 안 읽음') : '';
-    this.el['mail-detail-meta'].textContent = `${who} · ${formatWhen(mail.createdAt)}${extra}`;
+    const where = kind === 'trash' ? (mail.folder === 'sent' ? ' · 보낸 메일함에서' : ' · 받은 메일함에서') : '';
+    this.el['mail-detail-meta'].textContent = `${who} · ${formatWhen(mail.createdAt)}${extra}${where}`;
     this.el['mail-detail-body'].textContent = mail.body;
-    this.el['mail-reply-btn'].hidden = kind !== 'inbox';
-    this.el['mail-delete-btn'].hidden = false;
-    this.el['mail-delete-btn'].textContent = '삭제';
+    this.setDetailActions({
+      reply: kind === 'inbox',
+      edit: kind === 'sent',
+      restore: kind === 'trash',
+      remove: true,
+      removeLabel: kind === 'trash' ? '완전 삭제' : '삭제',
+    });
     this.showView('detail');
     this.el['mail-detail-back']?.focus({ preventScroll: true });
     this.sfx?.play('tap');
@@ -533,12 +612,11 @@ export class MailPanel {
 
   openNotice(notice) {
     this.current = { kind: 'notices', mail: notice };
-    this.el['mail-detail-subject'].textContent = notice.title;
+    this.setDetailTitle(notice.title, Boolean(notice.updatedAt));
     this.el['mail-detail-meta'].textContent = `공지 · ${notice.authorUsername} · ${formatWhen(notice.createdAt)}`;
     this.el['mail-detail-body'].textContent = notice.body;
-    this.el['mail-reply-btn'].hidden = true;
-    this.el['mail-delete-btn'].hidden = !(this.user && this.summary?.isAdmin);
-    this.el['mail-delete-btn'].textContent = '삭제';
+    const isAdmin = Boolean(this.user && this.summary?.isAdmin);
+    this.setDetailActions({ reply: false, edit: isAdmin, restore: false, remove: isAdmin, removeLabel: '삭제' });
     this.showView('detail');
     this.el['mail-detail-back']?.focus({ preventScroll: true });
     this.sfx?.play('tap');
@@ -667,12 +745,87 @@ export class MailPanel {
     }
   }
 
+  /* ── 보낸 메일 수정 ──────────────────────────────────── */
+
+  openEdit() {
+    const { kind, mail } = this.current || {};
+    if (!mail || kind !== 'sent') return;
+    this.mailEdit = mail;
+    this.el['mail-edit-caption'].textContent = `@${mail.recipientUsername}님에게 보낸 메일 수정`;
+    this.el['mail-edit-subject'].value = mail.subject;
+    this.el['mail-edit-body'].value = mail.body;
+    this.showEditError('');
+    this.el['mail-edit-submit'].textContent = '수정 저장';
+    this.showView('edit');
+    this.sfx?.play('tap');
+    if (window.matchMedia('(pointer: fine)').matches) {
+      setTimeout(() => this.el['mail-edit-subject'].focus({ preventScroll: true }), 60);
+    }
+  }
+
+  cancelEdit() {
+    const mail = this.mailEdit;
+    this.mailEdit = null;
+    if (mail) this.openMail(mail, 'sent');
+    else this.showList('sent');
+  }
+
+  showEditError(message) {
+    const box = this.el['mail-edit-error'];
+    if (!box) return;
+    box.hidden = !message;
+    box.textContent = message || '';
+  }
+
+  async submitEdit(event) {
+    event.preventDefault();
+    if (this.busy) return;
+    const mail = this.mailEdit;
+    if (!mail) return this.showList('sent');
+
+    const subject = this.el['mail-edit-subject'].value.trim();
+    const body = this.el['mail-edit-body'].value.trim();
+    if (!subject) return this.showEditError(ERROR_TEXT.subject_required);
+    if (!body) return this.showEditError(ERROR_TEXT.body_required);
+
+    this.busy = true;
+    const btn = this.el['mail-edit-submit'];
+    btn.disabled = true;
+    btn.textContent = '저장 중…';
+    this.showEditError('');
+    try {
+      const res = await this.api('/api/mail/edit', {
+        method: 'POST',
+        body: { id: mail.id, subject, body },
+      });
+      if (!res.ok) {
+        this.showEditError(this.errorText(res.data));
+        return;
+      }
+      const updated = res.data?.mail || { ...mail, subject, body, updatedAt: Date.now() };
+      const fresh = { ...mail, ...updated };
+      this.mails.sent = this.mails.sent.map((item) => (item.id === fresh.id ? fresh : item));
+      this.mailEdit = null;
+      this.toast('메일을 수정했어요.');
+      this.openMail(fresh, 'sent');
+    } catch {
+      this.showEditError(ERROR_TEXT.network);
+    } finally {
+      this.busy = false;
+      btn.disabled = false;
+      btn.textContent = '수정 저장';
+    }
+  }
+
   /* ── 삭제(두 번 눌러 확인) ────────────────────────────── */
 
   cancelArmed() {
     if (!this.armed) return;
     clearTimeout(this.armed.timer);
-    if (this.armed.node && this.armed.node.isConnected) this.armed.node.textContent = this.armed.label;
+    if (this.armed.node && this.armed.node.isConnected) {
+      this.armed.node.textContent = this.armed.label;
+      this.armed.node.classList.remove('armed');
+    }
     this.armed = null;
   }
 
@@ -698,7 +851,42 @@ export class MailPanel {
     const { kind, mail } = this.current || {};
     if (!mail) return;
     if (kind === 'notices') return this.deleteNotice(mail);
+    if (kind === 'trash') return this.purgeCurrent();
+    return this.trashCurrent();
+  }
+
+  /** 받은·보낸 메일함에서 `삭제` → 내 쪽만 휴지통으로(상대 메일함은 그대로). */
+  async trashCurrent() {
+    const { kind, mail } = this.current || {};
+    if (!mail || (kind !== 'inbox' && kind !== 'sent')) return;
     if (this.deleting) return;   // 연타·더블 클릭 차단(응답이 올 때까지 한 번만)
+    this.deleting = true;
+    const btn = this.el['mail-delete-btn'];
+    if (btn) btn.disabled = true;
+    try {
+      const res = await this.api('/api/mail/trash', { method: 'POST', body: { id: mail.id } });
+      if (!res.ok) {
+        this.toast(this.errorText(res.data));
+        return;
+      }
+      this.toast('휴지통으로 옮겼어요. 휴지통에서 다시 꺼낼 수 있어요.');
+      this.mails[kind] = this.mails[kind].filter((item) => item.id !== mail.id);
+      this.current = null;
+      this.showList(kind);
+      void this.refreshSummary();
+    } catch {
+      this.toast(ERROR_TEXT.network);
+    } finally {
+      this.deleting = false;
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /** 휴지통에서 `완전 삭제` → 내 쪽 deleted_by_* 를 세운다(양쪽 다 지우면 행 삭제). */
+  async purgeCurrent() {
+    const { kind, mail } = this.current || {};
+    if (!mail || kind !== 'trash') return;
+    if (this.deleting) return;
     this.deleting = true;
     const btn = this.el['mail-delete-btn'];
     if (btn) btn.disabled = true;
@@ -708,15 +896,71 @@ export class MailPanel {
         this.toast(this.errorText(res.data));
         return;
       }
-      this.toast('메일을 지웠어요.');
-      this.mails[kind] = this.mails[kind].filter((item) => item.id !== mail.id);
+      this.toast('메일을 완전히 지웠어요. 되돌릴 수 없어요.');
+      this.mails.trash = this.mails.trash.filter((item) => item.id !== mail.id);
       this.current = null;
-      this.showList(kind);
+      this.showList('trash');
       void this.refreshSummary();
     } catch {
       this.toast(ERROR_TEXT.network);
     } finally {
       this.deleting = false;
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /** 휴지통에서 꺼내 원래 함(받은/보낸)으로 되돌린다. */
+  async restoreMail(mail, { fromDetail = false } = {}) {
+    if (this.restoring || !mail) return;
+    this.restoring = true;
+    try {
+      const res = await this.api('/api/mail/restore', { method: 'POST', body: { id: mail.id } });
+      if (!res.ok) {
+        this.toast(this.errorText(res.data));
+        return;
+      }
+      this.toast(res.data?.folder === 'sent'
+        ? '보낸 메일함으로 되돌렸어요.'
+        : '받은 메일함으로 되돌렸어요.');
+      this.mails.trash = this.mails.trash.filter((item) => item.id !== mail.id);
+      if (fromDetail) this.current = null;
+      if (this.tab === 'trash') this.showList('trash');
+      void this.refreshSummary();
+    } catch {
+      this.toast(ERROR_TEXT.network);
+    } finally {
+      this.restoring = false;
+    }
+  }
+
+  restoreCurrent() {
+    const { kind, mail } = this.current || {};
+    if (!mail || kind !== 'trash') return;
+    return this.restoreMail(mail, { fromDetail: true });
+  }
+
+  /** 휴지통 비우기 — 화면에서 `정말 비울까?` 두 번 확인한 뒤에만 부른다. */
+  async emptyTrash() {
+    if (this.emptying || !this.mails.trash.length) return;
+    this.emptying = true;
+    const btn = this.el['mail-trash-empty'];
+    if (btn) btn.disabled = true;
+    try {
+      const res = await this.api('/api/mail/trash/empty', { method: 'POST' });
+      if (!res.ok) {
+        this.toast(this.errorText(res.data));
+        return;
+      }
+      const count = Number(res.data?.purged || 0);
+      this.mails.trash = [];
+      this.current = null;
+      this.toast(count ? `휴지통 ${count}통을 완전히 지웠어요.` : '휴지통이 이미 비어 있어요.');
+      this.showList('trash');
+      void this.refreshSummary();
+    } catch {
+      this.toast(ERROR_TEXT.network);
+    } finally {
+      this.emptying = false;
       if (btn) btn.disabled = false;
     }
   }
@@ -742,11 +986,21 @@ export class MailPanel {
     }
   }
 
-  /* ── 공지 작성(관리자) ────────────────────────────────── */
+  /* ── 공지 작성·수정(관리자) ──────────────────────────── */
 
-  openNoticeForm() {
+  openNoticeForm(notice = null) {
     if (!this.user || !this.summary?.isAdmin) return;
+    this.noticeEdit = notice || null;
     this.el['mail-notice-form'].reset();
+    if (notice) {
+      this.el['mail-notice-heading'].textContent = '공지 수정';
+      this.el['mail-notice-title'].value = notice.title;
+      this.el['mail-notice-body'].value = notice.body;
+      this.el['mail-notice-submit'].textContent = '수정 저장';
+    } else {
+      this.el['mail-notice-heading'].textContent = '새 공지사항';
+      this.el['mail-notice-submit'].textContent = '공지 올리기';
+    }
     this.showNoticeError('');
     this.showView('notice');
     this.sfx?.play('tap');
@@ -770,19 +1024,26 @@ export class MailPanel {
     if (!title) return this.showNoticeError(ERROR_TEXT.title_required);
     if (!body) return this.showNoticeError(ERROR_TEXT.body_required);
 
+    const editing = this.noticeEdit;
     this.busy = true;
     const btn = this.el['mail-notice-submit'];
     const label = btn.textContent;
     btn.disabled = true;
-    btn.textContent = '올리는 중…';
+    btn.textContent = editing ? '저장 중…' : '올리는 중…';
     this.showNoticeError('');
     try {
-      const res = await this.api('/api/mail/notices', { method: 'POST', body: { title, body } });
+      const res = editing
+        ? await this.api('/api/mail/notices/edit', {
+          method: 'POST',
+          body: { id: editing.id, title, body },
+        })
+        : await this.api('/api/mail/notices', { method: 'POST', body: { title, body } });
       if (!res.ok) {
         this.showNoticeError(this.errorText(res.data));
         return;
       }
-      this.toast('공지사항을 올렸어요.');
+      this.noticeEdit = null;
+      this.toast(editing ? '공지를 수정했어요.' : '공지사항을 올렸어요.');
       this.el['mail-notice-form'].reset();
       this.showList('notices');
       void this.refreshSummary();
@@ -847,6 +1108,15 @@ export class MailPanel {
       this.sfx?.play('tap');
     });
     this.el['mail-reply-btn'].addEventListener('click', () => this.replyToCurrent());
+    this.el['mail-edit-btn'].addEventListener('click', () => {
+      if (this.current?.kind === 'notices') this.openNoticeForm(this.current.mail);
+      else this.openEdit();
+    });
+    this.el['mail-restore-btn'].addEventListener('click', () => this.restoreCurrent());
+    this.el['mail-trash-empty'].addEventListener('click', () => {
+      const btn = this.el['mail-trash-empty'];
+      this.armAction(btn, '정말 비울까?', () => this.emptyTrash());
+    });
     this.el['mail-delete-btn'].addEventListener('click', () => {
       const btn = this.el['mail-delete-btn'];
       this.armAction(btn, '정말 삭제?', () => this.deleteCurrent());
@@ -856,14 +1126,23 @@ export class MailPanel {
       this.sfx?.play('tap');
     });
     this.el['mail-compose-form'].addEventListener('submit', (event) => this.submitCompose(event));
+    this.el['mail-edit-back'].addEventListener('click', () => {
+      this.cancelEdit();
+      this.sfx?.play('tap');
+    });
+    this.el['mail-edit-form'].addEventListener('submit', (event) => this.submitEdit(event));
     this.el['mail-notice-new'].addEventListener('click', () => this.openNoticeForm());
     this.el['mail-notice-back'].addEventListener('click', () => {
+      this.noticeEdit = null;
       this.showList('notices');
       this.sfx?.play('tap');
     });
     this.el['mail-notice-form'].addEventListener('submit', (event) => this.submitNotice(event));
     for (const id of ['mail-to', 'mail-subject', 'mail-content']) {
       this.el[id].addEventListener('input', () => this.clearComposeError());
+    }
+    for (const id of ['mail-edit-subject', 'mail-edit-body']) {
+      this.el[id].addEventListener('input', () => this.showEditError(''));
     }
     for (const id of ['mail-notice-title', 'mail-notice-body']) {
       this.el[id].addEventListener('input', () => this.showNoticeError(''));

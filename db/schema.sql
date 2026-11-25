@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS auth_throttle (
 -- ── 메일함 ────────────────────────────────────────────────────
 -- 플레이어끼리 주고받는 쪽지. 한쪽이 지워도 상대 메일함은 남도록
 -- deleted_by_sender / deleted_by_recipient 를 따로 둔다(양쪽 다 지우면 행 삭제).
+-- 2026-11-25: 삭제는 먼저 휴지통(sender_trashed_at·recipient_trashed_at)으로 옮기고,
+-- 휴지통에서 완전 삭제할 때만 deleted_by_* 를 세운다. 기존 DB 는 db/migrations/ 참고.
 CREATE TABLE IF NOT EXISTS mails (
   id                   TEXT PRIMARY KEY,
   sender_id            TEXT NOT NULL,
@@ -44,6 +46,9 @@ CREATE TABLE IF NOT EXISTS mails (
   read_at              INTEGER,
   deleted_by_sender    INTEGER NOT NULL DEFAULT 0,
   deleted_by_recipient INTEGER NOT NULL DEFAULT 0,
+  sender_trashed_at    TEXT,                    -- 보낸 사람이 휴지통으로 옮긴 시각(ISO). NULL 이면 내 함에 있음
+  recipient_trashed_at TEXT,                    -- 받는 사람이 휴지통으로 옮긴 시각(ISO)
+  updated_at           TEXT,                    -- 수정한 시각(ISO). NULL 이면 수정한 적 없음
   created_at           INTEGER NOT NULL         -- epoch ms
 );
 
@@ -56,6 +61,7 @@ CREATE TABLE IF NOT EXISTS notices (
   author_username TEXT NOT NULL,
   title           TEXT NOT NULL,
   body            TEXT NOT NULL,
+  updated_at      TEXT,                         -- 수정한 시각(ISO). NULL 이면 수정한 적 없음
   created_at      INTEGER NOT NULL              -- epoch ms
 );
 

@@ -99,6 +99,24 @@ def d1_file(path):
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip())
 
 
+def apply_migrations():
+    """이미 만들어진 로컬 D1 에 새 칸을 더한다(이미 있으면 ADD COLUMN 이 실패하므로 무시)."""
+    path = os.path.join(ROOT, 'db', 'migrations', '2026-11-25-mail-trash-edit.sql')
+    if not os.path.exists(path):
+        return
+    with open(path, encoding='utf-8') as handle:
+        sql = handle.read()
+    for raw in sql.split(';'):
+        lines = [line for line in raw.splitlines() if not line.strip().startswith('--')]
+        statement = '\n'.join(lines).strip()
+        if not statement:
+            continue
+        try:
+            d1(statement)
+        except Exception:
+            pass
+
+
 def start_local():
     proc = subprocess.Popen([WRANGLER, 'pages', 'dev', '.', '--port', str(PORT), '--ip', '127.0.0.1'],
                             cwd=ROOT, env=wrangler_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -189,8 +207,13 @@ def audit_csrf(names):
         'mail/send': ('/api/mail/send', 'POST', {'to': 'x', 'subject': 's', 'body': 'b'}),
         'mail/delete': ('/api/mail/delete', 'POST', {'id': 'm_0000'}),
         'mail/read': ('/api/mail/read', 'POST', {'id': 'm_0000'}),
+        'mail/trash': ('/api/mail/trash', 'POST', {'id': 'm_0000'}),
+        'mail/trash/empty': ('/api/mail/trash/empty', 'POST', None),
+        'mail/restore': ('/api/mail/restore', 'POST', {'id': 'm_0000'}),
+        'mail/edit': ('/api/mail/edit', 'POST', {'id': 'm_0000', 'subject': 's', 'body': 'b'}),
         'notices POST': ('/api/mail/notices', 'POST', {'title': 't', 'body': 'b'}),
         'notices DELETE': ('/api/mail/notices', 'DELETE', {'id': 'n_0000'}),
+        'notices/edit': ('/api/mail/notices/edit', 'POST', {'id': 'n_0000', 'title': 't', 'body': 'b'}),
         'notices/read': ('/api/mail/notices/read', 'POST', {'all': True}),
     }
     for label, (path, method, body) in probe.items():
@@ -302,7 +325,86 @@ def audit_ownership(names):
         check(status == 400 and (data or {}).get('error') == 'id_required',
               '이상한 메일 id %r → 400' % (bad[:14],), status)
 
-    return {'mail_to_b': mail_to_b, 'mail_a_c': mail_a_c}
+    # ── 휴지통·복구·수정 소유권 ──────────────────────────────
+    status, _, data, _ = a.request('/api/mail/send', 'POST',
+                                   {'to': names['b'], 'subject': '휴지통 소유권', 'body': '본문'})
+    mail_t = (data or {}).get('mail', {}).get('id')
+    check(status == 200 and mail_t, '휴지통 점검용 메일 발송', status)
+    status, _, data, _ = c.request('/api/mail/trash', 'POST', {'id': mail_t})
+    check(status == 404, 'C 가 남의 메일 휴지통 이동 → 404', status)
+    row = d1("SELECT sender_trashed_at, recipient_trashed_at FROM mails WHERE id = '%s'" % mail_t)[0]['results'][0]
+    check(row['sender_trashed_at'] is None and row['recipient_trashed_at'] is None,
+          '남의 메일 휴지통 시각 그대로', row)
+    status, _, data, _ = c.request('/api/mail/restore', 'POST', {'id': mail_t})
+    check(status == 404, 'C 가 남의 메일 복구 시도 → 404', status)
+    status, _, data, _ = c.request('/api/mail/edit', 'POST',
+                                   {'id': mail_t, 'subject': '남의 메일', 'body': '본문'})
+    check(status == 404, 'C 가 남의 메일 수정 시도 → 404', status)
+    status, _, data, _ = b.request('/api/mail/edit', 'POST',
+                                   {'id': mail_t, 'subject': '받는 사람 수정', 'body': '본문'})
+    check(status == 404, '받는 사람이 보낸 메일 수정 시도 → 404', status)
+    row = d1("SELECT subject FROM mails WHERE id = '%s'" % mail_t)[0]['results'][0]
+    check(row['subject'] == '휴지통 소유권', '남의 수정 시도 뒤에도 제목 그대로', row)
+
+    status, _, data, _ = b.request('/api/mail/trash', 'POST', {'id': mail_t})
+    check(status == 200 and (data or {}).get('trashed') is True, 'B 가 받은 메일을 휴지통으로', status)
+    row = d1("SELECT sender_trashed_at, recipient_trashed_at, deleted_by_recipient FROM mails WHERE id = '%s'" % mail_t)[0]['results'][0]
+    check(row['recipient_trashed_at'] and row['sender_trashed_at'] is None and row['deleted_by_recipient'] == 0,
+          '휴지통은 내 쪽 시각만 기록(상대 함·행 유지)', row)
+    status, _, data, _ = b.request('/api/mail/summary')
+    check((data or {}).get('unreadMailCount') == 0,
+          '휴지통에 넣은 안 읽은 메일은 빨간 동그라미에서 빠짐', (data or {}).get('unreadMailCount'))
+    status, _, data, _ = b.request('/api/mail/inbox')
+    check(all(m['id'] != mail_t for m in (data or {}).get('mails', [])),
+          '휴지통 메일은 받은 메일 목록에 없음', status)
+    status, _, data, _ = b.request('/api/mail/trash')
+    check(any(m['id'] == mail_t and m.get('folder') == 'inbox' for m in (data or {}).get('mails', [])),
+          '휴지통 목록에 받은 메일로 보임', status)
+    status, _, data, _ = a.request('/api/mail/sent')
+    check(any(m['id'] == mail_t for m in (data or {}).get('mails', [])),
+          '상대(A) 보낸 메일함에는 그대로', status)
+
+    status, _, data, _ = b.request('/api/mail/restore', 'POST', {'id': mail_t})
+    check(status == 200 and (data or {}).get('folder') == 'inbox', 'B 복구 → 받은 메일함', status)
+    status, _, data, _ = b.request('/api/mail/restore', 'POST', {'id': mail_t})
+    check(status == 404, '휴지통에 없는 메일 복구 404', status)
+
+    # 휴지통 비우기는 내 것만 건드린다
+    b.request('/api/mail/trash', 'POST', {'id': mail_t})
+    status, _, data, _ = c.request('/api/mail/trash/empty', 'POST', {})
+    check(status == 200, 'C 휴지통 비우기 200', status)
+    row = d1("SELECT recipient_trashed_at, deleted_by_recipient FROM mails WHERE id = '%s'" % mail_t)[0]['results'][0]
+    check(row['recipient_trashed_at'] and row['deleted_by_recipient'] == 0,
+          '남의 휴지통 비우기가 내 휴지통을 건드리지 않음', row)
+    status, _, data, _ = b.request('/api/mail/trash/empty', 'POST', {})
+    check(status == 200 and (data or {}).get('purged', 0) >= 1, 'B 휴지통 비우기 → 내 쪽 완전 삭제', data)
+    row = d1("SELECT deleted_by_recipient, deleted_by_sender FROM mails WHERE id = '%s'" % mail_t)[0]['results'][0]
+    check(row['deleted_by_recipient'] == 1 and row['deleted_by_sender'] == 0,
+          '비우기는 내 deleted 플래그만 세움(상대 행 유지)', row)
+
+    # 공지 수정 권한
+    status, _, data, _ = admin.request('/api/mail/notices', 'POST',
+                                       {'title': '수정 점검 공지', 'body': '처음 본문'})
+    nid = (data or {}).get('notice', {}).get('id')
+    check(status == 200 and nid, '수정 점검 공지 작성', status)
+    status, _, data, _ = a.request('/api/mail/notices/edit', 'POST',
+                                   {'id': nid, 'title': '일반 유저 수정', 'body': 'x'})
+    check(status == 403, '일반 유저 공지 수정 403', status)
+    status, _, data, _ = guest.request('/api/mail/notices/edit', 'POST',
+                                       {'id': nid, 'title': '게스트', 'body': 'x'})
+    check(status == 403, '게스트 공지 수정 403', status)
+    status, _, data, _ = admin.request('/api/mail/notices/edit', 'POST',
+                                       {'id': nid, 'title': '수정한 점검 공지', 'body': '고친 본문'})
+    check(status == 200 and (data or {}).get('notice', {}).get('updatedAt'),
+          '관리자 공지 수정 200 + updatedAt', json.dumps(data, ensure_ascii=False)[:140])
+    row = d1("SELECT title, updated_at FROM notices WHERE id = '%s'" % nid)[0]['results'][0]
+    check(row['title'] == '수정한 점검 공지' and row['updated_at'], '공지 수정이 DB 에 반영', row)
+    status, _, data, _ = admin.request('/api/mail/notices/edit', 'POST',
+                                       {'id': 'n_doesnotexist', 'title': 't', 'body': 'b'})
+    check(status == 404, '없는 공지 수정 404', status)
+    admin.request('/api/mail/notices', 'DELETE', {'id': nid})
+
+    return {'mail_to_b': mail_to_b, 'mail_a_c': mail_a_c, 'mail_t': mail_t}
 
 
 # ── C. 주입 · 헤더 ────────────────────────────────────────────
@@ -372,6 +474,25 @@ def audit_dos(names):
     status, _, data, _ = a.request('/api/auth/register', 'POST', raw_body=huge,
                                    headers={'content-type': 'application/json'})
     check(status == 413, '512KB 본문 → 413(읽기 전에 거부)', status)
+
+    # 수정·휴지통도 같은 32KB 상한과 사용자별 제한을 쓴다
+    edit_big = json.dumps({'id': 'm_0000', 'subject': '제목', 'body': 'ㄱ' * (40 * 1024)}).encode()
+    status, _, data, _ = a.request('/api/mail/edit', 'POST', raw_body=edit_big,
+                                   headers={'content-type': 'application/json'})
+    check(status == 413 and (data or {}).get('error') == 'payload_too_large',
+          '수정 요청 40KB → 413', '%s %s' % (status, (data or {}).get('error')))
+    status, _, data, _ = a.request('/api/mail/trash', 'POST', raw_body=edit_big, chunked=True,
+                                   headers={'content-type': 'application/json'})
+    check(status == 413, '휴지통 요청 청크 40KB → 413', status)
+    status, _, data, _ = a.request('/api/mail/restore', 'POST', {'id': 'm_'})
+    check(status == 400 and (data or {}).get('error') == 'id_required',
+          '휴지통 복구 이상한 id → 400', status)
+    edit_codes = []
+    for _ in range(34):
+        status, _, _, _ = a.request('/api/mail/edit', 'POST',
+                                    {'id': 'm_0000', 'subject': '제목', 'body': '본문'})
+        edit_codes.append(status)
+    check(429 in edit_codes, '메일 수정 반복(34회/10분) → 429', sorted(set(edit_codes)))
 
     status, _, data, _ = a.request('/api/mail/send', 'POST', {'to': names['b'], 'subject': '제목'}, )
     check(status == 400, '본문 없는 요청은 400(413 아님)', status)
@@ -569,11 +690,24 @@ def audit_ui(names, cookie_a, cookie_admin):
             page.click('#mail-list .mail-open')
             page.wait_for_selector('#mail-view-detail:not([hidden])')
             deletes = []
-            page.on('request', lambda req: deletes.append(req.url) if '/api/mail/delete' in req.url else None)
+            page.on('request', lambda req: deletes.append(req.url) if '/api/mail/trash' in req.url else None)
             page.evaluate("""() => { const b = document.getElementById('mail-delete-btn');
                 b.click(); b.click(); b.click(); b.click(); }""")
             page.wait_for_timeout(1800)
-            check(len(deletes) == 1, '삭제 연타 → 요청 1회', len(deletes))
+            check(len(deletes) == 1, '삭제(휴지통 이동) 연타 → 요청 1회', len(deletes))
+            # 휴지통 탭에서 복구 — 목록의 복구 버튼으로 원래 함에 돌아온다
+            page.click('#mail-tabs [data-mail-tab="trash"]')
+            page.wait_for_timeout(900)
+            check(page.locator('#mail-list .mail-item').count() >= 1, '삭제한 메일이 휴지통에 보임',
+                  page.locator('#mail-list .mail-item').count())
+            check(page.is_visible('#mail-trash-empty'), '휴지통 비우기 버튼이 보임')
+            ui.shot(page, 'audit-desktop-mail-trash')
+            page.click('#mail-list .mail-item-restore')
+            page.wait_for_timeout(1300)
+            check(page.locator('#mail-list .mail-item').count() == 0, '복구하면 휴지통에서 사라짐',
+                  page.locator('#mail-list .mail-item').count())
+            page.click('#mail-tabs [data-mail-tab="inbox"]')
+            page.wait_for_timeout(900)
 
         # 긴 제목(80자)·긴 연속 글(200자) 메일 레이아웃
         long_title = 'ㄱ' * 80
@@ -769,6 +903,17 @@ def audit_ui(names, cookie_a, cookie_admin):
             ctx, page = ui.page(width=width, height=height, mobile=mobile, cookie=cookie_a)
             page.click('#btn-mail')
             page.wait_for_timeout(900)
+            tabs = page.evaluate("""() => {
+                const bar = document.getElementById('mail-tabs');
+                const btns = [...bar.querySelectorAll('[data-mail-tab]')];
+                return { overflow: bar.scrollWidth - bar.clientWidth,
+                         keys: btns.map(b => b.dataset.mailTab),
+                         clipped: btns.filter(b => b.scrollWidth > b.clientWidth + 1).map(b => b.dataset.mailTab) };
+            }""")
+            check(tabs['keys'] == ['inbox', 'sent', 'trash', 'notices'],
+                  '%s 탭 순서: 받은 · 보낸 · 휴지통 · 공지' % name, tabs['keys'])
+            check(tabs['overflow'] <= 1 and not tabs['clipped'],
+                  '%s 네 탭이 잘리지 않고 한 줄에 들어옴' % name, tabs)
             box = page.evaluate("""() => {
                 const sheet = document.querySelector('.mail-sheet');
                 const r = sheet.getBoundingClientRect();
@@ -988,6 +1133,19 @@ def audit_live_ui(url):
             return { w: Math.round(s.width), vw: innerWidth }; }""")
         check(box['w'] <= box['vw'], '라이브: 메일함 창 폭', box)
         ui.shot(page, 'audit-live-mail-guest')
+        for label, path, method, body, want in [
+            ('휴지통 목록', '/api/mail/trash', 'GET', None, 401),
+            ('휴지통 이동', '/api/mail/trash', 'POST', {'id': 'm_0000'}, 401),
+            ('휴지통 비우기', '/api/mail/trash/empty', 'POST', None, 401),
+            ('복구', '/api/mail/restore', 'POST', {'id': 'm_0000'}, 401),
+            ('메일 수정', '/api/mail/edit', 'POST', {'id': 'm_0000', 'subject': 's', 'body': 'b'}, 401),
+            ('공지 수정', '/api/mail/notices/edit', 'POST', {'id': 'n_0000', 'title': 't', 'body': 'b'}, 403),
+        ]:
+            status, heads, data, _ = Http().request(path, method, body)
+            check(status == want, '라이브: %s 비로그인 → %d' % (label, want),
+                  '%s %s' % (status, (data or {}).get('error')))
+            check('no-store' in heads.get('cache-control', ''), '라이브: %s 응답 no-store' % label,
+                  heads.get('cache-control'))
         errors = [(lv, text) for lv, text in ui.console
                   if lv == 'error' and not any(skip in text for skip in CONSOLE_IGNORE)]
         check(not errors, '라이브 콘솔 에러 0건', errors[:3])
@@ -1022,7 +1180,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--local', action='store_true')
     ap.add_argument('--url', default=None, help='라이브 주소(예: https://itda-play.pages.dev) — 주면 라이브 모드')
-    ap.add_argument('--shots-dir', default='/workspace/downloads/itda/2026-11-24-audit')
+    ap.add_argument('--shots-dir', default='/workspace/downloads/itda/2026-11-25-audit')
+    ap.add_argument('--section', choices=['all', 'api', 'ui'], default='all',
+                    help='한 번에 300초를 넘기는 환경에서 API(A–D)와 화면(E)을 나눠 돌릴 때')
     args = ap.parse_args()
     SHOT_DIR = args.shots_dir
     os.makedirs(SHOT_DIR, exist_ok=True)
@@ -1037,6 +1197,7 @@ def main():
 
     made = ensure_config()
     d1_file(os.path.join('db', 'schema.sql'))
+    apply_migrations()
     d1('DELETE FROM auth_throttle')
     proc = start_local()
     names = {'a': new_name('점검감사'), 'b': new_name('점검수신'), 'c': new_name('점검제삼')}
@@ -1061,17 +1222,19 @@ def main():
         cookie_a.login(names['a'])
         cookie_a = cookie_a.cookies.get('itda_session', '')
 
-        audit_csrf(names)
-        audit_ownership(names)
-        audit_injection_headers(names)
-        audit_dos(names)
-        # 폭주 점검으로 쌓인 창을 비우고(정상 사용자 기준으로 돌아간다) A 의 받은 메일을 하나 만든다.
-        d1('DELETE FROM auth_throttle')
-        seed_b = Http()
-        seed_b.login(names['b'])
-        seed_b.request('/api/mail/send', 'POST',
-                       {'to': names['a'], 'subject': '삭제 연타 점검', 'body': '지워질 메일'})
-        audit_ui(names, cookie_a, cookie_admin)
+        if args.section in ('all', 'api'):
+            audit_csrf(names)
+            audit_ownership(names)
+            audit_injection_headers(names)
+            audit_dos(names)
+        if args.section in ('all', 'ui'):
+            # 폭주 점검으로 쌓인 창을 비우고(정상 사용자 기준으로 돌아간다) A 의 받은 메일을 하나 만든다.
+            d1('DELETE FROM auth_throttle')
+            seed_b = Http()
+            seed_b.login(names['b'])
+            seed_b.request('/api/mail/send', 'POST',
+                           {'to': names['a'], 'subject': '삭제 연타 점검', 'body': '지워질 메일'})
+            audit_ui(names, cookie_a, cookie_admin)
     finally:
         try:
             cleanup(created, notices + ['아주 긴 공지 ' + 'ㄷ' * 80])

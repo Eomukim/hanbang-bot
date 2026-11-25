@@ -4,7 +4,7 @@
  *
  * 권한: `recipient_id` 가 세션 사용자와 같은 메일만 읽음 처리한다.
  *       다른 사람의 메일 id 로 찔러 보내도 아무 행도 바뀌지 않는다(updated 0).
- * 이미 읽은 메일이면 아무것도 바꾸지 않는다.
+ * 이미 읽은 메일이면 아무것도 바꾸지 않는다. 휴지통에 넣은 메일은 안 읽은 수에서 뺀다.
  */
 import { ok, fail, readJson, currentSession, checkReadRate } from '../../_lib/auth.js';
 import { parseId } from '../../_lib/mail.js';
@@ -33,7 +33,8 @@ export async function onRequestPost({ request, env }) {
   ).bind(Date.now(), id, session.id).run();
   const unread = await env.DB.prepare(
     `SELECT COUNT(*) AS n FROM mails
-      WHERE recipient_id = ? AND is_read = 0 AND deleted_by_recipient = 0`,
+      WHERE recipient_id = ? AND is_read = 0 AND deleted_by_recipient = 0
+        AND recipient_trashed_at IS NULL`,
   ).bind(session.id).first();
 
   return ok({

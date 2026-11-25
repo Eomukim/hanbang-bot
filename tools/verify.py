@@ -309,18 +309,35 @@ def serve(root):
 
 
 class Collector:
-    def __init__(self, page):
+    """콘솔·페이지 에러를 모은다.
+
+    `allow_api_404=True` 는 정적 파일 서버로 띄우는 로컬 검증용이다 — Pages Functions(`/api/*`)가
+    없으므로 메일 요약 같은 API 가 404 를 돌려주고 브라우저가 `Failed to load resource` 를 남긴다.
+    그 콘솔 잔소리만 거르고, 대신 실제 응답 목록(`bad_resources`)에서 `/api/` 가 아닌 404 를 따로 검사한다.
+    """
+
+    def __init__(self, page, allow_api_404=False):
         self.console = []
         self.errors = []
+        self.bad_resources = []
+        self.allow_api_404 = allow_api_404
         page.on('console', self._console)
         page.on('pageerror', self._pageerror)
+        page.on('response', self._response)
 
     def _console(self, msg):
         if msg.type in ('error', 'warning'):
+            text = msg.text
+            if self.allow_api_404 and 'Failed to load resource' in text and '404' in text:
+                return
             self.console.append({'type': msg.type, 'text': msg.text[:400]})
 
     def _pageerror(self, err):
         self.errors.append(str(err)[:600])
+
+    def _response(self, res):
+        if res.status >= 400:
+            self.bad_resources.append({'status': res.status, 'url': res.url})
 
 
 def check(cond, label, detail=''):
@@ -3664,12 +3681,51 @@ def scenario_start_title(page, tag):
     check(sum(overflow(page).values()) <= 0, f'[{tag}] 제시 글자 화면 가로 오버플로 0', str(overflow(page)))
 
 
+def scenario_mail_tabs(page, tag):
+    """메일함 탭 모양(받은·보낸·휴지통·공지)과 게스트 안내.
+
+    메일 API 가 없는 정적 파일 서버(로컬 `--local`)라면 버튼이 숨는다 — 그 동작만 확인하고 돌아간다.
+    서버·데이터 흐름은 tools/mail_check.py · tools/security_audit.py 가 wrangler 로 확인한다.
+    """
+    page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
+    page.wait_for_timeout(250)
+    if page.evaluate("() => document.getElementById('btn-mail').hidden"):
+        check(page.evaluate("() => window.__ITDA.app.screen") == 'setup',
+              f'[{tag}] 메일 API 가 없으면 메일 버튼을 숨기고 게임은 그대로', 'hidden')
+        return
+    page.click('#btn-mail')
+    page.wait_for_selector('#ov-mail:not([hidden])', timeout=8000)
+    page.wait_for_timeout(600)
+    keys = page.eval_on_selector_all('#mail-tabs [data-mail-tab]', 'els => els.map(e => e.dataset.mailTab)')
+    check(keys == ['inbox', 'sent', 'trash', 'notices'], f'[{tag}] 메일함 네 탭(받은·보낸·휴지통·공지)', keys)
+    tabs = page.evaluate("""() => {
+        const bar = document.getElementById('mail-tabs');
+        const btns = [...bar.querySelectorAll('[data-mail-tab]')];
+        return { overflow: bar.scrollWidth - bar.clientWidth,
+                 clipped: btns.filter(b => b.scrollWidth > b.clientWidth + 1).map(b => b.dataset.mailTab),
+                 row: bar.getBoundingClientRect().height };
+    }""")
+    check(tabs['overflow'] <= 1 and not tabs['clipped'], f'[{tag}] 네 탭이 잘리지 않고 한 줄', tabs)
+    page.click('#mail-tabs [data-mail-tab="trash"]')
+    page.wait_for_timeout(700)
+    empty = page.inner_text('#mail-empty-title')
+    check(page.is_visible('#mail-view-list') and '로그인' in empty,
+          f'[{tag}] 게스트 휴지통은 로그인 안내', empty[:60])
+    page.click('#mail-tabs [data-mail-tab="sent"]')
+    page.wait_for_timeout(500)
+    check('로그인' in page.inner_text('#mail-empty-title'), f'[{tag}] 게스트 보낸 메일도 로그인 안내',
+          page.inner_text('#mail-empty-title')[:60])
+    shot(page, f'{tag}-mail-tabs')
+    page.click('#btn-mail-close')
+    page.wait_for_timeout(300)
+
+
 def run_local(base_url, browser):
     print(f'\n=== LOCAL {base_url} ===')
     for vp_name in VIEWPORTS:
         print(f'\n-- {vp_name} --')
         ctx, page = new_page(browser, vp_name)
-        col = Collector(page)
+        col = Collector(page, allow_api_404=True)
         page.goto(base_url, wait_until='domcontentloaded')
         t0 = time.time()
         wait_ready(page)
@@ -3728,6 +3784,7 @@ def run_local(base_url, browser):
         scenario_legacy(page, 'local-' + vp_name)
         scenario_mercy(page, 'local-' + vp_name, REPORT_DIR)
         scenario_layout_regressions(page, 'local-' + vp_name)
+        scenario_mail_tabs(page, 'local-' + vp_name)
 
         # 대전 중 스크린샷 (여러 단어가 쌓인 화면)
         page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
@@ -3754,6 +3811,9 @@ def run_local(base_url, browser):
         check(not col.errors, f'[{vp_name}] 페이지 에러 0', json.dumps(col.errors, ensure_ascii=False)[:400])
         errs = [c for c in col.console if c['type'] == 'error']
         check(not errs, f'[{vp_name}] 콘솔 에러 0', json.dumps(errs, ensure_ascii=False)[:400])
+        missing = [r for r in col.bad_resources
+                   if r['status'] == 404 and '/api/' not in r['url'] and 'favicon' not in r['url']]
+        check(not missing, f'[{vp_name}] 없는 정적 파일 404 없음', json.dumps(missing, ensure_ascii=False)[:400])
         ctx.close()
 
 
@@ -3802,6 +3862,7 @@ def run_live(url, browser):
         scenario_legacy(page, 'live-' + vp_name)
         scenario_mercy(page, 'live-' + vp_name, REPORT_DIR)
         scenario_layout_regressions(page, 'live-' + vp_name)
+        scenario_mail_tabs(page, 'live-' + vp_name)
 
         check(not col.errors, f'[{vp_name}] 페이지 에러 0', json.dumps(col.errors, ensure_ascii=False)[:400])
         errs = [c for c in col.console if c['type'] == 'error']

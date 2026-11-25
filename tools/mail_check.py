@@ -44,6 +44,25 @@ PASS = 0
 FAIL = 0
 SHOTS = {}
 SHOT_DIR = os.path.join(ROOT, 'downloads', 'mail-check')
+MIGRATION_FILE = os.path.join('db', 'migrations', '2026-11-25-mail-trash-edit.sql')
+
+
+def apply_migrations():
+    """이미 만들어진 로컬 D1 에 새 칸을 더한다(이미 있으면 ADD COLUMN 이 실패하므로 무시)."""
+    path = os.path.join(ROOT, MIGRATION_FILE)
+    if not os.path.exists(path):
+        return
+    with open(path, encoding='utf-8') as handle:
+        sql = handle.read()
+    for raw in sql.split(';'):
+        lines = [line for line in raw.splitlines() if not line.strip().startswith('--')]
+        statement = '\n'.join(lines).strip()
+        if not statement:
+            continue
+        try:
+            d1(statement)
+        except Exception:
+            pass
 
 
 def check(cond, label, detail=''):
@@ -456,8 +475,8 @@ def run(headless=True):
         close_mail(b)
         drop(ctx_b)
 
-        # ── 6. A 답장 확인 · 삭제 ───────────────────────────────────
-        print('\n· 답장 확인 · 삭제')
+        # ── 6. A 답장 확인 · 삭제 → 휴지통 ─────────────────────────
+        print('\n· 답장 확인 · 휴지통')
         ctx_a3, a3 = open_page(names['a'])
         a3.wait_for_timeout(700)
         check(a3.is_visible('#mail-badge'), 'A 홈에 빨간 동그라미(답장 도착)')
@@ -483,11 +502,60 @@ def run(headless=True):
         a3.click('#mail-delete-btn')
         a3.wait_for_timeout(1500)
         check(a3.is_visible('#mail-view-list'), '삭제 뒤 목록으로')
-        check(a3.locator('#mail-list .mail-item').count() == 0, 'A 받은 메일함이 비었음',
+        check(a3.locator('#mail-list .mail-item').count() == 0, 'A 받은 메일함에서 사라짐',
               str(a3.locator('#mail-list .mail-item').count()))
+        rows = d1(f"SELECT recipient_trashed_at, deleted_by_recipient FROM mails WHERE id = '{reply_id}'")
+        row = rows[0]['results'][0]
+        check(row['recipient_trashed_at'] is not None and row['deleted_by_recipient'] == 0,
+              '삭제는 행을 지우지 않고 휴지통 시각만 기록', row)
+        tab(a3, 'trash')
+        check(a3.locator('#mail-list .mail-item').count() == 1, '휴지통에 1건',
+              str(a3.locator('#mail-list .mail-item').count()))
+        check('받은 메일' in a3.inner_text('#mail-list'), '휴지통 항목에 받은 메일 표시',
+              a3.inner_text('#mail-list')[:80])
+        check(a3.is_visible('#mail-trash-empty'), '휴지통 비우기 버튼이 보임')
+        check(not a3.is_visible('#mail-compose-btn'), '휴지통 탭에는 새 메일 쓰기 버튼 없음')
+        shot(a3, 'local-desktop-mail-trash')
+
+        # ── 6b. 복구 · 완전 삭제 · 휴지통 비우기 ────────────────────
+        print('\n· 복구 · 완전 삭제')
+        a3.click('#mail-list .mail-item-restore')
+        a3.wait_for_timeout(1500)
+        check(a3.locator('#mail-list .mail-item').count() == 0, '목록에서 복구하면 휴지통이 빔',
+              str(a3.locator('#mail-list .mail-item').count()))
+        tab(a3, 'inbox')
+        check(a3.locator('#mail-list .mail-item').count() == 1, '복구한 메일이 받은 메일함으로 돌아옴',
+              str(a3.locator('#mail-list .mail-item').count()))
+        # 다시 휴지통으로 → 상세에서 완전 삭제
+        a3.click('#mail-list .mail-open')
+        a3.wait_for_selector('#mail-view-detail:not([hidden])', timeout=5000)
+        a3.click('#mail-delete-btn')
+        a3.wait_for_timeout(120)
+        a3.click('#mail-delete-btn')
+        a3.wait_for_timeout(1400)
+        tab(a3, 'trash')
+        a3.click('#mail-list .mail-open')
+        a3.wait_for_selector('#mail-view-detail:not([hidden])', timeout=5000)
+        check(a3.inner_text('#mail-delete-btn') == '완전 삭제', '휴지통 상세 버튼은 완전 삭제',
+              a3.inner_text('#mail-delete-btn'))
+        check(a3.is_visible('#mail-restore-btn') and not a3.is_visible('#mail-reply-btn'),
+              '휴지통 상세에는 복구가 있고 답장은 없음')
+        a3.click('#mail-delete-btn')
+        a3.wait_for_timeout(150)
+        check(a3.inner_text('#mail-delete-btn') == '정말 삭제?', '완전 삭제도 한 번 더 확인',
+              a3.inner_text('#mail-delete-btn'))
+        shot(a3, 'local-desktop-mail-purge-armed')
+        a3.click('#mail-delete-btn')
+        a3.wait_for_timeout(1500)
+        check(a3.locator('#mail-list .mail-item').count() == 0, '완전 삭제 뒤 휴지통이 빔',
+              str(a3.locator('#mail-list .mail-item').count()))
+        rows = d1(f"SELECT deleted_by_sender, deleted_by_recipient FROM mails WHERE id = '{reply_id}'")
+        row = rows[0]['results'][0] if rows and rows[0].get('results') else {}
+        check(row.get('deleted_by_recipient') == 1 and row.get('deleted_by_sender') == 0,
+              '완전 삭제는 내 쪽 deleted_by_recipient 만 세움(상대 함은 유지)', row)
         close_mail(a3)
 
-        # B 가 보낸 답장도 지우면 행이 실제로 사라진다
+        # B 도 자기 쪽에서 지우고 휴지통을 비우면 그때 행이 실제로 사라진다
         ctx_b2, b2 = open_page(names['b'])
         open_mail(b2)
         tab(b2, 'sent')
@@ -497,12 +565,28 @@ def run(headless=True):
         b2.click('#mail-list .mail-open')
         b2.wait_for_selector('#mail-view-detail:not([hidden])', timeout=5000)
         b2.click('#mail-delete-btn')
-        b2.wait_for_timeout(150)
+        b2.wait_for_timeout(120)
         b2.click('#mail-delete-btn')
-        b2.wait_for_timeout(1500)
+        b2.wait_for_timeout(1400)
+        check(b2.locator('#mail-list .mail-item').count() == 0, 'B 보낸 메일함에서 사라짐',
+              str(b2.locator('#mail-list .mail-item').count()))
+        tab(b2, 'trash')
+        check(b2.locator('#mail-list .mail-item').count() == 1, 'B 휴지통에 1건',
+              str(b2.locator('#mail-list .mail-item').count()))
+        check('보낸 메일' in b2.inner_text('#mail-list'), 'B 휴지통 항목에 보낸 메일 표시',
+              b2.inner_text('#mail-list')[:80])
+        b2.click('#mail-trash-empty')
+        b2.wait_for_timeout(150)
+        check(b2.inner_text('#mail-trash-empty') == '정말 비울까?', '휴지통 비우기도 한 번 더 확인',
+              b2.inner_text('#mail-trash-empty'))
+        shot(b2, 'local-desktop-mail-trash-empty-armed')
+        b2.click('#mail-trash-empty')
+        b2.wait_for_timeout(1700)
+        check(b2.locator('#mail-list .mail-item').count() == 0, '휴지통 비우기 뒤 휴지통이 빔',
+              str(b2.locator('#mail-list .mail-item').count()))
         rows = d1(f"SELECT COUNT(*) AS n FROM mails WHERE id = '{reply_id}'")
         count = rows[0]['results'][0]['n'] if rows and rows[0].get('results') else -1
-        check(count == 0, '양쪽이 지우면 메일 행이 실제로 삭제', str(count))
+        check(count == 0, '양쪽이 완전히 지우면 메일 행이 실제로 삭제', str(count))
         close_mail(b2)
 
         # ── 7. 보안: XSS · 길이 · SQL 인젝션 시도 ────────────────────
@@ -577,7 +661,120 @@ def run(headless=True):
               '짧은 시간에 많이 보내면 429 로 제한', f'attempt={limited_at}')
         drop(ctx_c)
 
-        # ── 8. 계정 삭제 정리 ────────────────────────────────────────
+        # ── 8. 보낸 메일 수정 ──────────────────────────────────
+        print('\n· 보낸 메일 수정')
+        ctx_a4, a4 = open_page(names['a'])
+        res = api(a4, '/api/mail/send', 'POST', {
+            'to': names['b'], 'subject': '수정 전 제목', 'body': '수정 전 본문입니다.',
+        })
+        check(res['status'] == 200, '수정 점검용 메일 발송', res['status'])
+        edit_id = res['data'].get('mail', {}).get('id')
+        open_mail(a4)
+        tab(a4, 'sent')
+        a4.wait_for_timeout(700)
+        a4.click('#mail-list .mail-open')
+        a4.wait_for_selector('#mail-view-detail:not([hidden])', timeout=5000)
+        check(a4.is_visible('#mail-edit-btn'), '보낸 메일 상세에 수정 버튼')
+        check(not a4.is_visible('#mail-reply-btn'), '보낸 메일 상세에는 답장 없음')
+        check(a4.inner_text('#mail-list .mail-when') != '', '목록에 시간 표시')
+        a4.click('#mail-edit-btn')
+        a4.wait_for_selector('#mail-view-edit:not([hidden])', timeout=5000)
+        check(a4.input_value('#mail-edit-subject') == '수정 전 제목',
+              '수정 화면에 현재 제목이 채워짐', a4.input_value('#mail-edit-subject'))
+        check(a4.input_value('#mail-edit-body') == '수정 전 본문입니다.',
+              '수정 화면에 현재 본문이 채워짐', a4.input_value('#mail-edit-body'))
+        shot(a4, 'local-desktop-mail-edit')
+        a4.fill('#mail-edit-subject', '수정한 제목')
+        a4.fill('#mail-edit-body', '수정한 본문입니다.\n두 줄째.')
+        a4.click('#mail-edit-submit')
+        a4.wait_for_timeout(1600)
+        check(a4.is_visible('#mail-view-detail'), '수정 저장 뒤 상세로 돌아옴')
+        check('수정한 제목' in a4.inner_text('#mail-detail-subject'), '상세 제목이 수정한 값',
+              a4.inner_text('#mail-detail-subject'))
+        check('수정됨' in a4.inner_text('#mail-detail-subject'), '상세에 수정됨 표시')
+        shot(a4, 'local-desktop-mail-edit-done')
+        a4.click('#mail-detail-back')
+        a4.wait_for_timeout(1000)
+        listing = a4.inner_text('#mail-list')
+        check('수정한 제목' in listing and '수정됨' in listing,
+              '목록에도 수정한 제목·수정됨 표시', listing[:140])
+        rows = d1(f"SELECT subject, body, updated_at FROM mails WHERE id = '{edit_id}'")
+        row = rows[0]['results'][0]
+        check(row['subject'] == '수정한 제목' and row['updated_at'],
+              'DB 에 제목과 updated_at 기록', {'subject': row['subject'], 'updated_at': row['updated_at']})
+        # 권한·한도: 길이 제한은 발송과 같고, 내가 휴지통에 넣은 메일은 고칠 수 없다
+        res = api(a4, '/api/mail/edit', 'POST', {'id': edit_id, 'subject': 'ㄱ' * 81, 'body': '본문'})
+        check(res['status'] == 400 and res['data'].get('error') == 'subject_long',
+              '수정 제목 81자 400 subject_long', json.dumps(res, ensure_ascii=False)[:140])
+        res = api(a4, '/api/mail/edit', 'POST', {'id': edit_id, 'subject': '', 'body': '본문'})
+        check(res['status'] == 400 and res['data'].get('error') == 'subject_required',
+              '수정 제목 빈 값 400', json.dumps(res, ensure_ascii=False)[:140])
+        res = api(a4, '/api/mail/edit', 'POST', {'id': 'm_doesnotexist', 'subject': 'ㄱ', 'body': 'ㄴ'})
+        check(res['status'] == 404, '없는 메일 수정 404', res['status'])
+        res = api(a4, '/api/mail/trash', 'POST', {'id': edit_id})
+        check(res['status'] == 200, '수정 점검 메일을 휴지통으로', res['status'])
+        res = api(a4, '/api/mail/edit', 'POST', {'id': edit_id, 'subject': '휴지통 수정', 'body': '본문'})
+        check(res['status'] == 404, '휴지통에 넣은 내 메일 수정 404',
+              json.dumps(res, ensure_ascii=False)[:140])
+        res = api(a4, '/api/mail/restore', 'POST', {'id': edit_id})
+        check(res['status'] == 200, '다시 복구 200', res['status'])
+        res = api(a4, '/api/mail/notices/edit', 'POST', {'id': 'n_0000', 'title': 't', 'body': 'b'})
+        check(res['status'] == 403, '일반 유저 공지 수정 403', res['status'])
+        drop(ctx_a4)
+
+        ctx_b4, b4 = open_page(names['b'])
+        res = api(b4, '/api/mail/edit', 'POST', {'id': edit_id, 'subject': '남의 메일', 'body': '본문'})
+        check(res['status'] == 404, '받는 사람도 보낸 메일 수정 404', res['status'])
+        open_mail(b4)
+        b4.wait_for_timeout(700)
+        received = b4.inner_text('#mail-list')
+        check('수정한 제목' in received, 'B 받은 메일함에도 수정한 제목', received[:120])
+        check('수정됨' in received, 'B 받은 메일함에도 수정됨 표시')
+        b4.click('#mail-list .mail-open')
+        b4.wait_for_selector('#mail-view-detail:not([hidden])', timeout=5000)
+        check('수정한 제목' in b4.inner_text('#mail-detail-subject'), 'B 상세 제목도 수정한 값',
+              b4.inner_text('#mail-detail-subject'))
+        check(not b4.is_visible('#mail-edit-btn'), '받은 메일 상세에는 수정 버튼 없음')
+        check('수정한 본문입니다.' in b4.inner_text('#mail-detail-body'), '수정한 본문이 보임')
+        shot(b4, 'local-desktop-mail-received-edited')
+        close_mail(b4)
+        drop(ctx_b4)
+
+        # ── 9. 공지 수정(관리자) ────────────────────────────────
+        print('\n· 공지 수정')
+        ctx_ad2, ad = open_page(names['admin'])
+        open_mail(ad)
+        tab(ad, 'notices')
+        ad.wait_for_timeout(800)
+        target = ad.locator('#mail-list .mail-item', has_text='잇다 메일함이 열렸어요').first
+        target.click()
+        ad.wait_for_selector('#mail-view-detail:not([hidden])', timeout=5000)
+        check(ad.is_visible('#mail-edit-btn'), '관리자 공지 상세에 수정 버튼')
+        check(ad.is_visible('#mail-delete-btn'), '관리자 공지 상세에 삭제 버튼도 그대로')
+        ad.click('#mail-edit-btn')
+        ad.wait_for_selector('#mail-view-notice:not([hidden])', timeout=5000)
+        check(ad.inner_text('#mail-notice-heading') == '공지 수정', '공지 수정 화면 제목',
+              ad.inner_text('#mail-notice-heading'))
+        check(ad.input_value('#mail-notice-title') == '잇다 메일함이 열렸어요', '기존 공지 제목이 채워짐',
+              ad.input_value('#mail-notice-title'))
+        shot(ad, 'local-desktop-mail-notice-edit')
+        ad.fill('#mail-notice-title', '잇다 메일함이 열렸어요 (안내)')
+        ad.fill('#mail-notice-body', '이제 플레이어끼리 쪽지를 주고받을 수 있어요. 휴지통과 수정도 생겼어요.')
+        ad.click('#mail-notice-submit')
+        ad.wait_for_timeout(1700)
+        check(ad.is_visible('#mail-view-list'), '공지 수정 뒤 목록으로')
+        notices_text = ad.inner_text('#mail-list')
+        check('잇다 메일함이 열렸어요 (안내)' in notices_text and '수정됨' in notices_text,
+              '공지 목록에 수정한 제목·수정됨 표시', notices_text[:140])
+        res = api(ad, '/api/mail/notices')
+        edited = next((n for n in res['data'].get('notices', [])
+                       if n['title'] == '잇다 메일함이 열렸어요 (안내)'), None)
+        check(edited is not None and edited.get('updatedAt'),
+              '수정한 공지의 updatedAt 이 내려옴', edited and edited.get('updatedAt'))
+        shot(ad, 'local-desktop-mail-notices-edited')
+        drop(ctx_ad2)
+
+        # ── 10. 계정 삭제 정리 ──────────────────────────────────────
         print('\n· 계정 삭제 정리')
         ctx_d, dp = open_page(names['d'])
         res = api(dp, '/api/mail/send', 'POST', {
@@ -623,6 +820,25 @@ def run(headless=True):
         m.wait_for_selector('#mail-view-detail:not([hidden])', timeout=5000)
         shot(m, 'local-mobile-mail-detail')
         m.wait_for_timeout(400)
+        m.click('#mail-detail-back')
+        m.wait_for_timeout(700)
+        m.click('#mail-tabs [data-mail-tab="trash"]')
+        m.wait_for_timeout(900)
+        trash_text = m.inner_text('#mail-view-list')
+        check('휴지통' in trash_text or '비어 있어요' in trash_text,
+              '모바일에서 휴지통 탭이 열린다', trash_text[:100])
+        tabs = m.evaluate("""() => {
+            const bar = document.getElementById('mail-tabs');
+            const btns = [...bar.querySelectorAll('[data-mail-tab]')];
+            return { overflow: bar.scrollWidth - bar.clientWidth,
+                     w: Math.round(bar.getBoundingClientRect().width),
+                     tabs: btns.map(b => ({ key: b.dataset.mailTab,
+                       clipped: b.scrollWidth > b.clientWidth + 1,
+                       w: Math.round(b.getBoundingClientRect().width) })) };
+        }""")
+        check(tabs['overflow'] <= 1 and all(not t['clipped'] for t in tabs['tabs']),
+              '모바일 네 탭(휴지통 포함)이 잘리지 않고 한 줄에 들어옴', tabs)
+        shot(m, 'local-mobile-mail-trash')
         m.click('#mail-tabs [data-mail-tab="notices"]')
         m.wait_for_timeout(800)
         shot(m, 'local-mobile-mail-notices')
@@ -659,7 +875,7 @@ def run(headless=True):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--local', action='store_true', default=True)
-    ap.add_argument('--shots-dir', default='/workspace/downloads/itda/2026-11-24-mail')
+    ap.add_argument('--shots-dir', default='/workspace/downloads/itda/2026-11-25-mail-v2')
     ap.add_argument('--headed', action='store_true')
     args = ap.parse_args()
     global SHOT_DIR
@@ -667,6 +883,7 @@ def main():
 
     made_config = ensure_local_config()
     d1_file(os.path.join('db', 'schema.sql'))
+    apply_migrations()
     proc = start_local()
     try:
         code = run(headless=not args.headed)

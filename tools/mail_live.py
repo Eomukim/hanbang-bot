@@ -162,6 +162,14 @@ def run(headless=True):
               json.dumps(res, ensure_ascii=False)[:160])
         res = api(guest, '/api/mail/inbox')
         check(res['status'] == 401, '게스트 받은 메일 401', str(res['status']))
+        res = api(guest, '/api/mail/trash')
+        check(res['status'] == 401, '게스트 휴지통 목록 401', str(res['status']))
+        res = api(guest, '/api/mail/trash', 'POST', {'id': 'm_0000'})
+        check(res['status'] == 401, '게스트 휴지통 이동 401', str(res['status']))
+        res = api(guest, '/api/mail/edit', 'POST', {'id': 'm_0000', 'subject': 'x', 'body': 'y'})
+        check(res['status'] == 401, '게스트 메일 수정 401', str(res['status']))
+        res = api(guest, '/api/mail/notices/edit', 'POST', {'id': 'n_0000', 'title': 'x', 'body': 'y'})
+        check(res['status'] == 403, '게스트 공지 수정 403', str(res['status']))
         res = api(guest, '/api/mail/notices', 'POST', {'title': 'x', 'body': 'y'})
         check(res['status'] == 403, '게스트 공지 작성 403', str(res['status']))
         open_mail(guest)
@@ -172,6 +180,16 @@ def run(headless=True):
         guest.wait_for_timeout(900)
         check(guest.is_visible('#mail-login-btn'), '게스트 받은 메일에 로그인 버튼')
         shot(guest, 'live-desktop-mail-guest-inbox')
+        guest.click('#mail-tabs [data-mail-tab="trash"]')
+        guest.wait_for_timeout(900)
+        check(guest.is_visible('#mail-login-btn') and '로그인' in guest.inner_text('#mail-empty-title'),
+              '게스트 휴지통에도 로그인 안내')
+        tabs = guest.evaluate("""() => { const bar = document.getElementById('mail-tabs');
+            return { overflow: bar.scrollWidth - bar.clientWidth,
+                     keys: [...bar.querySelectorAll('[data-mail-tab]')].map(b => b.dataset.mailTab) }; }""")
+        check(tabs['keys'] == ['inbox', 'sent', 'trash', 'notices'] and tabs['overflow'] <= 1,
+              '라이브: 네 탭(휴지통 포함)이 한 줄에', tabs)
+        shot(guest, 'live-desktop-mail-guest-trash')
         ctx.close()
 
         # ── 두 계정 만들기 ───────────────────────────────────────

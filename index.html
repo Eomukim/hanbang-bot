@@ -372,6 +372,7 @@
     <div class="auth-tabs mail-tabs" id="mail-tabs" role="tablist" aria-label="메일함 종류">
       <button type="button" role="tab" data-mail-tab="inbox" aria-selected="true">받은 메일<i class="mail-tab-dot" id="mail-tab-dot-inbox" hidden aria-hidden="true"></i></button>
       <button type="button" role="tab" data-mail-tab="sent" aria-selected="false">보낸 메일</button>
+      <button type="button" role="tab" data-mail-tab="trash" aria-selected="false">휴지통</button>
       <button type="button" role="tab" data-mail-tab="notices" aria-selected="false">공지사항<i class="mail-tab-dot" id="mail-tab-dot-notices" hidden aria-hidden="true"></i></button>
     </div>
 
@@ -381,6 +382,7 @@
         <div class="mail-toolbar" id="mail-toolbar">
           <p class="mail-caption" id="mail-caption">받은 메일</p>
           <div class="mail-toolbar-actions">
+            <button class="btn ghost mail-action" id="mail-trash-empty" type="button" hidden>휴지통 비우기</button>
             <button class="btn ghost mail-action" id="mail-notice-new" type="button" hidden>공지 작성</button>
             <button class="btn primary mail-action" id="mail-compose-btn" type="button">새 메일 쓰기</button>
           </div>
@@ -404,8 +406,28 @@
         </div>
         <div class="mail-detail-actions">
           <button class="btn primary mail-action" id="mail-reply-btn" type="button">답장</button>
+          <button class="btn ghost mail-action" id="mail-edit-btn" type="button" hidden>수정</button>
+          <button class="btn ghost mail-action" id="mail-restore-btn" type="button" hidden>복구</button>
           <button class="btn ghost mail-action" id="mail-delete-btn" type="button">삭제</button>
         </div>
+      </div>
+
+      <!-- 보낸 메일 수정 -->
+      <div class="mail-view" id="mail-view-edit" hidden>
+        <button class="mail-back" id="mail-edit-back" type="button">← 취소</button>
+        <p class="mail-caption" id="mail-edit-caption">보낸 메일 수정</p>
+        <form class="mail-form" id="mail-edit-form" novalidate>
+          <label class="mail-field">
+            <span>제목</span>
+            <input id="mail-edit-subject" type="text" maxlength="80" placeholder="제목" aria-label="수정할 메일 제목">
+          </label>
+          <label class="mail-field">
+            <span>내용</span>
+            <textarea id="mail-edit-body" maxlength="2000" rows="6" placeholder="하고 싶은 말을 적어 주세요" aria-label="수정할 메일 내용"></textarea>
+          </label>
+          <p class="auth-error" id="mail-edit-error" role="alert" hidden></p>
+          <button class="btn primary mail-submit" id="mail-edit-submit" type="submit">수정 저장</button>
+        </form>
       </div>
 
       <!-- 새 메일 쓰기 · 답장 -->
@@ -434,7 +456,7 @@
       <!-- 공지 작성 (관리자만) -->
       <div class="mail-view" id="mail-view-notice" hidden>
         <button class="mail-back" id="mail-notice-back" type="button">← 목록으로</button>
-        <p class="mail-caption">새 공지사항</p>
+        <p class="mail-caption" id="mail-notice-heading">새 공지사항</p>
         <form class="mail-form" id="mail-notice-form" novalidate>
           <label class="mail-field">
             <span>제목</span>

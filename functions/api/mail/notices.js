@@ -17,7 +17,7 @@ async function listNotices(env, session) {
   let rows;
   if (session) {
     rows = await env.DB.prepare(
-      `SELECT n.id, n.author_username, n.title, n.body, n.created_at,
+      `SELECT n.id, n.author_username, n.title, n.body, n.created_at, n.updated_at,
               CASE WHEN r.notice_id IS NULL THEN 0 ELSE 1 END AS is_read
          FROM notices n
          LEFT JOIN notice_reads r ON r.notice_id = n.id AND r.user_id = ?
@@ -26,7 +26,7 @@ async function listNotices(env, session) {
     ).bind(session.id, NOTICE_LIMIT).all();
   } else {
     rows = await env.DB.prepare(
-      `SELECT id, author_username, title, body, created_at, 0 AS is_read
+      `SELECT id, author_username, title, body, created_at, updated_at, 0 AS is_read
          FROM notices
         ORDER BY created_at DESC, id DESC
         LIMIT ?`,

@@ -5,6 +5,9 @@
  * - 공지사항: 관리자(Cloudflare Pages 환경변수 `ADMIN_USERNAMES`)만 쓰고 지울 수 있고,
  *   누구나(게스트 포함) 읽는다.
  * - 읽음: 받은 메일은 mails.is_read/read_at, 공지는 사용자별 notice_reads 표로 기억한다.
+ * - 휴지통: `삭제`는 내 쪽 `*_trashed_at`(ISO)만 기록하고, 휴지통에서 `완전 삭제`할 때
+ *   비로소 `deleted_by_*` 를 세운다(양쪽 다 지우면 행 삭제). 각자 독립이다.
+ * - 수정: 보낸 사람만 `updated_at`(ISO)과 제목·본문을 바꿀 수 있고, 관리자는 공지를 고친다.
  *
  * 보안 규칙: 이 파일을 포함한 모든 메일 API 는 D1 에 `.prepare(...).bind(...)` 만 쓴다.
  * 값이 SQL 문자열에 직접 들어가는 곳은 없다.
@@ -77,6 +80,40 @@ export function validateMail({ to, subject, body }) {
   return { ok: true, recipient, subject: title, body: text };
 }
 
+/**
+ * 보낸 메일 수정 입력 검사(받는 사람은 바꾸지 않는다).
+ * 발송(`validateMail`)과 같은 제목 80자·본문 2000자 상한을 쓴다.
+ */
+export function validateMailEdit({ subject, body }) {
+  const title = cleanText(subject, SUBJECT_MAX + 1);
+  if (!title) {
+    return { ok: false, error: 'subject_required', message: '제목을 입력해 주세요.' };
+  }
+  if (title.length > SUBJECT_MAX) {
+    return { ok: false, error: 'subject_long', message: `제목은 ${SUBJECT_MAX}자까지 쓸 수 있어요.` };
+  }
+  const text = cleanText(body, BODY_MAX + 1);
+  if (!text) {
+    return { ok: false, error: 'body_required', message: '내용을 입력해 주세요.' };
+  }
+  if (text.length > BODY_MAX) {
+    return { ok: false, error: 'body_long', message: `내용은 ${BODY_MAX}자까지 쓸 수 있어요.` };
+  }
+  return { ok: true, subject: title, body: text };
+}
+
+/** ISO 문자열(또는 비어 있는 값)을 epoch ms 로. 값이 없거나 이상하면 null. */
+export function stampToMs(raw) {
+  if (raw == null || raw === '') return null;
+  const ms = Date.parse(String(raw));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** 지금 시각을 DB 에 남기는 ISO 문자열로. */
+export function nowStamp() {
+  return new Date().toISOString();
+}
+
 export function validateNotice({ title, body }) {
   const heading = cleanText(title, NOTICE_TITLE_MAX + 1);
   if (!heading) {
@@ -95,7 +132,7 @@ export function validateNotice({ title, body }) {
   return { ok: true, title: heading, body: text };
 }
 
-/** 메일 행 → 화면이 쓰는 모양. 보낸·받은 목록과 메일 상세가 같은 모양을 쓴다. */
+/** 메일 행 → 화면이 쓰는 모양. 보낸·받은·휴지통 목록과 메일 상세가 같은 모양을 쓴다. */
 export function mailView(row) {
   if (!row) return null;
   return {
@@ -108,6 +145,10 @@ export function mailView(row) {
     isRead: Number(row.is_read) === 1,
     readAt: row.read_at == null ? null : Number(row.read_at),
     createdAt: Number(row.created_at),
+    updatedAt: stampToMs(row.updated_at),
+    // 휴지통 목록에서만 채워지는 값(받은/보낸 구분과 휴지통에 넣은 시각)
+    folder: row.folder || null,
+    trashedAt: stampToMs(row.trashed_at),
   };
 }
 
@@ -120,6 +161,7 @@ export function noticeView(row) {
     body: row.body,
     isRead: Number(row.is_read) === 1,
     createdAt: Number(row.created_at),
+    updatedAt: stampToMs(row.updated_at),
   };
 }
 

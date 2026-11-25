@@ -1,7 +1,9 @@
 /**
  * POST /api/mail/delete
- * 내 메일함에서 메일 한 통을 지운다(소프트 삭제). 로그인 필수.
+ * 메일 한 통을 내 쪽에서 **완전 삭제**한다. 로그인 필수.
  *
+ * - 화면의 `삭제` 는 먼저 휴지통(POST /api/mail/trash)으로 옮기고, 휴지통의
+ *   `완전 삭제` 와 `휴지통 비우기` 가 이 API 를 쓴다.
  * - 받은 사람이 지우면 deleted_by_recipient, 보낸 사람이 지우면 deleted_by_sender 를 세운다.
  *   그래서 한쪽이 지워도 상대의 메일함은 그대로 남는다.
  * - 양쪽이 모두 지우면 그때 행을 실제로 지운다.
@@ -17,7 +19,7 @@ export async function onRequestPost({ request, env }) {
   const session = await currentSession(env, request);
   if (!session) return fail(401, 'not_signed_in', '로그인하면 다른 플레이어와 메일을 주고받을 수 있어요.');
 
-  const limit = await hitThrottle(env, `mail:delete:${session.id}`, 120, 60);
+  const limit = await hitThrottle(env, `mail:purge:${session.id}`, 60, 60);
   if (!limit.allowed) {
     return fail(429, 'rate_limited', '요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.', {
       'retry-after': String(limit.retryAfter),
@@ -33,12 +35,12 @@ export async function onRequestPost({ request, env }) {
   const mail = await env.DB.prepare(
     'SELECT id, sender_id, recipient_id, deleted_by_sender, deleted_by_recipient FROM mails WHERE id = ?',
   ).bind(id).first();
-  if (!mail) return fail(404, 'not_found', '이미 지운 메일이에요.');
+  if (!mail) return fail(404, 'not_found', '이미 완전히 지운 메일이에요.');
 
   const isSender = mail.sender_id === session.id;
   const isRecipient = mail.recipient_id === session.id;
   if (!isSender && !isRecipient) {
-    return fail(404, 'not_found', '이미 지운 메일이에요.');
+    return fail(404, 'not_found', '이미 완전히 지운 메일이에요.');
   }
 
   const deletedBySender = Number(mail.deleted_by_sender) === 1 || isSender ? 1 : 0;

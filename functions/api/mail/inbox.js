@@ -1,6 +1,7 @@
 /**
  * GET /api/mail/inbox
- * 나에게 온 메일(내가 지우지 않은 것)을 최신순으로 내려 준다. 로그인 필수.
+ * 나에게 온 메일(내가 지우지 않았고 휴지통에 넣지 않은 것)을 최신순으로 내려 준다. 로그인 필수.
+ * 휴지통에 있는 메일은 받은 메일 목록·안 읽은 수 어디에도 세지 않는다.
  */
 import { ok, fail, currentSession, checkReadRate } from '../../_lib/auth.js';
 import { mailView, LIST_LIMIT } from '../../_lib/mail.js';
@@ -19,9 +20,9 @@ export async function onRequestGet({ request, env }) {
 
   const rows = await env.DB.prepare(
     `SELECT id, sender_username, recipient_username, reply_to_id, subject, body,
-            is_read, read_at, created_at
+            is_read, read_at, created_at, updated_at
        FROM mails
-      WHERE recipient_id = ? AND deleted_by_recipient = 0
+      WHERE recipient_id = ? AND deleted_by_recipient = 0 AND recipient_trashed_at IS NULL
       ORDER BY created_at DESC, id DESC
       LIMIT ?`,
   ).bind(session.id, LIST_LIMIT).all();

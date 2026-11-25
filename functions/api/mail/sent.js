@@ -1,6 +1,6 @@
 /**
  * GET /api/mail/sent
- * 내가 보낸 메일(내가 지우지 않은 것)을 최신순으로 내려 준다. 로그인 필수.
+ * 내가 보낸 메일(내가 지우지 않았고 휴지통에 넣지 않은 것)을 최신순으로 내려 준다. 로그인 필수.
  * isRead 는 받는 사람이 열어 봤는지다.
  */
 import { ok, fail, currentSession, checkReadRate } from '../../_lib/auth.js';
@@ -20,9 +20,9 @@ export async function onRequestGet({ request, env }) {
 
   const rows = await env.DB.prepare(
     `SELECT id, sender_username, recipient_username, reply_to_id, subject, body,
-            is_read, read_at, created_at
+            is_read, read_at, created_at, updated_at
        FROM mails
-      WHERE sender_id = ? AND deleted_by_sender = 0
+      WHERE sender_id = ? AND deleted_by_sender = 0 AND sender_trashed_at IS NULL
       ORDER BY created_at DESC, id DESC
       LIMIT ?`,
   ).bind(session.id, LIST_LIMIT).all();

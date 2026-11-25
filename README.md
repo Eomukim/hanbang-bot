@@ -20,7 +20,7 @@
 | 배려모드 | 🛡️ 스위치 하나로 대국 시작 후 첫 5수(1~5수) 동안 나와 봇 모두 한방 단어 금지. 대전 헤더에 남은 보호 턴 칩(6수부터 `배려 해금`), 결과 화면에 `🛡️ 배려모드` 배지 |
 | 제한 시간 | 설정 화면의 `제한 시간` 슬라이더 — **1초, 그리고 5초부터 50초까지 5초 단위**(1·5·10·…·50). 트랙 아래 **0~50초 눈금자 11개**가 `0·50` / 10의 배수 / 5의 배수 3단계 굵기로 서고, 양끝에 `0초`·`50초` 숫자, 라벨 옆 배지에 고른 초가 바로 보인다 |
 | 설정 | 설정 화면 오른쪽 위 `⚙ 설정` — 효과음 **음량 0~100%**(0%면 음소거, 아이콘을 누르면 음소거/해제)와 **흑백모드**(화면 전체 회색) |
-| 메일함 | 설정 화면 오른쪽 위 `✉ 메일함` — **받은 메일 · 보낸 메일 · 공지사항** 탭. 로그인한 플레이어끼리 `@아이디`로 쪽지를 주고받고, 받은 메일에서 **답장**(`Re:` 제목, `reply_to_id` 연결)할 수 있다. 읽으면 자동 읽음 처리(`read_at`), 지우면 내 메일함에서만 사라지고 양쪽이 지우면 행이 삭제된다. 공지사항은 누구나(게스트 포함) 읽고, `ADMIN_USERNAMES` 관리자만 쓴다 |
+| 메일함 | 설정 화면 오른쪽 위 `✉ 메일함` — **받은 메일 · 보낸 메일 · 휴지통 · 공지사항** 탭. 로그인한 플레이어끼리 `@아이디`로 쪽지를 주고받고, 받은 메일에서 **답장**(`Re:` 제목, `reply_to_id` 연결)할 수 있다. 읽으면 자동 읽음 처리(`read_at`). `삭제`는 상대 함은 그대로 둔 채 **휴지통**으로 옮기고, 휴지통에서 **복구**하거나 **완전 삭제·휴지통 비우기**한다. 보낸 메일은 제목·본문을 **수정**할 수 있고 수정한 메일·공지는 `(수정됨)` 으로 보인다. 공지사항은 누구나(게스트 포함) 읽고, `ADMIN_USERNAMES` 관리자만 쓰고 고친다 |
 | 빨간 알림 | 새로 온 안 읽은 메일이나 아직 안 읽은 공지가 있으면 메일함 버튼 오른쪽 위에 **빨간 동그라미**. 로그인 사용자는 서버(`is_read`·`notice_reads`), 게스트는 이 기기의 마지막 확인 시각(`localStorage`)으로 판단해 다 읽으면 사라진다 |
 | 단어 사전 | 설정 화면 오른쪽 위 `📖 사전` — 시작 글자·앞부분 검색, 두음 포함 토글, 어려움·쉬움·긴·짧은 4가지 정렬(끝 글자 후속 수), `🔥 한방`·`후속 N개` 배지, 100개씩 더 보기 |
 | 봇 | 5단계. Lv.4 극악은 한방 단어가 있으면 100% 즉시 사용, Lv.5 지옥은 빌드 타임 루트전 그래프로 수를 읽는다 |
@@ -190,17 +190,24 @@ W면 그 글자로 먼저 두는 쪽(Lv.4)이 완전한 수로 이기고, 후공
   Turnstile 위젯 `itda-play-auth` 는 `itda-play.pages.dev` 호스트만 허용한다.
 
 
-## 메일함 (✉ 받은 · 보낸 · 공지)
+## 메일함 (✉ 받은 · 보낸 · 휴지통 · 공지)
 
 홈 오른쪽 위 `✉ 메일함` 버튼으로 연다. 새 메일이나 아직 안 읽은 공지가 있으면 버튼 오른쪽 위에 **빨간 동그라미**가 뜨고,
-다 읽으면 사라진다. 로그인하지 않은 게스트는 **공지사항만** 읽을 수 있고, 받은/보낸/쓰기 자리에는 로그인 안내와 버튼이 나온다.
+다 읽으면 사라진다. 로그인하지 않은 게스트는 **공지사항만** 읽을 수 있고, 받은/보낸/휴지통/쓰기 자리에는 로그인 안내와 버튼이 나온다.
 
 | 탭 | 내용 |
 | --- | --- |
-| 받은 메일 | 나에게 온 메일 최신순 100통. 열면 자동 읽음 처리(`read_at`), `답장`(받는 사람·`Re: 제목` 자동, `reply_to_id` 연결)과 `삭제` |
-| 보낸 메일 | 내가 보낸 메일과 상대의 읽음 여부. `삭제`해도 받은 사람 메일함은 그대로이고, 양쪽이 지우면 행이 실제로 삭제된다 |
-| 공지사항 | 누구나(게스트 포함) 읽는다. `ADMIN_USERNAMES` 에 든 아이디로 로그인하면 `공지 작성`과 각 공지의 `삭제`가 보인다 |
+| 받은 메일 | 나에게 온 메일 최신순 100통. 열면 자동 읽음 처리(`read_at`), `답장`(받는 사람·`Re: 제목` 자동, `reply_to_id` 연결)과 `삭제`(휴지통으로) |
+| 보낸 메일 | 내가 보낸 메일과 상대의 읽음 여부. `수정`으로 제목·본문을 고치고(`(수정됨)` 표시), `삭제`는 휴지통으로 |
+| 휴지통 | 내가 지운 받은·보낸 메일. `복구`하면 원래 함으로 돌아가고, `완전 삭제`·`휴지통 비우기`는 두 번 확인 뒤 지운다(되돌릴 수 없음) |
+| 공지사항 | 누구나(게스트 포함) 읽는다. `ADMIN_USERNAMES` 에 든 아이디로 로그인하면 `공지 작성`·`수정`·`삭제`가 보인다 |
 | 새 메일 쓰기 | 받는 사람(`@아이디` 또는 `아이디`), 제목(80자), 내용(2000자). 없는 아이디면 안내 문구를 보여 준다 |
+
+- **휴지통은 각자 독립**: `삭제`는 내 쪽 `sender_trashed_at`/`recipient_trashed_at`(ISO)만 기록하고, 상대의 메일함은 그대로다.
+  휴지통에 있는 메일은 받은 메일 목록·빨간 동그라미(안 읽은 수)에 세지 않는다. `완전 삭제`·`휴지통 비우기` 때 내 쪽 `deleted_by_*` 를 세우고,
+  양쪽이 모두 완전 삭제하면 그때 행을 실제로 지운다.
+- **수정**: 보낸 사람만, 발신자가 휴지통에 넣지 않은 메일만 고칠 수 있다(받는 사람은 바꿀 수 없음). 고치면 `updated_at`(ISO)이 남고 목록·상세에 `(수정됨)` 이 붙는다.
+  공지 수정은 관리자만이며 읽음 기록(`notice_reads`)은 그대로 둔다.
 
 서버는 같은 Cloudflare Pages Functions + D1(`itda-db`)이다. 모든 쿼리는 `.prepare(...).bind(...)` 만 쓰고, 모든 응답은 `no-store`,
 화면은 서버에서 온 글자를 `textContent` 로만 넣는다(XSS 차단).
@@ -210,16 +217,20 @@ W면 그 글자로 먼저 두는 쪽(Lv.4)이 완전한 수로 이기고, 후공
 | `GET /api/mail/summary` | 안 읽은 메일·공지 수, 최신 공지 시각, 관리자 여부 (빨간 동그라미 판단용) |
 | `GET /api/mail/inbox` · `GET /api/mail/sent` | 받은/보낸 메일 목록 (로그인 필수, 비로그인 401) |
 | `POST /api/mail/send` | 메일 발송 (`to`, `subject`, `body`, `replyToId?`). 분당 10통·시간당 60통 제한 |
-| `POST /api/mail/read` · `POST /api/mail/delete` | 읽음 처리 · 내 메일함에서 삭제(소프트 삭제) |
+| `POST /api/mail/read` · `POST /api/mail/trash` · `POST /api/mail/restore` | 읽음 처리 · 내 쪽 휴지통으로 · 휴지통에서 복구 |
+| `GET /api/mail/trash` · `POST /api/mail/trash/empty` | 휴지통 목록(받은/보낸 구분) · 휴지통 비우기(내 쪽 완전 삭제) |
+| `POST /api/mail/delete` | 완전 삭제 (휴지통의 `완전 삭제`·`비우기`가 씀, 양쪽 다 지우면 행 삭제) |
+| `POST /api/mail/edit` | 보낸 메일 수정 (`id`, `subject`, `body`) — 발신자만, 휴지통에 넣은 메일은 404 |
 | `GET /api/mail/notices` | 공지 목록 (게스트 포함 공개, 로그인하면 읽음 여부 포함) |
 | `POST /api/mail/notices/read` | 공지 읽음 기록(사용자별 `notice_reads`) |
-| `POST /api/mail/notices` · `DELETE /api/mail/notices` | 공지 작성·삭제 — `ADMIN_USERNAMES` 관리자만, 아니면 **403 forbidden** |
+| `POST /api/mail/notices` · `POST /api/mail/notices/edit` · `DELETE /api/mail/notices` | 공지 작성·수정·삭제 — `ADMIN_USERNAMES` 관리자만, 아니면 **403 forbidden** |
 
 - 공지 작성 권한은 Cloudflare Pages 환경변수 **`ADMIN_USERNAMES`**(쉼표 구분 아이디)로만 열린다. 지금은 비어 있어 아무도 쓸 수 없다.
   Pages 프로젝트 `itda-play` → Settings → Variables and Secrets 에 아이디를 넣고 저장한 뒤 **새 배포**(main 푸시 또는 Retry deployment)를 한 번 하면
   그 아이디로 로그인한 사람에게 `공지 작성`·공지 `삭제`가 보인다(Pages 는 환경변수가 배포에 묶여 있어 저장만으로는 바뀌지 않는다).
 - 계정을 지우면 그 사람의 보낸·받은 메일과 공지 읽음 기록도 함께 정리한다.
-- 표: `mails`(발신·수신 아이디와 아이디 스냅숏, `reply_to_id`, 읽음/삭제 표시), `notices`, `notice_reads`(사용자·공지 복합 키).
+- 표: `mails`(발신·수신 아이디와 아이디 스냅숏, `reply_to_id`, 읽음/삭제 표시, 휴지통 시각 `sender_trashed_at`·`recipient_trashed_at`, 수정 시각 `updated_at`), `notices`(`updated_at`), `notice_reads`(사용자·공지 복합 키).
+- 기존 DB 에는 `db/migrations/2026-11-25-mail-trash-edit.sql` 의 `ALTER TABLE` 문장을 한 번 적용한다(새 DB 는 `db/schema.sql` 에 포함).
 
 ## 보안 · 폭주 방어
 
@@ -235,13 +246,13 @@ W면 그 글자로 먼저 두는 쪽(Lv.4)이 완전한 수로 이기고, 후공
 | 방어 | 값 |
 | --- | --- |
 | 요청 본문 크기 | `readJson()` 이 **32KB** 를 넘으면 **413 `payload_too_large`**. `Content-Length` 를 속이거나 없이 보내는 청크도 스트림을 읽다가 끊는다(Workers 메모리·CPU 보호) |
-| 쓰기 요청 제한 | `register` 10회/10분·IP, `login`·`google` 20회/10분·IP, 계정 삭제 10회/10분·IP, 메일 발송 분당 10통·시간당 60통, 메일 삭제 120회/분·사용자, 메일 읽음 240회/분·IP, 공지 쓰기/삭제 20회/10분·관리자, 공지 읽음 120회/분·사용자 |
-| 조회 요청 제한 | 요약 180회/분·IP, 받은/보낸 메일 150회/분·IP, 공지 목록 150회/분·IP — 화면은 요약을 60초에 한 번만 부르므로 정상 사용자는 걸리지 않는다 |
+| 쓰기 요청 제한 | `register` 10회/10분·IP, `login`·`google` 20회/10분·IP, 계정 삭제 10회/10분·IP, 메일 발송 분당 10통·시간당 60통, 메일 휴지통·복구 120회/분·사용자, 메일 완전 삭제 60회/분·사용자, 휴지통 비우기 10회/10분·사용자, 메일 수정 30회/10분·사용자, 메일 읽음 240회/분·IP, 공지 쓰기/삭제·수정 20회/10분·관리자, 공지 읽음 120회/분·사용자 |
+| 조회 요청 제한 | 요약 180회/분·IP, 받은/보낸 메일·휴지통 150회/분·IP, 공지 목록 150회/분·IP — 화면은 요약을 60초에 한 번만 부르므로 정상 사용자는 걸리지 않는다 |
 | 429 응답 | `Retry-After`(초)와 `error: rate_limited` 를 함께 준다 |
 | 스로틀 표 청소 | `auth_throttle` 은 요청 25번째·2% 확률로 `window_start` 가 2시간 넘은 행만 지운다(진행 중인 창은 그대로라 제한이 풀리지 않는다) |
 
-권한은 경로마다 다시 확인한다 — 읽음 처리는 `recipient_id = 세션 사용자` 인 행만 바꾸고(`updated` 0), 삭제는 보낸·받은 사람만(다른 사람 메일은 **404**),
-답장 연결(`replyToId`)은 본인이 참여한 메일만(아니면 400 `reply_invalid`, 존재 여부도 알려 주지 않는다), 공지 작성·삭제는 `ADMIN_USERNAMES` 만(아니면 403).
+권한은 경로마다 다시 확인한다 — 읽음 처리는 `recipient_id = 세션 사용자` 인 행만 바꾸고(`updated` 0), 휴지통·복구·삭제·수정은 보낸·받은 사람만(다른 사람 메일은 **404**),
+답장 연결(`replyToId`)은 본인이 참여한 메일만(아니면 400 `reply_invalid`, 존재 여부도 알려 주지 않는다), 메일 수정은 발신자만(받는 사람도 404), 공지 작성·수정·삭제는 `ADMIN_USERNAMES` 만(아니면 403).
 
 메일함 버튼은 메일 API 가 아예 없는 정적 주소(404·405)에서만 숨긴다 — 요청이 몰려 **429** 를 받거나 잠깐 끊겨도 버튼은 그대로 있고 다음 60초 주기에 다시 시도한다.
 
@@ -265,11 +276,13 @@ js/store.js         localStorage 설정 · 전적
 js/ui.js            화면 조립, 입력, 결과
 js/dict.js          단어 사전 화면(검색 · 두음 포함 · 정렬 4종 · 더 보기)
 js/account.js       계정 창(로그인 · 회원가입 · 내 계정 · 로그아웃 · 계정 삭제 2단계 확인)
+js/mail.js          메일함 창(받은 · 보낸 · 휴지통 · 공지 · 답장 · 수정)
 functions/api/auth/ 계정 API(Cloudflare Pages Functions) — config · me · register · login · google · logout · delete
 functions/_middleware.js 모든 요청의 출처(CSRF) 검사 · 보안 헤더
 functions/_lib/guard.js 출처 허용 범위 판단 · 보안 헤더
 functions/_lib/auth.js 비밀번호(PBKDF2)·세션 쿠키·Turnstile 검증·본문 크기 제한·요청 제한 공용 도우미
-db/schema.sql       D1 `itda-db` 스키마(users · sessions · auth_throttle)
+db/schema.sql       D1 `itda-db` 스키마(users · sessions · auth_throttle · mails · notices · notice_reads)
+db/migrations/      이미 만들어진 D1 에 새 칸만 더하는 마이그레이션(2026-11-25 휴지통·수정)
 build/build_data.py 단어 원본 → data/words.txt + data/stats.json(+ 음절 대전 그래프, 일상 어휘 단계)
 build/build_easy.py 일상 어휘 목록 → build/easy_words.txt (국립국어원 학습용 + TOPIK 어휘)
 build/collect_kkuko.py 오픈DB(공개 API) 단어 수집
@@ -308,7 +321,7 @@ python3 build/build_data.py --easy-only                 # easy_words.txt 만 바
 ```bash
 python3 tools/verify.py --local
 python3 tools/mail_check.py --local
-python3 tools/security_audit.py --local                                # 출처·권한·413·429·키보드·모바일 136건
+python3 tools/security_audit.py --local                                # 출처·권한·413·429·휴지통·수정·키보드·모바일 186건
 python3 tools/security_audit.py --url https://itda-play.pages.dev       # 라이브: 출처·413·429·화면 스모크
 python3 tools/verify.py --url https://itda-play.pages.dev
 ```
