@@ -2231,6 +2231,7 @@ def scenario_setup_clean(page, tag):
         const r = document.getElementById('btn-start').getBoundingClientRect();
         const lab = document.getElementById('btn-lab').getBoundingClientRect();
         const profile = document.getElementById('btn-account').getBoundingClientRect();
+        const account = document.getElementById('btn-account');
         const actions = document.querySelector('#scr-setup .top-actions').getBoundingClientRect();
         const board = setup.getBoundingClientRect();
         const text = setup.innerText;
@@ -2251,6 +2252,7 @@ def scenario_setup_clean(page, tag):
             labText: (document.getElementById('btn-lab').innerText || '').replace(/\\s+/g, ' ').trim(),
             profileLeft: Math.round(profile.left), actionsRight: Math.round(actions.right),
             profileTop: Math.round(profile.top),
+            accountVisible: !!account && !account.hidden && profile.width > 0,
             boardLeft: Math.round(board.left), boardTop: Math.round(board.top),
             viewH: window.innerHeight, viewW: window.innerWidth,
             scroll: { h: sec.scrollHeight, client: sec.clientHeight },
@@ -2269,11 +2271,15 @@ def scenario_setup_clean(page, tag):
           and view['labBottom'] <= view['viewH'],
           f'[{tag}] 대전 시작 바로 아래 실험실 버튼이 한 화면에 보임',
           f"{view['labText']} · lab {view['labTop']}~{view['labBottom']} / 화면 {view['viewH']}px")
-    check(0 <= view['profileLeft'] - view['boardLeft'] <= 24
-          and 0 <= view['profileTop'] - view['boardTop'] <= 40,
+    # 로컬 정적 서버에는 계정 API 가 없어 프로필 버튼이 숨는다(라이브에서는 보인다).
+    # 버튼이 보일 때만 위치를 재고, 숨었을 때는 빈 묶음만 남았는지 본다.
+    profile_gap_l = view['profileLeft'] - view['boardLeft']
+    profile_gap_t = view['profileTop'] - view['boardTop']
+    check((not view['accountVisible'] and profile_gap_l == 0)
+          or (0 <= profile_gap_l <= 24 and 0 <= profile_gap_t <= 40),
           f'[{tag}] 프로필(계정) 버튼이 설정 화면 왼쪽 위',
-          f"왼쪽 여백 {view['profileLeft'] - view['boardLeft']}px · 위 여백 "
-          f"{view['profileTop'] - view['boardTop']}px · 오른쪽 묶음 right {view['actionsRight']}px")
+          f"보임 {view['accountVisible']} · 왼쪽 여백 {profile_gap_l}px · 위 여백 {profile_gap_t}px · "
+          f"오른쪽 묶음 right {view['actionsRight']}px")
     check(view['scroll']['h'] <= view['scroll']['client'] + 1,
           f'[{tag}] 설정 화면 세로 스크롤 없음',
           f"{view['scroll']['h']} / {view['scroll']['client']}px")
