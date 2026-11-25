@@ -378,7 +378,7 @@ python3 build/build_data.py --easy-only                 # easy_words.txt 만 바
 ```bash
 python3 tools/verify.py --local
 python3 tools/mail_check.py --local
-python3 tools/social_check.py --local                                  # 프로필·친구 115건(사진 압축·검증 · 검색 제한 · 요청/수락/삭제 · 메일 연계)
+python3 tools/social_check.py --local                                  # 프로필·친구 118건(사진 압축·검증 · 검색 제한 · 요청/수락/삭제 · 메일 연계)
 python3 tools/social_live.py                                           # 라이브: 게스트 401 · 계정 임시 생성/삭제 · 스크린샷
 python3 tools/security_audit.py --local                                # 출처·권한·413·429·휴지통·수정·키보드·모바일 191건
 python3 tools/security_audit.py --url https://itda-play.pages.dev       # 라이브: 출처·413·429·화면 스모크

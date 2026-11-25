@@ -151,11 +151,15 @@ def clean_previous_runs():
         "DELETE FROM users WHERE username LIKE '점검%'",
         'DELETE FROM auth_throttle',
     ]
-    for statement in statements:
-        try:
-            d1(statement)
-        except Exception:
-            pass
+    try:
+        # 여러 문장을 한 번에 — wrangler 기동(4~5초)을 문장 수만큼 되풀이하지 않는다.
+        d1(';\n'.join(statements))
+    except Exception:
+        for statement in statements:
+            try:
+                d1(statement)
+            except Exception:
+                pass
 
 
 def reset_read_throttle():
@@ -277,6 +281,12 @@ def open_account(page):
     page.wait_for_timeout(350)
 
 
+def close_account(page):
+    if page.is_visible('#ov-account'):
+        page.click('#btn-account-close')
+        page.wait_for_timeout(300)
+
+
 def account_tab(page, key):
     page.click(f'#account-tabs [data-account-tab="{key}"]')
     page.wait_for_timeout(600)
@@ -328,7 +338,9 @@ def run(headless=True):
         browser = p.chromium.launch(executable_path=CHROME, headless=headless,
                                     args=['--no-sandbox', '--disable-dev-shm-usage'])
 
-        def open_page(user=None, width=1280, height=900, mobile=False):
+        def open_page(user=None, width=1280, height=900, mobile=False, app=False):
+            """app=True 면 사전(73만 단어)까지 다 뜬 화면이 필요하다(화면 점검용).
+            API 만 쓰는 페이지는 사전을 기다리지 않아 점검 시간을 크게 줄인다."""
             ctx = browser.new_context(
                 viewport={'width': width, 'height': height},
                 device_scale_factor=2 if mobile else 1,
@@ -336,11 +348,13 @@ def run(headless=True):
             )
             page = ctx.new_page()
             page.goto(LOCAL_URL, wait_until='domcontentloaded')
-            wait_ready(page)
+            if app:
+                wait_ready(page)
             if user:
                 login(page, user)
-                page.reload(wait_until='domcontentloaded')
-                wait_ready(page)
+                if app:
+                    page.reload(wait_until='domcontentloaded')
+                    wait_ready(page)
             return ctx, page
 
         def drop(ctx):
@@ -386,7 +400,7 @@ def run(headless=True):
 
         # ── 2. 닉네임 ─────────────────────────────────────────────────
         print('\n· 닉네임')
-        ctx_a, a = open_page(names['a'])
+        ctx_a, a = open_page(names['a'], app=True)
         res = api(a, '/api/auth/me')
         user = res['data']['user']
         check(user.get('nickname') == '' and user.get('displayName') == names['a'],
@@ -483,16 +497,18 @@ def run(headless=True):
         check(not a.is_visible('#profile-edit'), '저장하면 편집 칸이 닫힘')
         shot(a, 'local-desktop-account-photo')
 
-        res = api(a, '/api/account/profile', 'POST', {'removeAvatar': True})
-        check(res['status'] == 200 and res['data']['user']['avatarAt'] > 0 and res['data'].get('changed', {}).get('avatarRemoved'),
-              '사진 지우기', json.dumps(res['data'], ensure_ascii=False)[:200])
-        missing = fetch_bytes(a, f'/api/account/avatar?u={user["id"]}&v=1')
-        check(missing['status'] == 404, '지운 뒤 사진 404', str(missing['status']))
-        a.reload(wait_until='domcontentloaded')
-        wait_ready(a)
-        open_account(a)
+        # 화면에서 `사진 지우기` → 저장
+        a.click('#btn-profile-edit')
+        a.wait_for_selector('#profile-edit:not([hidden])', timeout=5000)
+        check(a.is_visible('#btn-avatar-remove'), '사진이 있으면 사진 지우기 버튼')
+        a.click('#btn-avatar-remove')
+        a.wait_for_timeout(300)
+        a.click('#btn-profile-save')
+        a.wait_for_timeout(1500)
         check(a.is_visible('#account-avatar-letter') and not a.is_visible('#account-avatar-img'),
               '사진을 지우면 첫 글자 아바타')
+        missing = fetch_bytes(a, f'/api/account/avatar?u={user["id"]}&v=1')
+        check(missing['status'] == 404, '지운 뒤 사진 404', str(missing['status']))
 
         # 413: 40KB 본문
         big = 'x' * (40 * 1024)
@@ -615,8 +631,6 @@ def run(headless=True):
         print('\n· 화면: 계정 탭 · 검색 · 요청 · 수락 · 메일 · 삭제')
         reset_read_throttle()
         # A 화면: 친구 탭에서 D 검색 → 요청
-        a.reload(wait_until='domcontentloaded')
-        wait_ready(a)
         open_account(a)
         check(a.get_attribute('#account-tabs [data-account-tab="profile"]', 'aria-selected') == 'true',
               '계정 창은 내 계정 탭부터')
@@ -637,7 +651,7 @@ def run(headless=True):
         check('친구 요청을 보냈어요' in a.inner_text('.toast'), '요청 보냄 안내', a.inner_text('.toast'))
 
         # B 화면: 새로 열면 계정 버튼에 빨간 점(받은 요청)은 없고(A와 친구 끊김), D 는 받음
-        ctx_d, d = open_page(names['d'])
+        ctx_d, d = open_page(names['d'], app=True)
         d.wait_for_selector('#account-badge:not([hidden])', timeout=12000)
         check(d.is_visible('#account-badge'), '받은 요청이 있으면 계정 버튼에 빨간 점')
         check('받은 친구 요청' in (d.get_attribute('#btn-account', 'aria-label') or ''),
@@ -685,8 +699,7 @@ def run(headless=True):
         check(len(mail) == 1 and mail[0]['senderUsername'] == names['d'],
               'A 받은 메일 1통', json.dumps(mail, ensure_ascii=False)[:200])
         check(mail and mail[0].get('senderNickname') == '', '닉네임이 없으면 빈값', json.dumps(mail[:1], ensure_ascii=False)[:160])
-        a.reload(wait_until='domcontentloaded')
-        wait_ready(a)
+        close_account(a)
         a.click('#btn-mail')
         a.wait_for_selector('#ov-mail:not([hidden])', timeout=8000)
         a.wait_for_timeout(700)
@@ -696,8 +709,8 @@ def run(headless=True):
         # 닉네임을 정한 사람의 메일은 닉네임과 @아이디가 함께
         api(d, '/api/account/profile', 'POST', {'nickname': '메일친구'})
         api(a, '/api/mail/inbox')
-        a.reload(wait_until='domcontentloaded')
-        wait_ready(a)
+        a.click('#btn-mail-close')
+        a.wait_for_timeout(300)
         a.click('#btn-mail')
         a.wait_for_selector('#ov-mail:not([hidden])', timeout=8000)
         a.wait_for_timeout(800)
@@ -733,8 +746,8 @@ def run(headless=True):
         res = api(a, '/api/account/profile', 'POST', {'nickname': '<b>해커</b>'})
         check(res['status'] == 200 and res['data']['user']['nickname'] == '<b>해커</b>',
               '태그가 든 닉네임도 저장', json.dumps(res['data'], ensure_ascii=False)[:160])
-        a.reload(wait_until='domcontentloaded')
-        wait_ready(a)
+        a.evaluate("() => window.__ITDA.app.accountPanel.refreshUser({ force: true })")
+        a.wait_for_timeout(900)
         xss = a.evaluate("""() => {
             const box = document.getElementById('account-name');
             return {text: box.textContent, tags: box.querySelectorAll('*').length};
@@ -759,6 +772,24 @@ def run(headless=True):
         drop(ctx_e)
 
         # ── 8. 좁은 화면 ──────────────────────────────────────────────
+        # 좁은 화면에서도 친구 한 줄(사진·이름·버튼)이 넘치지 않는지 보려고 친구를 하나 만든다.
+        ctx_c2, c2 = open_page(names['c'])
+        res = api(a, '/api/friends/request', 'POST', {'username': names['c']})
+        check(res['status'] == 200, '좁은 화면 점검용 친구 요청', json.dumps(res['data'], ensure_ascii=False)[:120])
+        res = api(c2, '/api/friends/respond', 'POST', {'userId': user['id'], 'action': 'accept'})
+        check(res['status'] == 200, '좁은 화면 점검용 친구 수락')
+        drop(ctx_c2)
+        a.click('#btn-account-close')
+        a.wait_for_timeout(300)
+        a.set_viewport_size({'width': 390, 'height': 844})
+        a.wait_for_timeout(300)
+        open_account(a)
+        account_tab(a, 'friends')
+        friend_tab(a, 'friends')
+        a.wait_for_timeout(800)
+        check(a.locator('#friend-list .friend-item').count() == 1, '좁은 화면 점검용 친구 1명',
+              str(a.locator('#friend-list .friend-item').count()))
+
         print('\n· 화면 크기 320 · 360 · 390')
         for width, height, tag in [(320, 640, '320'), (360, 640, '360'), (390, 844, '390')]:
             a.set_viewport_size({'width': width, 'height': height})
@@ -787,7 +818,7 @@ def run(headless=True):
         # ── 9. 정리 ───────────────────────────────────────────────────
         print('\n· 정리')
         quoted = ','.join("'%s'" % name for name in created)
-        for statement in [
+        statements = [
             f'DELETE FROM friendships WHERE requester_id IN (SELECT id FROM users WHERE username IN ({quoted}))'
             f' OR addressee_id IN (SELECT id FROM users WHERE username IN ({quoted}))',
             f'DELETE FROM mails WHERE sender_id IN (SELECT id FROM users WHERE username IN ({quoted}))'
@@ -795,11 +826,15 @@ def run(headless=True):
             f'DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE username IN ({quoted}))',
             f'DELETE FROM users WHERE username IN ({quoted})',
             "DELETE FROM auth_throttle",
-        ]:
-            try:
-                d1(statement)
-            except Exception:
-                pass
+        ]
+        try:
+            d1(';\n'.join(statements))
+        except Exception:
+            for statement in statements:
+                try:
+                    d1(statement)
+                except Exception:
+                    pass
         remaining = d1_value(f"SELECT COUNT(*) FROM users WHERE username IN ({quoted})")
         check(int(remaining or 0) == 0, '점검 데이터 정리', str(remaining))
         try:

@@ -283,7 +283,8 @@ def run(headless=True):
             a.wait_for_timeout(400)
             open_account(a)
             a.click('#account-tabs [data-account-tab="friends"]')
-            a.wait_for_timeout(600)
+            a.click('#friend-tabs [data-friend-tab="friends"]')
+            a.wait_for_timeout(700)
             mobile = a.evaluate("""() => {
                 const sheet = document.querySelector('#ov-account .sheet');
                 return { over: sheet.scrollWidth - sheet.clientWidth,
