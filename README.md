@@ -321,7 +321,7 @@ python3 build/build_data.py --easy-only                 # easy_words.txt 만 바
 ```bash
 python3 tools/verify.py --local
 python3 tools/mail_check.py --local
-python3 tools/security_audit.py --local                                # 출처·권한·413·429·휴지통·수정·키보드·모바일 186건
+python3 tools/security_audit.py --local                                # 출처·권한·413·429·휴지통·수정·키보드·모바일 187건
 python3 tools/security_audit.py --url https://itda-play.pages.dev       # 라이브: 출처·413·429·화면 스모크
 python3 tools/verify.py --url https://itda-play.pages.dev
 ```
