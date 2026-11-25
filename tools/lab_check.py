@@ -685,7 +685,7 @@ def main():
             host.click('#btn-lab')
             host.wait_for_timeout(500)
 
-            widths = [(320, 700), (360, 760), (390, 844), (768, 900), (1024, 800), (1280, 900)]
+            widths = [(320, 700), (360, 760), (390, 844), (768, 900), (1024, 800), (1280, 900), (1920, 1080), (2560, 1440)]
             for width, height in widths:
                 host.set_viewport_size({'width': width, 'height': height})
                 host.wait_for_timeout(320)
