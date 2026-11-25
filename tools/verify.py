@@ -5,7 +5,7 @@
  - 콘솔/페이지 에러, 가로 오버플로
  - 두음법칙 · 중복 차단 · 4단계 극악 한방 승리 · 봇 난이도 규칙
  - 힌트 삭제(버튼·로직·문구·API 없음)와 입력 바 배치
- - 설정 화면 정리(상단 태그라인·하단 규칙/팁/전적 블록이 DOM·CSS·JS에 없음, 대전 시작이 마지막 요소, 세로 스크롤 0)와 전적 저장 유지
+ - 설정 화면 정리(상단 태그라인·하단 규칙/팁/전적 블록이 DOM·CSS·JS에 없음, 대전 시작·실험실 버튼이 마지막, 세로 스크롤 0)와 전적 저장 유지
  - 배려모드(스위치 · 저장 · 첫 5수 플레이어 한방 차단과 타이머 유지 · Lv.1~5 봇 한방 회피 ·
    5수째 한방뿐인 자리 처리 · 6수부터 허용 · 헤더/결과 배지 · 설정 화면 스크롤 0)
  - 첫 제시 글자(끄투식): 제시어(사전의 2~3글자 일상 단어)에서 뽑은 글자 · 모든 글자 이어짐 ·
@@ -2229,6 +2229,9 @@ def scenario_setup_clean(page, tag):
         const kids = [...setup.children];
         const last = kids[kids.length - 1];
         const r = document.getElementById('btn-start').getBoundingClientRect();
+        const lab = document.getElementById('btn-lab').getBoundingClientRect();
+        const profile = document.getElementById('btn-account').getBoundingClientRect();
+        const actions = document.querySelector('#scr-setup .top-actions').getBoundingClientRect();
         const text = setup.innerText;
         return {
             nodes: {
@@ -2243,7 +2246,10 @@ def scenario_setup_clean(page, tag):
             lastId: last ? last.id : '',
             kids: kids.map((el) => el.id || el.className),
             startTop: Math.round(r.top), startBottom: Math.round(r.bottom),
-            viewH: window.innerHeight,
+            labTop: Math.round(lab.top), labBottom: Math.round(lab.bottom),
+            labText: (document.getElementById('btn-lab').innerText || '').replace(/\\s+/g, ' ').trim(),
+            profileLeft: Math.round(profile.left), actionsRight: Math.round(actions.right),
+            viewH: window.innerHeight, viewW: window.innerWidth,
             scroll: { h: sec.scrollHeight, client: sec.clientHeight },
         };
     }""")
@@ -2251,11 +2257,17 @@ def scenario_setup_clean(page, tag):
     check(not any(nodes.values()), f'[{tag}] 설정 화면에서 지운 요소 DOM에 없음',
           json.dumps(nodes, ensure_ascii=False))
     check(not view['leftoverText'], f'[{tag}] 지운 요소의 문구 0건', str(view['leftoverText']))
-    check(view['lastId'] == 'btn-start', f'[{tag}] 대전 시작 버튼이 설정 화면 마지막 요소',
+    check(view['lastId'] == 'start-stack', f'[{tag}] 대전 시작 버튼이 설정 화면 마지막 요소',
           str(view['kids']))
     check(view['startTop'] > 0 and view['startBottom'] <= view['viewH'],
           f'[{tag}] 대전 시작 버튼이 스크롤 없이 보임',
           f"start {view['startTop']}~{view['startBottom']} / 화면 {view['viewH']}px")
+    check('실험실' in view['labText'] and view['labTop'] > view['startTop']
+          and view['labBottom'] <= view['viewH'],
+          f'[{tag}] 대전 시작 바로 아래 실험실 버튼이 한 화면에 보임',
+          f"{view['labText']} · lab {view['labTop']}~{view['labBottom']} / 화면 {view['viewH']}px")
+    check(view['profileLeft'] <= 24, f'[{tag}] 프로필(계정) 버튼이 설정 화면 왼쪽 위',
+          f"left {view['profileLeft']}px · 오른쪽 묶음 right {view['actionsRight']}px")
     check(view['scroll']['h'] <= view['scroll']['client'] + 1,
           f'[{tag}] 설정 화면 세로 스크롤 없음',
           f"{view['scroll']['h']} / {view['scroll']['client']}px")
@@ -2301,18 +2313,19 @@ def scenario_setup_clean(page, tag):
         const kids = [...setup.children];
         const last = kids[kids.length - 1];
         const r = document.getElementById('btn-start').getBoundingClientRect();
+        const lab = document.getElementById('btn-lab').getBoundingClientRect();
         const mercy = document.getElementById('btn-mercy').getBoundingClientRect();
         const lv = document.getElementById('levels').getBoundingClientRect();
         return {
-            lastId: last ? last.id : '', lastIsStart: !!(last && last.id === 'btn-start'),
+            lastId: last ? last.id : '', lastIsStack: !!(last && last.id === 'start-stack'),
             scroll: sec.scrollHeight - sec.clientHeight,
-            startBottom: Math.round(r.bottom), vh: innerHeight,
+            startBottom: Math.round(r.bottom), labBottom: Math.round(lab.bottom), vh: innerHeight,
             mercyTop: Math.round(mercy.top), mercyBottom: Math.round(mercy.bottom),
             levelsBottom: Math.round(lv.bottom),
             mercyGap: Math.round(mercy.top - lv.bottom),
         };
     }""")
-    check(tiny['lastIsStart'] and tiny['scroll'] <= 1 and tiny['startBottom'] <= tiny['vh'],
+    check(tiny['lastIsStack'] and tiny['scroll'] <= 1 and tiny['labBottom'] <= tiny['vh'],
           f'[{tag}] 360x640 설정 화면 한 화면·대전 시작 마지막',
           json.dumps(tiny, ensure_ascii=False))
     check(tiny['mercyGap'] >= 8, f'[{tag}] 360x640 난이도와 배려모드 사이 여백 유지', str(tiny['mercyGap']))
@@ -2385,7 +2398,7 @@ def scenario_dict(page, tag):
     page.evaluate("window.__ITDA.app.hideResult(); window.__ITDA.app.show('setup')")
     page.wait_for_timeout(220)
 
-    # 1) 진입 버튼은 설정 화면 맨 위 오른쪽, 기존 정리 규칙(대전 시작이 마지막·세로 스크롤 0) 유지
+    # 1) 진입 버튼은 설정 화면 맨 위 오른쪽, 기존 정리 규칙(대전 시작·실험실이 마지막·세로 스크롤 0) 유지
     view = page.evaluate("""() => {
         const btn = document.getElementById('btn-dict');
         const r = btn ? btn.getBoundingClientRect() : null;
@@ -2421,12 +2434,12 @@ def scenario_dict(page, tag):
         top_gap = view['rect']['top'] if view['rect'] else 10 ** 6
     check(view['rect'] and top_gap <= 40, f'[{tag}] 사전 버튼이 설정 화면 맨 위',
           f"top {view['rect']['top']}px (판 {view['box']['top']}px)" if view['rect'] else 'no button')
-    # 상단 버튼은 설정 · 사전 · 계정 세 개가 한 묶음(.top-actions)으로 오른쪽 모서리에 앉는다.
-    # 사전 버튼은 그 묶음 안에서 설정 옆에 있고, 묶음 자체가 화면 오른쪽에 붙어 있는지 본다.
+    # 상단 버튼은 설정 · 사전 · 메일 세 개가 한 묶음(.top-actions)으로 오른쪽 모서리에 앉고,
+    # 프로필(계정)은 왼쪽 위에 따로 앉는다. 사전 버튼이 그 오른쪽 묶음 안에 있는지 본다.
     group_gap = (view['box']['right'] - view['actionsRight']) if view['rect'] else -1
     check(view['inGroup'] and 0 <= group_gap <= 24, f'[{tag}] 사전 버튼이 설정 화면 오른쪽',
           f"묶음 여백 {group_gap}px (열 {view['box']['right']}px) · 묶음 안 {view['inGroup']}")
-    check(view['lastId'] == 'btn-start' and view['scroll'] <= 1 and view['startBottom'] <= view['vh'],
+    check(view['lastId'] == 'start-stack' and view['scroll'] <= 1 and view['startBottom'] <= view['vh'],
           f'[{tag}] 사전 버튼이 설정 화면 정리 규칙을 깨지 않음',
           f"마지막 {view['lastId']} · 스크롤 {view['scroll']}px · 시작 {view['startBottom']}/{view['vh']}px")
 
@@ -2752,7 +2765,7 @@ def scenario_dict(page, tag):
     }""")
     check(back['dict'] and back['setup'], f'[{tag}] 돌아가기로 설정 화면 복귀',
           json.dumps({k: back[k] for k in ('dict', 'setup')}, ensure_ascii=False))
-    check(back['last'] == 'btn-start' and back['scroll'] <= 1 and back['startBottom'] <= back['vh'],
+    check(back['last'] == 'start-stack' and back['scroll'] <= 1 and back['startBottom'] <= back['vh'],
           f'[{tag}] 돌아온 설정 화면 스크롤 0 · 대전 시작 마지막',
           f"마지막 {back['last']} · 스크롤 {back['scroll']}px")
     check(back['focusInDict'] != 'dict-input', f'[{tag}] 사전을 닫으면 사전 입력에서 포커스가 빠짐', back['focusInDict'])
@@ -3393,17 +3406,19 @@ def scenario_layout_regressions(page, tag):
             const sec = document.getElementById('scr-setup');
             const brand = document.querySelector('.brand').getBoundingClientRect();
             const start = () => document.getElementById('btn-start').getBoundingClientRect();
+            const lab = () => document.getElementById('btn-lab').getBoundingClientRect();
             sec.scrollTop = 0;
             const top = { brandTop: Math.round(brand.top), startBottom: Math.round(start().bottom) };
             sec.scrollTop = sec.scrollHeight;
-            const bottom = { startBottom: Math.round(start().bottom), maxScroll: sec.scrollHeight - sec.clientHeight };
+            const bottom = { startBottom: Math.round(start().bottom), labBottom: Math.round(lab().bottom),
+                             maxScroll: sec.scrollHeight - sec.clientHeight };
             sec.scrollTop = 0;
             return { top, bottom, vh: innerHeight };
         }""")
         check(v['top']['brandTop'] >= 0, f'[{tag}] {vw}x{vh} 설정 보드 위가 잘리지 않음',
               json.dumps(v['top'], ensure_ascii=False))
-        check(v['bottom']['startBottom'] <= v['vh'] + 1,
-              f'[{tag}] {vw}x{vh} 스크롤하면 대전 시작까지 닿음',
+        check(v['bottom']['startBottom'] <= v['vh'] + 1 and v['bottom']['labBottom'] <= v['vh'] + 1,
+              f'[{tag}] {vw}x{vh} 스크롤하면 대전 시작·실험실까지 닿음',
               f"{json.dumps(v['bottom'], ensure_ascii=False)} / 화면 {v['vh']}px")
         check(sum(overflow(page).values()) <= 0, f'[{tag}] {vw}x{vh} 설정 가로 오버플로 0', str(overflow(page)))
 

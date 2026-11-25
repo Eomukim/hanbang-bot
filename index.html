@@ -36,6 +36,17 @@
   <!-- ────────────── 설정 ────────────── -->
   <section class="screen screen-setup" id="scr-setup" data-screen="setup" hidden>
     <div class="setup">
+      <!-- 왼쪽 위: 프로필(계정) — 로그인 전에는 숨고, 로그인 뒤 아바타·접속 점이 붙는다 -->
+      <div class="top-profile">
+        <button class="top-btn top-btn-account" id="btn-account" type="button" hidden
+                title="로그인" aria-label="로그인 · 회원가입"
+                aria-haspopup="dialog" aria-controls="ov-auth" aria-expanded="false">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="4" r="2.05"/><path d="M2.15 10.4c.42-2.05 1.95-3.35 3.85-3.35s3.43 1.3 3.85 3.35"/></svg>
+          <span class="account-badge" id="account-badge" hidden aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <!-- 오른쪽 위: 설정 · 사전 · 메일 -->
       <div class="top-actions">
         <button class="top-btn top-btn-settings" id="btn-settings" type="button" title="설정" aria-label="설정"
                 aria-haspopup="dialog" aria-controls="ov-settings" aria-expanded="false">
@@ -45,21 +56,11 @@
                 aria-haspopup="true" aria-controls="scr-dict">
           <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.6 2.1h3c.7 0 1.3.6 1.3 1.3v6.5c0-.6-.6-1.1-1.3-1.1h-3zM10.4 2.1h-3c-.7 0-1.3.6-1.3 1.3v6.5c0-.6.6-1.1 1.3-1.1h3z"/></svg>
         </button>
-        <button class="top-btn top-btn-lab" id="btn-lab" type="button"
-                title="실험실 · 최대 8인 커스텀 방" aria-label="실험실">
-          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.6 1.6h2.8M5.3 1.6v3.1L2.2 9.6c-.4.7.1 1.5.9 1.5h5.8c.8 0 1.3-.8.9-1.5L6.7 4.7V1.6"/><path d="M3.7 7.7h4.6"/></svg>
-        </button>
         <button class="top-btn top-btn-mail" id="btn-mail" type="button"
                 title="메일함" aria-label="메일함"
                 aria-haspopup="dialog" aria-controls="ov-mail" aria-expanded="false">
           <svg viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="2.4" width="9" height="7.2" rx="1.4"/><path d="M1.9 3.2 6 6.5l4.1-3.3"/></svg>
           <span class="mail-badge" id="mail-badge" hidden aria-hidden="true"></span>
-        </button>
-        <button class="top-btn top-btn-account" id="btn-account" type="button" hidden
-                title="로그인" aria-label="로그인 · 회원가입"
-                aria-haspopup="dialog" aria-controls="ov-auth" aria-expanded="false">
-          <svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="4" r="2.05"/><path d="M2.15 10.4c.42-2.05 1.95-3.35 3.85-3.35s3.43 1.3 3.85 3.35"/></svg>
-          <span class="account-badge" id="account-badge" hidden aria-hidden="true"></span>
         </button>
       </div>
 
@@ -105,9 +106,27 @@
         <div class="segmented" id="first-opts" role="radiogroup" aria-label="선공"></div>
       </div>
 
-      <button class="btn primary big" id="btn-start" type="button">
-        <span>대전 시작</span><kbd>ENTER</kbd>
-      </button>
+      <div class="start-stack" id="start-stack">
+        <button class="btn primary big" id="btn-start" type="button">
+          <span>대전 시작</span><kbd>ENTER</kbd>
+        </button>
+
+        <!-- 대전 시작 바로 아래: 실험실(최대 8인 커스텀 방) 입구 -->
+        <button class="lab-entry" id="btn-lab" type="button"
+                title="실험실 · 최대 8인 커스텀 방" aria-label="실험실 · 최대 8인 커스텀 방"
+                aria-controls="scr-lab">
+          <span class="lab-entry-icon" aria-hidden="true">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.6 1.6h2.8M5.3 1.6v3.1L2.2 9.6c-.4.7.1 1.5.9 1.5h5.8c.8 0 1.3-.8.9-1.5L6.7 4.7V1.6"/><path d="M3.7 7.7h4.6"/></svg>
+          </span>
+          <span class="lab-entry-text">
+            <b>실험실</b>
+            <small>최대 8인 커스텀 방</small>
+          </span>
+          <span class="lab-entry-go" aria-hidden="true">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.6 2.6 8 6l-3.4 3.4"/></svg>
+          </span>
+        </button>
+      </div>
     </div>
   </section>
 

@@ -123,8 +123,9 @@ PROBE = r"""
       settings: scroll('#ov-settings .sheet'), chain: scroll('.chain'), arena: scroll('.arena'),
     },
     box: {
-      setup: box('.setup'), topActions: box('.top-actions'), brand: box('.brand'),
-      logo: box('.brand .logo-mark'), levels: box('.levels'), start: box('#btn-start'),
+      setup: box('.setup'), topActions: box('.top-actions'), topProfile: box('.top-profile'),
+      brand: box('.brand'), logo: box('.brand .logo-mark'), levels: box('.levels'),
+      start: box('#btn-start'), lab: box('#btn-lab'),
       gameTop: box('.game-top'), gameRow: box('.game-top-row'), botInfo: box('.bot-info'),
       score: box('.scoreboard'), quit: box('#btn-quit'), arena: box('.arena'),
       chain: box('.chain'), stage: box('.stage'), stageWord: box('.stage-word'),
@@ -184,13 +185,15 @@ def issues_for(vp_name, st):
 def setup_checks(st):
     vw, vh, b = st['vw'], st['vh'], st['box']
     bad = issues_for('setup', st)
-    for key in ('setup', 'topActions', 'brand', 'levels', 'start'):
+    for key in ('setup', 'topActions', 'topProfile', 'brand', 'levels', 'start', 'lab'):
         if b[key] and not inside(b[key], vw, vh):
             bad.append(f"{key} 화면 밖 {b[key]}")
     if st['scroll']['setup'] and st['scroll']['setup']['sh'] > st['scroll']['setup']['ch'] + 1:
         bad.append(f"세로 스크롤 {st['scroll']['setup']['sh']} > {st['scroll']['setup']['ch']}")
     if overlap(b['topActions'], b['logo']):
         bad.append('상단 버튼이 로고와 겹침')
+    if overlap(b['topProfile'], b['logo']):
+        bad.append('프로필 버튼이 로고와 겹침')
     if b['levels'] and b['levels']['w'] < 200:
         bad.append(f"난이도 줄이 너무 좁음 {b['levels']['w']}")
     return bad

@@ -77,10 +77,15 @@ def main():
 
         print('\n[1] 라이브 · 게스트 화면')
         check(bool(page.query_selector('#btn-lab')), '홈에 🧪 실험실 버튼')
+        check(page.eval_on_selector('#btn-lab', 'e => !!e.closest(".start-stack")'),
+              '실험실 버튼은 대전 시작 바로 아래 큰 버튼')
+        check(not page.query_selector('.top-actions #btn-lab'), '상단 아이콘 바에서 실험실 버튼을 빼냄')
         check(not page.query_selector('#btn-mono'), '흑백모드 토글은 없다')
         band = page.eval_on_selector_all('.top-actions .top-btn', 'els => els.map(e => e.id)')
-        check(band[:5] == ['btn-settings', 'btn-dict', 'btn-lab', 'btn-mail', 'btn-account'],
-              '상단 버튼 순서: 설정 · 사전 · 실험실 · 메일 · 계정', json.dumps(band))
+        check(band[:3] == ['btn-settings', 'btn-dict', 'btn-mail'],
+              '상단 오른쪽 버튼 순서: 설정 · 사전 · 메일', json.dumps(band))
+        prof = page.eval_on_selector_all('.top-profile .top-btn', 'els => els.map(e => e.id)')
+        check(prof[:1] == ['btn-account'], '프로필(계정) 버튼은 왼쪽 위', json.dumps(prof))
         page.click('#btn-lab')
         page.wait_for_timeout(400)
         check(not page.is_hidden('#scr-lab'), '실험실 화면이 열린다')

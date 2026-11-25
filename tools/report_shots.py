@@ -6,7 +6,7 @@
 - 난이도 5단계(Lv.4 극악 · Lv.5 지옥) 카드와 Lv.5 대전 화면
 - Lv.5 지옥 봇이 실제로: 한방 즉사 · 상대 한방 각 회피 · 강제 필승 · 소수 후보 압박 · 미션/장문
 - 4단계 극악 한방 봇 동작 확인
-- 설정 화면 정리: 상단 태그라인·하단 규칙/팁/전적 블록 없음, 대전 시작이 마지막 요소, 세로 스크롤 0
+- 설정 화면 정리: 상단 태그라인·하단 규칙/팁/전적 블록 없음, 대전 시작·실험실 버튼이 마지막 요소, 세로 스크롤 0
 - 단어 사전: 설정 화면 오른쪽 위 📖 사전 버튼 · ‘이’ 1글자 검색 · 어려움순(한방·후속 수) ·
   쉬움순(일상 먼저) · 100개씩 더 보기 · 돌아가기 (dict.png, dict-easy.png, mobile-dict.png)
 - 사전 단어 클릭 복사(토스트) · ‘후속 O개’ 클릭으로 그 끝 글자 재검색 · ← 이전 칩
@@ -590,20 +590,24 @@ def main():
             const sec = document.getElementById('scr-setup');
             const box = document.querySelector('.brand').getBoundingClientRect();
             const r = document.getElementById('btn-start').getBoundingClientRect();
+            const lab = document.getElementById('btn-lab').getBoundingClientRect();
             return {
                 removed: document.querySelectorAll('.tagline, .rules-line, .tips, .record, #dict-count, #record').length,
                 last: last ? (last.id || last.className) : '',
                 kids: kids.map((el) => el.id || el.className),
                 scroll: sec.scrollHeight - sec.clientHeight,
                 brandTop: Math.round(box.top), startBottom: Math.round(r.bottom),
+                labBottom: Math.round(lab.bottom),
                 viewH: window.innerHeight,
             };
         }""")
-        check(clean['removed'] == 0 and clean['last'] == 'btn-start',
-              '설정 화면 정리(태그라인·규칙·팁·전적 없음 · 대전 시작이 마지막)',
+        check(clean['removed'] == 0 and clean['last'] == 'start-stack',
+              '설정 화면 정리(태그라인·규칙·팁·전적 없음 · 대전 시작+실험실이 마지막)',
               json.dumps(clean, ensure_ascii=False))
-        check(clean['scroll'] <= 1 and clean['startBottom'] <= clean['viewH'] and clean['brandTop'] > 0,
-              '설정 화면이 스크롤 없이 한 화면에', f"{clean['brandTop']}~{clean['startBottom']} / {clean['viewH']}px")
+        check(clean['scroll'] <= 1 and clean['startBottom'] <= clean['viewH']
+              and clean['labBottom'] <= clean['viewH'] and clean['brandTop'] > 0,
+              '설정 화면이 스크롤 없이 한 화면에',
+              f"{clean['brandTop']}~{clean['labBottom']} / {clean['viewH']}px")
         summary['setup'] = clean
         page.screenshot(path=os.path.join(OUT, 'setup.png'))
         summary['desktop_settings'] = settings_shots(page, 'desktop')
@@ -1066,17 +1070,19 @@ def main():
             const last = kids[kids.length - 1];
             const sec = document.getElementById('scr-setup');
             const r = document.getElementById('btn-start').getBoundingClientRect();
+            const lab = document.getElementById('btn-lab').getBoundingClientRect();
             const box = document.querySelector('.brand').getBoundingClientRect();
             return {
                 removed: document.querySelectorAll('.tagline, .rules-line, .tips, .record, #dict-count, #record').length,
                 last: last ? (last.id || last.className) : '',
                 scroll: sec.scrollHeight - sec.clientHeight,
                 brandTop: Math.round(box.top), startBottom: Math.round(r.bottom),
+                labBottom: Math.round(lab.bottom),
                 viewH: window.innerHeight,
             };
         }""")
-        check(mobile_clean['removed'] == 0 and mobile_clean['last'] == 'btn-start'
-              and mobile_clean['scroll'] <= 1 and mobile_clean['startBottom'] <= mobile_clean['viewH']
+        check(mobile_clean['removed'] == 0 and mobile_clean['last'] == 'start-stack'
+              and mobile_clean['scroll'] <= 1 and mobile_clean['labBottom'] <= mobile_clean['viewH']
               and mobile_clean['brandTop'] > 0,
               '모바일 설정 화면 정리·스크롤 없음', json.dumps(mobile_clean, ensure_ascii=False))
         summary['mobile_setup'] = mobile_clean

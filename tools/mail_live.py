@@ -151,8 +151,12 @@ def run(headless=True):
         guest.goto(URL, wait_until='domcontentloaded')
         wait_ready(guest)
         order = guest.eval_on_selector_all('.top-actions .top-btn', 'els => els.map(e => e.id)')
-        check(order[:5] == ['btn-settings', 'btn-dict', 'btn-lab', 'btn-mail', 'btn-account'],
-              '상단 버튼: 설정 · 사전 · 메일 · 계정', json.dumps(order))
+        check(order[:3] == ['btn-settings', 'btn-dict', 'btn-mail'],
+              '상단 오른쪽 버튼: 설정 · 사전 · 메일', json.dumps(order))
+        prof = guest.eval_on_selector_all('.top-profile .top-btn', 'els => els.map(e => e.id)')
+        check(prof[:1] == ['btn-account'], '프로필(계정) 버튼은 왼쪽 위', json.dumps(prof))
+        check(guest.eval_on_selector('#btn-lab', 'e => !!e.closest(".start-stack")'),
+              '실험실 버튼은 대전 시작 아래 큰 버튼')
         check(guest.is_visible('#btn-mail') and guest.inner_text('#btn-mail').strip() == '',
               '메일함 버튼은 아이콘만')
         shot(guest, 'live-desktop-home')
