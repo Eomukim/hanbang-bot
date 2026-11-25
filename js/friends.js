@@ -262,10 +262,10 @@ export class FriendsPanel {
     if (user.nickname) {
       who.appendChild(el('b', 'friend-name', user.displayName || user.nickname));
       who.appendChild(el('small', 'friend-handle', `@${user.username}`));
-      if (user.online) who.appendChild(el('small', 'friend-live', '접속 중'));
     } else {
       who.appendChild(el('b', 'friend-name', `@${user.username}`));
     }
+    if (user.online) who.appendChild(el('small', 'friend-live', '접속 중'));
     item.appendChild(who);
 
     const actions = el('div', 'friend-actions');

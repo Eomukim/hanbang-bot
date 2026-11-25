@@ -3507,3 +3507,15 @@ html.dark .screen-game {
   .lab-seats { grid-template-columns: 1fr 1fr; }
   .lab-seat-add { grid-column: 1 / -1; }
 }
+
+/* 친구 목록의 접속 중 표시 — 사진 옆 초록 점 + 작은 글씨 */
+.friend-item { position: relative; }
+.friend-online {
+  flex: 0 0 auto;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #3BB07A;
+  box-shadow: 0 0 0 2px var(--tile), 0 0 6px rgba(59, 176, 122, .45);
+  margin: 0 -4px 0 -6px;
+  align-self: center;
+}
+.friend-live { color: var(--sage-ink) !important; font-weight: 800; }

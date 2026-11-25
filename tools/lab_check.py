@@ -481,6 +481,27 @@ def main():
             host.uncheck('#lab-rule-nolimit')
             host.wait_for_timeout(150)
 
+            # 친구 탭의 접속 중 표시(초록 점) — 실험실 친구 목록과 같은 last_seen_at 을 본다.
+            host.evaluate("() => window.__ITDA.app.accountPanel.openAccount()")
+            host.wait_for_timeout(500)
+            host.evaluate("() => window.__ITDA.app.accountPanel.showAccountTab('friends')")
+            host.wait_for_timeout(900)
+            host.click('#friend-tabs [data-friend-tab="friends"]')
+            host.wait_for_timeout(600)
+            online_dot = host.evaluate("""() => {
+                const dot = document.querySelector('.friend-list .friend-online');
+                const r = dot ? dot.getBoundingClientRect() : null;
+                return { count: document.querySelectorAll('.friend-list .friend-online').length,
+                         w: r ? Math.round(r.width) : 0, h: r ? Math.round(r.height) : 0,
+                         live: !![...document.querySelectorAll('.friend-list .friend-live')].find((n) => n.textContent.includes('접속 중')) };
+            }""")
+            check(online_dot['count'] >= 1 and online_dot['w'] >= 6 and online_dot['h'] >= 6 and online_dot['live'],
+                  '친구 탭에 접속 중(초록 점·글씨) 표시', json.dumps(online_dot, ensure_ascii=False))
+            if host.evaluate("() => document.documentElement.classList.contains('dark')"):
+                shot(host, 'friends-dark-390')
+            host.evaluate("() => window.__ITDA.app.accountPanel.closeAccount(true)")
+            host.wait_for_timeout(300)
+
             print('\n[6] 권한 — 방장만')
             code = lab_state(host)['code']
             forbidden = api(friend, f'/api/lab/rooms/{code}', 'PATCH', {'action': 'rules', 'version': lab_state(friend)['version'], 'rules': {}})
@@ -692,6 +713,11 @@ def main():
             host.click('#btn-account')
             host.wait_for_timeout(700)
             shot(host, 'account-dark-390')
+            host.evaluate("() => window.__ITDA.app.accountPanel.showAccountTab('friends')")
+            host.wait_for_timeout(900)
+            host.click('#friend-tabs [data-friend-tab="friends"]')
+            host.wait_for_timeout(700)
+            shot(host, 'friends-dark-390')
             host.click('#btn-account-close')
             host.wait_for_timeout(300)
 
@@ -743,6 +769,30 @@ def main():
             check(lab_state(host) is None, '방장이 방을 닫으면 방이 사라진다')
             check(d1_value("SELECT COUNT(*) FROM lab_rooms WHERE host_id IN (SELECT id FROM users WHERE username LIKE '점검%')") == 0,
                   'D1 에 점검 방이 남지 않았다')
+
+            # 계정 삭제가 실험실 방·초대를 함께 정리하는지(delete_check 와 같은 경로)
+            host.click('#btn-lab')
+            host.wait_for_timeout(400)
+            host.click('#lab-create')
+            host.wait_for_timeout(1600)
+            room2 = lab_state(host)
+            check(bool(room2), '정리 시험용 방 만들기', str(room2 and room2.get('code')))
+            code2 = room2['code'] if room2 else ''
+            if code2:
+                host.evaluate("() => window.__ITDA.app.labPanel.loadFriends({force: true}).then(() => window.__ITDA.app.labPanel.renderFriends())")
+                host.wait_for_timeout(900)
+                if host.query_selector('.lab-friend .lab-invite-btn'):
+                    host.click('.lab-friend .lab-invite-btn')
+                    host.wait_for_timeout(1000)
+                deleted = api(host, '/api/auth/delete', 'POST', {'password': PASSWORD})
+                check(deleted['status'] == 200 and deleted['data'].get('ok'), '계정 삭제(실험실 정리 시험)',
+                      json.dumps(deleted.get('data'), ensure_ascii=False)[:160])
+                check(d1_value(f"SELECT COUNT(*) FROM lab_rooms WHERE code = '{code2}'") == 0,
+                      '계정 삭제 뒤 방이 지워짐')
+                check(d1_value(f"SELECT COUNT(*) FROM lab_invites WHERE room_code = '{code2}'") == 0,
+                      '계정 삭제 뒤 초대가 지워짐')
+                check(d1_value("SELECT COUNT(*) FROM users WHERE username = '점검실험A'") == 0,
+                      '계정 행도 사라짐')
 
             print('\n[12] 스크린샷 · 콘솔 오류')
             ok_errors = True
