@@ -119,6 +119,32 @@ def d1_file(path):
     return proc.stdout.strip()
 
 
+def reset_read_throttle():
+    """조회 제한(읽기 150회/분·IP)은 점검이 탭을 수십 번 열면 걸린다 —
+    점검용 로컬 D1 에서만 읽기 창을 비워 다음 흐름이 429 로 비지 않게 한다."""
+    try:
+        d1("DELETE FROM auth_throttle WHERE key LIKE 'read:%'")
+    except Exception:
+        pass
+
+
+def clean_previous_runs():
+    """중간에 끊긴 예전 점검이 남긴 데이터를 지운다(이름 규칙 `점검…` 만 — 다른 로컬 데이터는 건드리지 않는다)."""
+    statements = [
+        "DELETE FROM mails WHERE sender_username LIKE '점검%' OR recipient_username LIKE '점검%'",
+        "DELETE FROM notice_reads WHERE user_id IN (SELECT id FROM users WHERE username LIKE '점검%')",
+        "DELETE FROM notices WHERE author_username LIKE '점검%'",
+        "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE username LIKE '점검%')",
+        "DELETE FROM users WHERE username LIKE '점검%'",
+        "DELETE FROM auth_throttle",
+    ]
+    for statement in statements:
+        try:
+            d1(statement)
+        except Exception:
+            pass
+
+
 def start_local():
     proc = subprocess.Popen(
         [WRANGLER, 'pages', 'dev', '.', '--port', str(PORT), '--ip', '127.0.0.1'],
@@ -209,6 +235,8 @@ def run(headless=True):
         'd': new_name('점검탈퇴'),
     }
     created = []
+
+    clean_previous_runs()
 
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=CHROME, headless=headless,
@@ -480,6 +508,7 @@ def run(headless=True):
 
         # ── 6. A 답장 확인 · 삭제 → 휴지통 ─────────────────────────
         print('\n· 답장 확인 · 휴지통')
+        reset_read_throttle()
         ctx_a3, a3 = open_page(names['a'])
         a3.wait_for_timeout(700)
         check(a3.is_visible('#mail-badge'), 'A 홈에 빨간 동그라미(답장 도착)')
@@ -559,10 +588,12 @@ def run(headless=True):
         close_mail(a3)
 
         # B 도 자기 쪽에서 지우고 휴지통을 비우면 그때 행이 실제로 사라진다
+        reset_read_throttle()
         ctx_b2, b2 = open_page(names['b'])
         open_mail(b2)
         tab(b2, 'sent')
         b2.wait_for_timeout(600)
+        b2.wait_for_function("() => document.querySelectorAll('#mail-list .mail-item').length >= 1", timeout=8000)
         check(b2.locator('#mail-list .mail-item').count() == 1, 'B 보낸 메일 1건',
               str(b2.locator('#mail-list .mail-item').count()))
         b2.click('#mail-list .mail-open')
@@ -594,6 +625,7 @@ def run(headless=True):
 
         # ── 7. 보안: XSS · 길이 · SQL 인젝션 시도 ────────────────────
         print('\n· 보안')
+        reset_read_throttle()
         xss_subject = '<img src=x onerror=alert(1)> 제목'
         xss_body = '<script>alert(1)</script> 본문'
         res = api(a3, '/api/mail/send', 'POST', {
@@ -666,6 +698,7 @@ def run(headless=True):
 
         # ── 8. 보낸 메일 수정 ──────────────────────────────────
         print('\n· 보낸 메일 수정')
+        reset_read_throttle()
         ctx_a4, a4 = open_page(names['a'])
         res = api(a4, '/api/mail/send', 'POST', {
             'to': names['b'], 'subject': '수정 전 제목', 'body': '수정 전 본문입니다.',
@@ -745,6 +778,7 @@ def run(headless=True):
 
         # ── 9. 공지 수정(관리자) ────────────────────────────────
         print('\n· 공지 수정')
+        reset_read_throttle()
         ctx_ad2, ad = open_page(names['admin'])
         open_mail(ad)
         tab(ad, 'notices')
@@ -800,6 +834,7 @@ def run(headless=True):
 
         # ── 9. 모바일 ────────────────────────────────────────────────
         print('\n· 모바일')
+        reset_read_throttle()
         ctx_b3, b3 = open_page(names['b'])
         api(b3, '/api/mail/send', 'POST', {
             'to': names['a'],
@@ -856,17 +891,29 @@ def run(headless=True):
         shot(m, 'local-mobile-mail-compose')
         drop(ctx_m)
 
-        # ── 정리: 점검 데이터 ────────────────────────────────────────
-        for name in created:
-            d1(f"DELETE FROM notice_reads WHERE user_id IN (SELECT id FROM users WHERE username = '{name}')")
-            d1(f"DELETE FROM mails WHERE sender_id IN (SELECT id FROM users WHERE username = '{name}') OR recipient_id IN (SELECT id FROM users WHERE username = '{name}')")
-            d1(f"DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE username = '{name}')")
-            d1(f"DELETE FROM users WHERE username = '{name}'")
-        for notice in (notice1, notice2, created_notice or {}):
-            if notice.get('id'):
-                d1(f"DELETE FROM notice_reads WHERE notice_id = '{notice['id']}'")
-                d1(f"DELETE FROM notices WHERE id = '{notice['id']}'")
-        d1("DELETE FROM auth_throttle WHERE key LIKE 'register:%' OR key LIKE 'mail%'")
+        # ── 정리: 점검 데이터 (wrangler 호출을 묶어 시간을 줄인다) ─────
+        if created:
+            quoted = ','.join("'%s'" % name for name in created)
+            for statement in (
+                'DELETE FROM notice_reads WHERE user_id IN (SELECT id FROM users WHERE username IN (%s))' % quoted,
+                'DELETE FROM mails WHERE sender_id IN (SELECT id FROM users WHERE username IN (%s))'
+                ' OR recipient_id IN (SELECT id FROM users WHERE username IN (%s))' % (quoted, quoted),
+                'DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE username IN (%s))' % quoted,
+                'DELETE FROM users WHERE username IN (%s)' % quoted,
+            ):
+                try:
+                    d1(statement)
+                except Exception:
+                    pass
+        notice_ids = [n.get('id') for n in (notice1, notice2, created_notice or {}) if n and n.get('id')]
+        if notice_ids:
+            quoted = ','.join("'%s'" % nid for nid in notice_ids)
+            try:
+                d1('DELETE FROM notice_reads WHERE notice_id IN (%s)' % quoted)
+                d1('DELETE FROM notices WHERE id IN (%s)' % quoted)
+            except Exception:
+                pass
+        d1("DELETE FROM auth_throttle WHERE key LIKE 'register:%' OR key LIKE 'mail%' OR key LIKE 'read:%'")
 
         browser.close()
 
