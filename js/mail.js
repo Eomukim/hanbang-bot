@@ -67,6 +67,14 @@ function preview(text, max = 70) {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
+/** 목록·상세에 쓰는 상대 표기: 닉네임(있으면) + `@아이디`. */
+function displayNameOf(mail, side) {
+  const nickname = side === 'sender' ? mail.senderNickname : mail.recipientNickname;
+  const display = side === 'sender' ? mail.senderDisplayName : mail.recipientDisplayName;
+  const username = side === 'sender' ? mail.senderUsername : mail.recipientUsername;
+  return { name: display || nickname || username || '', handle: `@${username || ''}` };
+}
+
 const TAB_CAPTION = {
   inbox: '받은 메일',
   sent: '보낸 메일',
@@ -488,10 +496,17 @@ export class MailPanel {
     const top = el('div', 'mail-top');
     if (kind === 'inbox' && !mail.isRead) top.appendChild(el('i', 'mail-dot'));
     // 휴지통에서는 어느 함에서 온 메일인지(받은·보낸) 함께 보여 준다.
-    const counterpart = kind === 'sent' || (kind === 'trash' && mail.folder === 'sent')
-      ? `@${mail.recipientUsername}`
-      : `@${mail.senderUsername}`;
-    top.appendChild(el('b', 'mail-who', counterpart));
+    // 닉네임을 정한 사람은 `닉네임 @아이디`로, 아니면 `@아이디`로 보인다.
+    const sentByMe = kind === 'sent' || (kind === 'trash' && mail.folder === 'sent');
+    const who = displayNameOf(mail, sentByMe ? 'recipient' : 'sender');
+    const whoBox = el('b', 'mail-who');
+    if (who.name && who.name !== (sentByMe ? mail.recipientUsername : mail.senderUsername)) {
+      whoBox.appendChild(el('span', 'mail-who-name', who.name));
+      whoBox.appendChild(el('span', 'mail-who-handle', who.handle));
+    } else {
+      whoBox.appendChild(el('span', 'mail-who-name', who.handle));
+    }
+    top.appendChild(whoBox);
     if (kind === 'trash') {
       top.appendChild(el('span', 'mail-origin', mail.folder === 'sent' ? '보낸 메일' : '받은 메일'));
     }
@@ -581,9 +596,9 @@ export class MailPanel {
   openMail(mail, kind) {
     this.current = { kind, mail };
     this.setDetailTitle(mail.subject, Boolean(mail.updatedAt));
-    const who = kind === 'sent' || (kind === 'trash' && mail.folder === 'sent')
-      ? `받는 사람 @${mail.recipientUsername}`
-      : `보낸 사람 @${mail.senderUsername}`;
+    const sentByMe = kind === 'sent' || (kind === 'trash' && mail.folder === 'sent');
+    const person = displayNameOf(mail, sentByMe ? 'recipient' : 'sender');
+    const who = `${sentByMe ? '받는 사람' : '보낸 사람'} ${person.name} ${person.handle}`;
     const extra = kind === 'sent' ? (mail.isRead ? ' · 읽음' : ' · 아직 안 읽음') : '';
     const where = kind === 'trash' ? (mail.folder === 'sent' ? ' · 보낸 메일함에서' : ' · 받은 메일함에서') : '';
     this.el['mail-detail-meta'].textContent = `${who} · ${formatWhen(mail.createdAt)}${extra}${where}`;
@@ -684,6 +699,17 @@ export class MailPanel {
       replyTo: mail.id,
       label: `@${mail.senderUsername}님에게 답장`,
     });
+  }
+
+  /** 친구 목록의 `메일` — 메일함을 열고 받는 사람(@아이디)을 채운 새 메일 쓰기를 띄운다. */
+  composeTo(username) {
+    if (!this.user) {
+      this.account?.openAuth?.('login');
+      return;
+    }
+    const handle = `@${String(username || '').replace(/^@+/, '').trim()}`;
+    if (!this.isOpen()) this.open();
+    this.openCompose({ to: handle });
   }
 
   showLoginPrompt() {

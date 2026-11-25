@@ -55,6 +55,7 @@
                 title="로그인" aria-label="로그인 · 회원가입"
                 aria-haspopup="dialog" aria-controls="ov-auth" aria-expanded="false">
           <svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="4" r="2.05"/><path d="M2.15 10.4c.42-2.05 1.95-3.35 3.85-3.35s3.43 1.3 3.85 3.35"/></svg>
+          <span class="account-badge" id="account-badge" hidden aria-hidden="true"></span>
         </button>
       </div>
 
@@ -294,7 +295,7 @@
   </div>
 </div>
 
-<!-- ────────────── 내 계정 ────────────── -->
+<!-- ────────────── 내 계정 · 친구 ────────────── -->
 <div class="overlay" id="ov-account" hidden>
   <div class="sheet account-sheet" role="dialog" aria-modal="true" aria-labelledby="account-title">
     <header class="settings-top">
@@ -305,26 +306,96 @@
     </header>
 
     <div class="account-main" id="account-main">
-      <div class="account-card">
-        <div class="account-avatar" id="account-avatar" aria-hidden="true">잇</div>
-        <div class="account-name">
-          <b id="account-name">닉네임</b>
-          <small id="account-handle">@아이디</small>
+      <div class="auth-tabs account-tabs" id="account-tabs" role="tablist" aria-label="내 계정 또는 친구">
+        <button type="button" role="tab" data-account-tab="profile" aria-selected="true">내 계정</button>
+        <button type="button" role="tab" data-account-tab="friends" aria-selected="false">친구<i class="account-tab-dot" id="account-tab-dot" hidden aria-hidden="true"></i></button>
+      </div>
+
+      <!-- 내 계정: 닉네임 · 프로필 사진 · 가입 정보 -->
+      <div class="account-view" id="account-view-profile">
+        <div class="account-card">
+          <div class="account-avatar" id="account-avatar" aria-hidden="true">
+            <span id="account-avatar-letter">잇</span>
+            <img id="account-avatar-img" alt="" hidden>
+          </div>
+          <div class="account-name">
+            <b id="account-name">닉네임</b>
+            <small id="account-handle">@아이디</small>
+          </div>
+        </div>
+
+        <button class="btn ghost account-edit-open" id="btn-profile-edit" type="button">닉네임 · 사진 바꾸기</button>
+
+        <!-- 닉네임 · 사진 바꾸기 -->
+        <div class="profile-edit" id="profile-edit" hidden>
+          <div class="profile-photo-row">
+            <div class="profile-photo" id="profile-photo" aria-hidden="true">
+              <span id="profile-photo-letter">잇</span>
+              <img id="profile-photo-img" alt="" hidden>
+            </div>
+            <div class="profile-photo-actions">
+              <button class="btn ghost profile-photo-btn" id="btn-avatar-pick" type="button">사진 고르기</button>
+              <button class="btn ghost profile-photo-btn" id="btn-avatar-remove" type="button" hidden>사진 지우기</button>
+            </div>
+            <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp" hidden>
+          </div>
+          <label class="auth-field profile-field">
+            <span>닉네임</span>
+            <input id="profile-nickname" type="text" maxlength="16" placeholder="1~16자"
+                   autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="닉네임">
+          </label>
+          <p class="auth-hint" id="profile-hint">1~16자 · 아이디(@아이디)는 그대로 남아요. 사진은 160×160으로 줄여 올려요.</p>
+          <p class="auth-error" id="profile-error" role="alert" hidden></p>
+          <div class="profile-actions">
+            <button class="btn primary" id="btn-profile-save" type="button">저장</button>
+            <button class="btn ghost" id="btn-profile-cancel" type="button">취소</button>
+          </div>
+        </div>
+
+        <dl class="account-info">
+          <div><dt>가입 방식</dt><dd id="account-provider">아이디 + 비밀번호</dd></div>
+          <div><dt>가입일</dt><dd id="account-joined">-</dd></div>
+        </dl>
+
+        <button class="btn ghost account-friends-open" id="btn-friends-open" type="button">
+          친구 <em class="account-friend-count" id="account-friend-count">0</em>
+          <i class="account-tab-dot" id="account-friend-dot" hidden aria-hidden="true"></i>
+        </button>
+
+        <button class="btn ghost account-logout" id="btn-logout" type="button">로그아웃</button>
+        <p class="auth-foot">로그아웃해도 게스트 플레이는 그대로예요.</p>
+
+        <div class="account-danger">
+          <p class="account-danger-label">위험 영역</p>
+          <button class="btn account-delete" id="btn-delete-account" type="button">계정 삭제</button>
+          <p class="account-danger-note">계정을 지우면 아이디와 로그인 정보가 영구적으로 사라져요.</p>
         </div>
       </div>
 
-      <dl class="account-info">
-        <div><dt>가입 방식</dt><dd id="account-provider">아이디 + 비밀번호</dd></div>
-        <div><dt>가입일</dt><dd id="account-joined">-</dd></div>
-      </dl>
+      <!-- 친구: 아이디 검색 · 받은 요청 · 친구 · 보낸 요청 -->
+      <div class="account-view account-view-friends" id="account-view-friends" hidden>
+        <form class="friend-search" id="friend-search-form" role="search" novalidate>
+          <label class="friend-search-field">
+            <span>아이디로 찾기</span>
+            <input id="friend-search-input" type="text" maxlength="13" placeholder="@아이디 (2자 이상)"
+                   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                   aria-label="친구 아이디 검색">
+          </label>
+          <button class="btn primary friend-search-btn" id="friend-search-btn" type="submit">찾기</button>
+        </form>
+        <p class="friend-status" id="friend-status" role="status" hidden></p>
+        <ul class="friend-results" id="friend-results" aria-label="아이디 검색 결과"></ul>
 
-      <button class="btn ghost account-logout" id="btn-logout" type="button">로그아웃</button>
-      <p class="auth-foot">로그아웃해도 게스트 플레이는 그대로예요.</p>
-
-      <div class="account-danger">
-        <p class="account-danger-label">위험 영역</p>
-        <button class="btn account-delete" id="btn-delete-account" type="button">계정 삭제</button>
-        <p class="account-danger-note">계정을 지우면 아이디와 로그인 정보가 영구적으로 사라져요.</p>
+        <div class="auth-tabs friend-tabs" id="friend-tabs" role="tablist" aria-label="친구 목록 종류">
+          <button type="button" role="tab" data-friend-tab="incoming" aria-selected="true">받은 요청<i class="account-tab-dot" id="friend-dot-incoming" hidden aria-hidden="true"></i></button>
+          <button type="button" role="tab" data-friend-tab="friends" aria-selected="false">친구</button>
+          <button type="button" role="tab" data-friend-tab="outgoing" aria-selected="false">보낸 요청</button>
+        </div>
+        <ul class="friend-list" id="friend-list" aria-label="친구 목록"></ul>
+        <div class="friend-empty" id="friend-empty" hidden>
+          <b id="friend-empty-title">아직 받은 요청이 없어요</b>
+          <small id="friend-empty-desc">위에서 @아이디로 친구를 찾아 요청을 보내 보세요.</small>
+        </div>
       </div>
     </div>
 
@@ -341,6 +412,7 @@
       <ul class="account-delete-list">
         <li>아이디·비밀번호와 로그인 정보가 <b>즉시</b> 사라지고, 지금 로그인된 기기에서도 로그아웃돼요.</li>
         <li>한 번 지우면 <b>되돌릴 수 없어요</b>. 같은 아이디로 다시 가입하는 것만 가능해요.</li>
+        <li>친구 목록과 받은·보낸 친구 요청, 메일도 함께 사라져요.</li>
         <li>이 기기에 저장된 설정·전적은 그대로 남아요.</li>
       </ul>
 

@@ -30,14 +30,20 @@ export async function onRequestGet({ request, env }) {
   }
 
   const rows = await env.DB.prepare(
-    `SELECT id, sender_username, recipient_username, reply_to_id, subject, body,
-            is_read, read_at, created_at, updated_at,
-            CASE WHEN recipient_id = ? THEN 'inbox' ELSE 'sent' END AS folder,
-            CASE WHEN recipient_id = ? THEN recipient_trashed_at ELSE sender_trashed_at END AS trashed_at
-       FROM mails
-      WHERE ((recipient_id = ? AND recipient_trashed_at IS NOT NULL AND deleted_by_recipient = 0)
-          OR (sender_id = ? AND sender_trashed_at IS NOT NULL AND deleted_by_sender = 0))
-      ORDER BY trashed_at DESC, created_at DESC, id DESC
+    `SELECT m.id, m.sender_username, m.recipient_username, m.reply_to_id, m.subject, m.body,
+            m.is_read, m.read_at, m.created_at, m.updated_at,
+            su.nickname AS sender_nickname, su.display_name AS sender_display_name,
+            su.avatar_updated_at AS sender_avatar_at,
+            ru.nickname AS recipient_nickname, ru.display_name AS recipient_display_name,
+            ru.avatar_updated_at AS recipient_avatar_at,
+            CASE WHEN m.recipient_id = ? THEN 'inbox' ELSE 'sent' END AS folder,
+            CASE WHEN m.recipient_id = ? THEN m.recipient_trashed_at ELSE m.sender_trashed_at END AS trashed_at
+       FROM mails m
+       LEFT JOIN users su ON su.id = m.sender_id
+       LEFT JOIN users ru ON ru.id = m.recipient_id
+      WHERE ((m.recipient_id = ? AND m.recipient_trashed_at IS NOT NULL AND m.deleted_by_recipient = 0)
+          OR (m.sender_id = ? AND m.sender_trashed_at IS NOT NULL AND m.deleted_by_sender = 0))
+      ORDER BY trashed_at DESC, m.created_at DESC, m.id DESC
       LIMIT ?`,
   ).bind(session.id, session.id, session.id, session.id, LIST_LIMIT).all();
 

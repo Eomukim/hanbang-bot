@@ -1352,6 +1352,158 @@ html.mono .confetti { filter: grayscale(1); }
 .account-delete-confirm.busy { opacity: .8; }
 .account-delete-view .auth-field input:focus { border-color: var(--coral-edge); box-shadow: 0 0 0 3px var(--coral-soft); }
 
+/* ── 내 계정: 탭 · 프로필 사진 · 닉네임 · 친구 ─────────────── */
+.account-tabs { flex: 0 0 auto; }
+.account-tabs button { position: relative; }
+.account-tab-dot {
+  display: inline-block; margin-left: 5px; vertical-align: 2px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #D8392B;
+}
+.account-tab-dot[hidden] { display: none; }
+
+/* 상단 계정 버튼의 받은 친구 요청 점 — 로그인 점(::after) 대신 이 점이 뜬다 */
+.top-btn-account .account-badge {
+  position: absolute; top: 4px; right: 4px;
+  max-width: none; width: 9px; height: 9px; border-radius: 50%;
+  background: #D8392B; overflow: visible; text-overflow: clip; white-space: normal;
+  box-shadow: 0 0 0 2px var(--tile), 0 1px 2px rgba(120,20,10,.35);
+  pointer-events: none;
+}
+.top-btn-account .account-badge[hidden] { display: none; }
+.top-btn-account.has-requests.signed-in::after { display: none; }
+.top-btn-account.has-requests:hover .account-badge,
+.top-btn-account.has-requests[aria-expanded="true"] .account-badge { box-shadow: 0 0 0 2px var(--sage-soft); }
+
+.account-view { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.account-view[hidden] { display: none; }
+
+.account-avatar { overflow: hidden; padding: 0; }
+.account-avatar img,
+.profile-photo img {
+  width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit;
+}
+.account-avatar img[hidden],
+.profile-photo img[hidden] { display: none; }
+
+.account-edit-open { width: 100%; font-size: 12px; padding: 10px 12px; }
+.profile-edit {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 13px 13px; border-radius: 14px;
+  border: 1px solid var(--edge-strong); background: var(--fill);
+  box-shadow: inset 0 1px 0 #fff;
+}
+.profile-edit[hidden] { display: none; }
+.profile-photo-row { display: flex; align-items: center; gap: 12px; }
+.profile-photo {
+  flex: none; width: 64px; height: 64px; display: grid; place-items: center; overflow: hidden;
+  border-radius: 18px; background: var(--tile); border: 1px solid var(--sage-edge);
+  box-shadow: 0 2px 0 var(--sage-sh), inset 0 1px 0 #fff;
+  font-family: var(--display); font-size: 26px; font-weight: 800; color: var(--sage-ink);
+}
+.profile-photo-actions { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.profile-photo-btn { padding: 8px 11px; font-size: 11.5px; border-radius: 10px; }
+.profile-field { margin-top: 2px; }
+.profile-field input { font-size: 13.5px; }
+.profile-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.profile-actions .btn { padding: 10px 12px; font-size: 12.5px; }
+
+.account-friends-open {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 12px; padding: 10px 12px;
+}
+.account-friend-count {
+  font-family: var(--display); font-style: normal; font-weight: 800; font-size: 11.5px;
+  padding: 1px 7px 2px; border-radius: 99px;
+  background: var(--sage-soft); border: 1px solid var(--sage-edge); color: var(--sage-ink);
+}
+
+/* 친구 탭: 아이디 검색 · 목록 */
+.account-view-friends { gap: 9px; }
+.friend-search { display: flex; align-items: flex-end; gap: 7px; }
+.friend-search-field { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.friend-search-field > span {
+  font-family: var(--display); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; color: var(--ink-soft);
+}
+.friend-search-field input {
+  width: 100%; padding: 10px 11px; border-radius: 11px;
+  border: 1px solid var(--edge-strong); background: #FFFDF8; color: var(--ink);
+  font-size: 13px; font-weight: 600;
+  box-shadow: inset 0 1px 2px rgba(110,95,70,.08);
+}
+.friend-search-field input::placeholder { color: var(--mute-2); font-weight: 500; }
+.friend-search-field input:focus { outline: none; border-color: var(--sage-edge); box-shadow: 0 0 0 3px var(--sage-soft); }
+.friend-search-btn { flex: none; padding: 10px 14px; font-size: 12px; border-radius: 11px; }
+.friend-status { margin: 0; font-size: 11px; font-weight: 700; color: var(--mute); }
+.friend-status[hidden] { display: none; }
+.friend-tabs { flex: 0 0 auto; grid-template-columns: repeat(3, 1fr); }
+.friend-tabs button { padding: 8px 4px; font-size: 11.5px; }
+
+.friend-results,
+.friend-list {
+  margin: 0; padding: 2px; list-style: none;
+  display: flex; flex-direction: column; gap: 7px;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+.friend-results:empty { display: none; }
+.friend-results { max-height: 182px; }
+.friend-list { max-height: 248px; }
+.friend-results::-webkit-scrollbar,
+.friend-list::-webkit-scrollbar { width: 7px; }
+.friend-results::-webkit-scrollbar-thumb,
+.friend-list::-webkit-scrollbar-thumb { background: rgba(140,125,100,.32); border-radius: 99px; }
+
+.friend-item {
+  display: flex; align-items: center; gap: 9px; min-width: 0;
+  padding: 8px 9px; border-radius: 12px;
+  border: 1px solid var(--edge); background: var(--tile);
+}
+.friend-avatar {
+  flex: none; width: 34px; height: 34px; display: grid; place-items: center; overflow: hidden;
+  border-radius: 10px; background: var(--sage-soft); border: 1px solid var(--sage-edge);
+  font-family: var(--display); font-size: 15px; font-weight: 800; color: var(--sage-ink);
+}
+.friend-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.friend-who { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.friend-name {
+  font-family: var(--display); font-size: 13px; font-weight: 800; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.friend-handle {
+  font-size: 10.5px; font-weight: 600; color: var(--sage-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.friend-actions { flex: none; display: flex; gap: 5px; }
+.friend-actions .btn.friend-btn {
+  padding: 7px 10px; font-size: 11px; border-radius: 9px;
+  box-shadow: 0 1px 0 var(--sh), inset 0 1px 0 #fff;
+}
+.friend-actions .btn.friend-btn.primary { box-shadow: 0 2px 0 var(--terra-sh), inset 0 1px 0 rgba(255,255,255,.2); }
+.friend-actions .btn.friend-btn.armed,
+.friend-actions .btn.friend-btn.armed:hover {
+  border-color: var(--coral); background: var(--coral); color: #fff;
+}
+.friend-actions .btn.friend-btn:disabled { opacity: .6; cursor: default; box-shadow: none; }
+.friend-actions .btn.friend-btn.is-done { color: var(--mute); }
+
+.friend-empty { display: flex; flex-direction: column; gap: 3px; padding: 12px 4px; text-align: center; }
+.friend-empty[hidden] { display: none; }
+.friend-empty b { font-family: var(--display); font-size: 12.5px; font-weight: 800; color: var(--ink-soft); }
+.friend-empty small { font-size: 10.5px; line-height: 1.55; color: var(--mute-2); }
+
+/* 메일 목록의 `닉네임 @아이디` */
+.mail-who { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; }
+.mail-who-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-who-handle { font-weight: 700; color: var(--sage-ink); font-size: 10.5px; }
+
+@media (max-width: 359px) {
+  .friend-item { gap: 7px; padding: 7px 8px; }
+  .friend-actions .btn.friend-btn { padding: 6px 8px; font-size: 10.5px; }
+  .friend-avatar { width: 30px; height: 30px; border-radius: 9px; }
+  .friend-search-btn { padding: 9px 11px; font-size: 11.5px; }
+  .account-sheet { padding-left: 14px; padding-right: 14px; }
+}
+
 /* ── 메일함: 상단 ✉ 버튼 · 빨간 동그라미 · 받은/보낸/공지 ─────── */
 .top-btn-mail svg { stroke: var(--plum); }
 .top-btn-mail:hover,

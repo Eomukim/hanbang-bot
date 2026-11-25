@@ -69,6 +69,9 @@ export async function onRequest({ request, env }) {
   await env.DB.prepare('DELETE FROM mails WHERE sender_id = ? OR recipient_id = ?')
     .bind(session.id, session.id).run();
   await env.DB.prepare('DELETE FROM notice_reads WHERE user_id = ?').bind(session.id).run();
+  // 친구: 이 사람이 낀 친구·요청 행을 모두 지운다(상대 친구 목록에 유령이 남지 않게).
+  await env.DB.prepare('DELETE FROM friendships WHERE requester_id = ? OR addressee_id = ?')
+    .bind(session.id, session.id).run();
   await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(session.id).run();
 
   return ok(

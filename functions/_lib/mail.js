@@ -132,13 +132,21 @@ export function validateNotice({ title, body }) {
   return { ok: true, title: heading, body: text };
 }
 
-/** 메일 행 → 화면이 쓰는 모양. 보낸·받은·휴지통 목록과 메일 상세가 같은 모양을 쓴다. */
+/** 메일 행 → 화면이 쓰는 모양. 보낸·받은·휴지통 목록과 메일 상세가 같은 모양을 쓴다.
+ *  목록 쿼리가 `users` 를 붙여 주면 닉네임·사진 시각이 함께 오고, 없으면 아이디로만 보인다.
+ *  (`sender_username` 은 보낸 때의 아이디 스냅숏이라, 닉네임을 바꿔도 그대로 남는다.) */
 export function mailView(row) {
   if (!row) return null;
   return {
     id: row.id,
     senderUsername: row.sender_username,
+    senderNickname: row.sender_nickname || '',
+    senderDisplayName: row.sender_nickname || row.sender_display_name || row.sender_username,
+    senderAvatarAt: Number(row.sender_avatar_at || 0),
     recipientUsername: row.recipient_username,
+    recipientNickname: row.recipient_nickname || '',
+    recipientDisplayName: row.recipient_nickname || row.recipient_display_name || row.recipient_username,
+    recipientAvatarAt: Number(row.recipient_avatar_at || 0),
     replyToId: row.reply_to_id || null,
     subject: row.subject,
     body: row.body,

@@ -51,9 +51,12 @@ export async function onRequestPost({ request, env }) {
   ).bind(checked.subject, checked.body, stamp, id, session.id).run();
 
   const row = await env.DB.prepare(
-    `SELECT id, sender_username, recipient_username, reply_to_id, subject, body,
-            is_read, read_at, created_at, updated_at
-       FROM mails WHERE id = ?`,
+    `SELECT m.id, m.sender_username, m.recipient_username, m.reply_to_id, m.subject, m.body,
+            m.is_read, m.read_at, m.created_at, m.updated_at,
+            ru.nickname AS recipient_nickname, ru.display_name AS recipient_display_name,
+            ru.avatar_updated_at AS recipient_avatar_at
+       FROM mails m LEFT JOIN users ru ON ru.id = m.recipient_id
+      WHERE m.id = ?`,
   ).bind(id).first();
 
   return ok({ mail: mailView(row) });

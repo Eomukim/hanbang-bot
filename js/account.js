@@ -4,9 +4,14 @@
  * 서버는 Cloudflare Pages Functions(`/api/auth/*`) + D1 이다.
  *   - 아이디 + 비밀번호: 이메일 없이 바로 가입/로그인, 서버가 Turnstile 을 검사한다.
  *   - 구글 로그인: 구글 버튼 한 번으로 로그인/자동 가입.
+ *   - 내 계정: 닉네임(1~16자)과 프로필 사진을 바꾸고, `친구` 탭에서 아이디로 친구를 찾는다.
+ *     사진은 이 기기에서 160×160 정사각 WebP/JPEG 로 줄여 Data URL(24KB 이하)로 보낸다 —
+ *     R2·이미지 카드 없이 D1 만으로 동작하는 길이다.
  * 로그인하지 않아도 게임은 지금처럼 그대로 즐길 수 있고, 계정 API 가 없는 곳
  * (예전 Render 주소)에서는 우측 상단 계정 버튼만 조용히 숨긴다.
  */
+
+import { FriendsPanel } from './friends.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,9 +39,96 @@ const ERROR_TEXT = {
   confirm_mismatch: '확인 문구가 맞지 않아요. 입력한 문구를 다시 확인해 주세요.',
   google_disabled: '구글 로그인은 준비 중이에요.',
   not_configured: '계정 서버가 아직 준비되지 않았어요.',
+  nickname_required: '닉네임을 입력해 주세요.',
+  nickname_long: '닉네임은 16자까지 쓸 수 있어요.',
+  nickname_invalid: '닉네임에 쓸 수 없는 글자가 있어요.',
+  avatar_invalid: 'PNG·JPEG·WebP 사진만 쓸 수 있어요.',
+  avatar_too_large: '사진이 너무 커요. 더 작은 사진으로 다시 골라 주세요.',
+  avatar_conflict: '사진을 지울지 바꿀지 하나만 골라 주세요.',
+  nothing_to_change: '바꾼 내용이 없어요.',
   network: '연결이 잠시 불안정해요. 잠시 후 다시 시도해 주세요.',
   default: '잠시 문제가 생겼어요. 다시 시도해 주세요.',
 };
+
+/** 프로필 사진: 화면에서 160×160 정사각으로 줄여 Data URL 24KB 이하로 만든다. */
+const AVATAR_SIZE = 160;
+const AVATAR_MAX_CHARS = 24 * 1024;
+const AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
+export function avatarSrc(user) {
+  if (!user?.id || !Number(user.avatarAt)) return '';
+  return `/api/account/avatar?u=${encodeURIComponent(user.id)}&v=${Number(user.avatarAt)}`;
+}
+
+/** 파일 → 화면·서버가 함께 쓰는 사진 모양(작은 Data URL). */
+async function fileToAvatar(file) {
+  const type = String(file?.type || '').toLowerCase();
+  if (!AVATAR_TYPES.has(type)) throw Object.assign(new Error('avatar_invalid'), { code: 'avatar_invalid' });
+  if (Number(file.size || 0) > 8 * 1024 * 1024) {
+    throw Object.assign(new Error('avatar_too_large'), { code: 'avatar_too_large' });
+  }
+
+  let bitmap;
+  try {
+    if (window.createImageBitmap) {
+      try {
+        bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      } catch {
+        bitmap = await createImageBitmap(file);
+      }
+    }
+  } catch {
+    bitmap = null;
+  }
+  if (!bitmap) {
+    bitmap = await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('avatar_invalid')); };
+      img.src = url;
+    });
+  }
+
+  // 가운데를 정사각으로 잘라 16×16 미리 줄인 뒤 160/128/96px 순서로 다시 그린다.
+  const width = bitmap.width || bitmap.naturalWidth || 0;
+  const height = bitmap.height || bitmap.naturalHeight || 0;
+  if (!width || !height) throw Object.assign(new Error('avatar_invalid'), { code: 'avatar_invalid' });
+  const side = Math.min(width, height);
+  const sx = Math.round((width - side) / 2);
+  const sy = Math.round((height - side) / 2);
+
+  const qualities = [0.84, 0.76, 0.68, 0.6, 0.52, 0.44];
+  for (const size of [AVATAR_SIZE, 128, 96]) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) break;
+    ctx.fillStyle = '#FFFDF8';
+    ctx.fillRect(0, 0, size, size);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, size, size);
+    for (const quality of qualities) {
+      const webp = canvas.toDataURL('image/webp', quality);
+      if (webp.startsWith('data:image/webp') && webp.length <= AVATAR_MAX_CHARS) {
+        if (bitmap.close) bitmap.close();
+        return webp;
+      }
+    }
+    // WebP 인코딩이 없는 브라우저는 JPEG 로
+    for (const quality of qualities) {
+      const jpeg = canvas.toDataURL('image/jpeg', quality);
+      if (jpeg.length <= AVATAR_MAX_CHARS) {
+        if (bitmap.close) bitmap.close();
+        return jpeg;
+      }
+    }
+  }
+  if (bitmap.close) bitmap.close();
+  throw Object.assign(new Error('avatar_too_large'), { code: 'avatar_too_large' });
+}
 
 /** 같은 주소의 스크립트를 한 번만 불러온다. */
 function loadScript(src) {
@@ -71,11 +163,13 @@ function pingAuth() {
 }
 
 export class AccountPanel {
-  constructor({ sfx, toast, onUserChange } = {}) {
+  constructor({ sfx, toast, onUserChange, onComposeMail } = {}) {
     this.sfx = sfx;
     this.toast = toast || (() => {});
     /** 로그인 상태가 바뀌면 다른 창(메일함 등)에 알린다. */
     this.onUserChange = onUserChange || (() => {});
+    /** 친구 목록의 `메일` → 메일함 새 메일 쓰기(@아이디 채움). */
+    this.onComposeMail = onComposeMail || (() => {});
     this.user = null;
     this.config = null;
     this.apiReady = false;
@@ -89,26 +183,64 @@ export class AccountPanel {
     this.closeTimers = { auth: null, account: null };
     /** 같은 탭에서 너무 자주 /api/auth/me 를 부르지 않게(창을 오갈 때마다 부르면 빨라진다). */
     this.lastRefresh = 0;
+    /** 열려 있는 탭(내 계정 · 친구) */
+    this.accountTab = 'profile';
+    /** 프로필 편집 중 미리 보는 사진(Data URL) · 지우기 표시 */
+    this.avatarDraft = '';
+    this.avatarRemoved = false;
+    this.profileBusy = false;
+    /** 친구 목록·받은 요청(별도 모듈이 이 시트의 친구 탭을 그린다) */
+    this.friends = null;
+    this.friendCounts = { friends: 0, incoming: 0, outgoing: 0 };
     this.el = {};
   }
 
   async init() {
     const ids = [
-      'btn-account',
+      'btn-account', 'account-badge',
       'ov-auth', 'btn-auth-close', 'auth-title', 'auth-tabs', 'auth-form',
       'auth-username', 'auth-password', 'auth-password2', 'auth-password2-field',
       'auth-turnstile', 'auth-hint', 'auth-error', 'auth-submit', 'auth-submit-label',
       'auth-or', 'auth-google-slot', 'auth-google-note',
-      'ov-account', 'btn-account-close', 'account-avatar', 'account-name', 'account-handle',
+      'ov-account', 'btn-account-close', 'account-title', 'account-avatar', 'account-avatar-letter', 'account-avatar-img',
+      'account-name', 'account-handle',
       'account-provider', 'account-joined', 'btn-logout',
       'account-main', 'account-delete-view', 'btn-delete-account', 'btn-delete-confirm',
       'btn-delete-cancel', 'account-delete-confirm', 'account-delete-label',
       'account-delete-hint', 'account-delete-target', 'account-delete-error',
+      'account-tabs', 'account-view-profile', 'account-view-friends',
+      'account-tab-dot', 'account-friend-dot', 'account-friend-count', 'btn-friends-open',
+      'friend-dot-incoming',
+      'btn-profile-edit', 'profile-edit', 'profile-nickname', 'profile-hint', 'profile-error',
+      'btn-profile-save', 'btn-profile-cancel', 'btn-avatar-pick', 'btn-avatar-remove',
+      'avatar-file', 'profile-photo', 'profile-photo-letter', 'profile-photo-img',
     ];
     for (const id of ids) this.el[id] = $(id);
+    // 친구 탭(아이디 검색 · 받은 요청 · 친구 · 보낸 요청)은 friends.js 가 맡는다.
+    this.friends = new FriendsPanel({
+      sfx: this.sfx,
+      toast: this.toast,
+      account: this,
+      onComposeMail: (to) => this.onComposeMail(to),
+      onCounts: (counts) => this.setFriendBadge(counts),
+    });
+    this.friends.init();
     this.bind();
     this.watchAuth();
     await this.loadServer();
+    this.watchFriends();
+  }
+
+  /**
+   * 받은 친구 요청 빨간 점은 60초에 한 번만 확인한다(메일함 요약과 같은 방식).
+   * 창을 보고 있을 때는 친구 목록이 직접 새로 고치므로 띄지 않는다.
+   */
+  watchFriends() {
+    const tick = () => {
+      if (document.visibilityState === 'visible' && !this.isOpen()) void this.friends?.refreshSummary();
+    };
+    setInterval(tick, 60 * 1000);
+    document.addEventListener('visibilitychange', tick);
   }
 
   /**
@@ -176,6 +308,10 @@ export class AccountPanel {
     if (before?.id !== this.user?.id || before?.username !== this.user?.username) {
       this.onUserChange(this.user);
     }
+    this.friends?.setUser(this.user);
+    this.fillAccount();
+    if (this.user) void this.friends?.refreshSummary();
+    else this.setFriendBadge({ friends: 0, incoming: 0, outgoing: 0 });
     const btn = this.el['btn-account'];
     if (!btn) return;
     const signedIn = Boolean(this.user);
@@ -227,13 +363,65 @@ export class AccountPanel {
     const ov = this.el['ov-account'];
     clearTimeout(this.closeTimers.account);
     this.hideDeleteConfirm();
+    this.closeProfileEdit();
+    this.showAccountTab('profile');
     this.fillAccount();
     ov.hidden = false;
     ov.classList.remove('ov-out');
     this.el['btn-account'].setAttribute('aria-expanded', 'true');
     this.sfx?.play('tap');
+    void this.friends?.refreshSummary();
     if (window.matchMedia('(pointer: fine)').matches) {
       setTimeout(() => this.el['btn-account-close'].focus({ preventScroll: true }), 80);
+    }
+  }
+
+  /** 시트 안의 두 탭(내 계정 · 친구)을 바꾼다. */
+  showAccountTab(tab) {
+    this.accountTab = tab === 'friends' ? 'friends' : 'profile';
+    const friends = this.accountTab === 'friends';
+    if (this.el['account-tabs']) {
+      this.el['account-tabs'].querySelectorAll('[data-account-tab]').forEach((btn) => {
+        btn.setAttribute('aria-selected', String(btn.dataset.accountTab === this.accountTab));
+      });
+    }
+    if (this.el['account-view-profile']) this.el['account-view-profile'].hidden = friends;
+    if (this.el['account-view-friends']) this.el['account-view-friends'].hidden = !friends;
+    if (this.el['account-title']) this.el['account-title'].textContent = friends ? '친구' : '내 계정';
+    if (!friends) this.closeProfileEdit();
+    else {
+      this.el['ov-account']?.querySelector('.sheet')?.scrollTo?.({ top: 0 });
+      void this.friends?.open();
+    }
+  }
+
+  /** 받은 친구 요청 수를 계정 버튼·탭·친구 버튼의 빨간 점과 숫자로 보여 준다. */
+  setFriendBadge(counts) {
+    const data = counts || { friends: 0, incoming: 0, outgoing: 0 };
+    this.friendCounts = {
+      friends: Number(data.friends || 0),
+      incoming: Number(data.incoming || 0),
+      outgoing: Number(data.outgoing || 0),
+    };
+    const incoming = this.friendCounts.incoming;
+    for (const id of ['account-badge', 'account-tab-dot', 'account-friend-dot', 'friend-dot-incoming']) {
+      const node = this.el[id];
+      if (node) node.hidden = incoming === 0;
+    }
+    if (this.el['account-friend-count']) {
+      this.el['account-friend-count'].textContent = String(this.friendCounts.friends);
+    }
+    const btn = this.el['btn-account'];
+    if (btn) {
+      btn.classList.toggle('has-requests', incoming > 0);
+      const name = this.user ? (this.user.displayName || this.user.username) : '';
+      const label = this.user
+        ? `내 계정 · ${name}${incoming ? ` · 받은 친구 요청 ${incoming}건` : ''}`
+        : '로그인 · 회원가입';
+      btn.setAttribute('aria-label', label);
+      btn.setAttribute('title', this.user
+        ? `내 계정 (${name})${incoming ? ` · 받은 친구 요청 ${incoming}건` : ''}`
+        : '로그인');
     }
   }
 
@@ -494,21 +682,184 @@ export class AccountPanel {
     const name = user?.displayName || user?.username || '';
     this.toast(name ? `${name}님, 반가워요!` : '로그인했어요.');
   }
-
   /* ── 내 계정 · 로그아웃 ───────────────────────────────── */
 
   fillAccount() {
     const user = this.user;
     if (!user) return;
     const name = user.displayName || user.username;
-    this.el['account-avatar'].textContent = (name || '잇').slice(0, 1);
-    this.el['account-name'].textContent = name;
-    this.el['account-handle'].textContent = `@${user.username}`;
-    this.el['account-provider'].textContent = user.provider === 'google' ? '구글 로그인' : '아이디 + 비밀번호';
+    if (this.el['account-name']) this.el['account-name'].textContent = name;
+    if (this.el['account-handle']) this.el['account-handle'].textContent = `@${user.username}`;
+    this.renderAvatar('account-avatar-letter', 'account-avatar-img', avatarSrc(user), name);
+    if (this.el['account-provider']) {
+      this.el['account-provider'].textContent = user.provider === 'google' ? '구글 로그인' : '아이디 + 비밀번호';
+    }
     const joined = user.createdAt ? new Date(user.createdAt) : null;
-    this.el['account-joined'].textContent = joined && !Number.isNaN(joined.getTime())
-      ? joined.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
-      : '-';
+    if (this.el['account-joined']) {
+      this.el['account-joined'].textContent = joined && !Number.isNaN(joined.getTime())
+        ? joined.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
+        : '-';
+    }
+    if (this.el['account-friend-count']) {
+      this.el['account-friend-count'].textContent = String(this.friendCounts.friends || 0);
+    }
+  }
+
+  /** 글자 아바타와 사진 img 를 맞춰 그린다(사진이 없거나 못 불러오면 첫 글자). */
+  renderAvatar(letterId, imgId, src, name) {
+    const letter = this.el[letterId];
+    const img = this.el[imgId];
+    if (letter) {
+      const first = [...String(name || '잇').trim()][0] || '잇';
+      letter.textContent = first;
+    }
+    if (!img) return;
+    if (!src) {
+      img.hidden = true;
+      img.removeAttribute('src');
+      if (letter) letter.hidden = false;
+      return;
+    }
+    img.onerror = () => {
+      img.hidden = true;
+      img.removeAttribute('src');
+      if (letter) letter.hidden = false;
+    };
+    img.onload = () => {
+      img.hidden = false;
+      if (letter) letter.hidden = true;
+    };
+    img.src = src;
+    img.hidden = false;
+    if (letter) letter.hidden = true;
+  }
+
+  /* ── 닉네임 · 프로필 사진 바꾸기 ─────────────────────── */
+
+  openProfileEdit() {
+    if (!this.user) return;
+    this.avatarDraft = '';
+    this.avatarRemoved = false;
+    this.clearProfileError();
+    this.el['profile-nickname'].value = this.user.nickname || '';
+    this.el['profile-nickname'].placeholder = this.user.username;
+    this.el['profile-edit'].hidden = false;
+    this.el['btn-profile-edit'].hidden = true;
+    this.el['btn-avatar-remove'].hidden = !Number(this.user.avatarAt);
+    this.renderAvatar('profile-photo-letter', 'profile-photo-img', avatarSrc(this.user),
+      this.user.displayName || this.user.username);
+    if (window.matchMedia('(pointer: fine)').matches) {
+      setTimeout(() => this.el['profile-nickname'].focus({ preventScroll: true }), 60);
+    }
+  }
+
+  closeProfileEdit() {
+    if (!this.el['profile-edit']) return;
+    this.el['profile-edit'].hidden = true;
+    this.el['btn-profile-edit'].hidden = false;
+    this.avatarDraft = '';
+    this.avatarRemoved = false;
+    this.el['avatar-file'].value = '';
+    this.clearProfileError();
+  }
+
+  showProfileError(message) {
+    const box = this.el['profile-error'];
+    if (!box) return;
+    box.hidden = !message;
+    box.textContent = message || '';
+  }
+
+  clearProfileError() {
+    this.showProfileError('');
+  }
+
+  setProfileBusy(busy) {
+    this.profileBusy = busy;
+    const save = this.el['btn-profile-save'];
+    if (save) {
+      save.disabled = busy;
+      save.classList.toggle('busy', busy);
+      save.textContent = busy ? '저장 중…' : '저장';
+    }
+  }
+
+  /** `사진 고르기` → 파일 선택 → 이 기기에서 정사각 160px 로 줄인다. */
+  async onAvatarPicked(event) {
+    const file = event.target?.files?.[0];
+    this.el['avatar-file'].value = '';
+    if (!file) return;
+    this.clearProfileError();
+    try {
+      const data = await fileToAvatar(file);
+      this.avatarDraft = data;
+      this.avatarRemoved = false;
+      this.el['btn-avatar-remove'].hidden = false;
+      this.renderAvatar('profile-photo-letter', 'profile-photo-img', data,
+        this.user?.displayName || this.user?.username);
+      this.sfx?.play('tap');
+    } catch (error) {
+      this.showProfileError(ERROR_TEXT[error?.code || error?.message] || ERROR_TEXT.avatar_invalid);
+    }
+  }
+
+  /** `사진 지우기` — 저장을 눌러야 서버에서 지운다(지금 화면은 바로 첫 글자로). */
+  removeAvatarDraft() {
+    this.avatarDraft = '';
+    this.avatarRemoved = true;
+    this.el['btn-avatar-remove'].hidden = true;
+    this.renderAvatar('profile-photo-letter', 'profile-photo-img', '',
+      this.user?.displayName || this.user?.username);
+    this.sfx?.play('tap');
+  }
+
+  async saveProfile() {
+    if (!this.user || this.profileBusy) return;
+    const nickname = this.el['profile-nickname'].value.trim();
+    if (!nickname && !this.avatarDraft && !this.avatarRemoved) {
+      return this.showProfileError(ERROR_TEXT.nickname_required);
+    }
+    if ([...nickname].length > 16) return this.showProfileError(ERROR_TEXT.nickname_long);
+
+    const body = {};
+    if (nickname !== (this.user.nickname || '')) {
+      if (!nickname) return this.showProfileError(ERROR_TEXT.nickname_required);
+      body.nickname = nickname;
+    }
+    if (this.avatarDraft) body.avatar = this.avatarDraft;
+    else if (this.avatarRemoved) body.removeAvatar = true;
+    if (!Object.keys(body).length) {
+      this.closeProfileEdit();
+      this.toast('바뀐 내용이 없어요.');
+      return;
+    }
+
+    this.setProfileBusy(true);
+    this.clearProfileError();
+    try {
+      const res = await fetch('/api/account/profile', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        this.setProfileBusy(false);
+        this.showProfileError(ERROR_TEXT[data?.error] || data?.message || ERROR_TEXT.default);
+        return;
+      }
+      this.setProfileBusy(false);
+      this.setUser(data.user || this.user);
+      this.closeProfileEdit();
+      pingAuth();
+      this.toast(data.changed?.avatarUpdated ? '프로필 사진을 바꿨어요.'
+        : data.changed?.avatarRemoved ? '프로필 사진을 지웠어요.'
+          : '닉네임을 바꿨어요.');
+    } catch {
+      this.setProfileBusy(false);
+      this.showProfileError(ERROR_TEXT.network);
+    }
   }
 
   async logout() {
@@ -683,6 +1034,39 @@ export class AccountPanel {
     });
     this.el['auth-form'].addEventListener('submit', (event) => this.onSubmit(event));
     this.el['btn-logout'].addEventListener('click', () => this.logout());
+
+    // 탭(내 계정 · 친구) · 친구 열기
+    this.el['account-tabs'].addEventListener('click', (event) => {
+      const tab = event.target.closest('[data-account-tab]');
+      if (!tab || tab.dataset.accountTab === this.accountTab) return;
+      this.sfx?.play('tap');
+      this.showAccountTab(tab.dataset.accountTab);
+    });
+    this.el['btn-friends-open'].addEventListener('click', () => {
+      this.sfx?.play('tap');
+      this.showAccountTab('friends');
+    });
+
+    // 닉네임 · 사진 바꾸기
+    this.el['btn-profile-edit'].addEventListener('click', () => {
+      this.sfx?.play('tap');
+      this.openProfileEdit();
+    });
+    this.el['btn-profile-cancel'].addEventListener('click', () => {
+      this.closeProfileEdit();
+      this.sfx?.play('tap');
+    });
+    this.el['btn-profile-save'].addEventListener('click', () => this.saveProfile());
+    this.el['btn-avatar-pick'].addEventListener('click', () => this.el['avatar-file'].click());
+    this.el['btn-avatar-remove'].addEventListener('click', () => this.removeAvatarDraft());
+    this.el['avatar-file'].addEventListener('change', (event) => this.onAvatarPicked(event));
+    this.el['profile-nickname'].addEventListener('input', () => this.clearProfileError());
+    this.el['profile-nickname'].addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      if (!this.el['btn-profile-save'].disabled) this.saveProfile();
+    });
+
     this.el['btn-delete-account'].addEventListener('click', () => this.showDeleteConfirm());
     this.el['btn-delete-cancel'].addEventListener('click', () => {
       this.hideDeleteConfirm();

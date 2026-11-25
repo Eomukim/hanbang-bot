@@ -99,11 +99,12 @@ export class App {
     });
     this.dictPanel.mount();
 
-    // 우측 상단 계정 버튼(로그인 · 회원가입 · 내 계정). 계정 API 가 없는 곳에서는 스스로 숨는다.
+    // 우측 상단 계정 버튼(로그인 · 회원가입 · 내 계정 · 친구). 계정 API 가 없는 곳에서는 스스로 숨는다.
     this.accountPanel = new AccountPanel({
       sfx: this.sfx,
       toast: (message) => this.toast(message),
       onUserChange: (user) => this.mailPanel?.setUser(user),
+      onComposeMail: (to) => this.mailPanel?.composeTo(to),
     });
     this.accountPanel.init();
 

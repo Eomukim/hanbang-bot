@@ -19,11 +19,13 @@ export async function onRequestGet({ request, env }) {
   }
 
   const rows = await env.DB.prepare(
-    `SELECT id, sender_username, recipient_username, reply_to_id, subject, body,
-            is_read, read_at, created_at, updated_at
-       FROM mails
-      WHERE recipient_id = ? AND deleted_by_recipient = 0 AND recipient_trashed_at IS NULL
-      ORDER BY created_at DESC, id DESC
+    `SELECT m.id, m.sender_username, m.recipient_username, m.reply_to_id, m.subject, m.body,
+            m.is_read, m.read_at, m.created_at, m.updated_at,
+            su.nickname AS sender_nickname, su.display_name AS sender_display_name,
+            su.avatar_updated_at AS sender_avatar_at
+       FROM mails m LEFT JOIN users su ON su.id = m.sender_id
+      WHERE m.recipient_id = ? AND m.deleted_by_recipient = 0 AND m.recipient_trashed_at IS NULL
+      ORDER BY m.created_at DESC, m.id DESC
       LIMIT ?`,
   ).bind(session.id, LIST_LIMIT).all();
 

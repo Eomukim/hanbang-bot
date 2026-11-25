@@ -62,16 +62,25 @@ def wrangler_env():
 
 
 def d1(sql):
-    """로컬 D1(itda-db)에 SQL 한 줄을 실행하고 JSON 결과를 돌려준다."""
-    proc = subprocess.run(
-        [WRANGLER, 'd1', 'execute', 'itda-db', '--local', '--json', '--command', sql],
-        cwd=ROOT, env=wrangler_env(), capture_output=True, text=True, timeout=120,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or proc.stdout.strip())
-    text = proc.stdout.strip()
-    start = text.find('[') if text.find('[') >= 0 else text.find('{')
-    return json.loads(text[start:]) if start >= 0 else []
+    """로컬 D1(itda-db)에 SQL 한 줄을 실행하고 JSON 결과를 돌려준다.
+
+    브라우저·workerd 가 함께 떠 있을 때 workerd 새 프로세스가 일시적으로 뜨지 못하는
+    경우(빈 stderr·EAGAIN)가 있어 세 번까지 다시 시도한다.
+    """
+    last = None
+    for attempt in range(3):
+        proc = subprocess.run(
+            [WRANGLER, 'd1', 'execute', 'itda-db', '--local', '--json', '--command', sql],
+            cwd=ROOT, env=wrangler_env(), capture_output=True, text=True, timeout=120,
+        )
+        if proc.returncode == 0:
+            text = proc.stdout.strip()
+            start = text.find('[') if text.find('[') >= 0 else text.find('{')
+            return json.loads(text[start:]) if start >= 0 else []
+        last = proc
+        time.sleep(2 + attempt * 2)
+    detail = (last.stderr or last.stdout or f'exit {last.returncode}').strip() if last else ''
+    raise RuntimeError(detail or 'd1 실행 실패')
 
 
 def d1_file(path):

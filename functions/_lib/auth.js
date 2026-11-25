@@ -287,7 +287,8 @@ export async function currentSession(env, request) {
   const tokenHash = b64url(await sha256(token));
   const row = await env.DB.prepare(
     `SELECT s.token_hash, s.expires_at,
-            u.id, u.username, u.password_hash, u.google_sub, u.display_name, u.created_at
+            u.id, u.username, u.password_hash, u.google_sub, u.display_name,
+            u.nickname, u.avatar_updated_at, u.created_at
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ?`,
   ).bind(tokenHash).first();
@@ -307,13 +308,20 @@ export async function endSession(env, request) {
   await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(tokenHash).run();
 }
 
-/** 화면에 내려도 되는 사용자 정보만 골라낸다(해시·세션 제외). */
+/**
+ * 화면에 내려도 되는 사용자 정보만 골라낸다(해시·세션·사진 원본 제외).
+ * `displayName` 은 사람들이 보는 이름 — 내가 정한 닉네임 → 표시용 이름 → 아이디 순서다.
+ * `@username` 은 바뀌지 않는 고유 아이디이고, 사진은 `/api/account/avatar?u=<id>&v=<avatarAt>` 로 받는다.
+ */
 export function publicUser(row) {
   if (!row) return null;
+  const nickname = row.nickname || '';
   return {
     id: row.id,
     username: row.username,
-    displayName: row.display_name || row.username,
+    nickname,
+    displayName: nickname || row.display_name || row.username,
+    avatarAt: Number(row.avatar_updated_at || 0),
     provider: row.google_sub ? 'google' : 'password',
     createdAt: row.created_at,
   };
